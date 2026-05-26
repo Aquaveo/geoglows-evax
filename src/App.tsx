@@ -1,20 +1,22 @@
 import { useState } from 'react';
 import { AppProvider } from './state/AppContext';
+import { OverviewTab } from './components/OverviewTab';
 import { SetupTab } from './components/SetupTab';
 import { ForecastTab } from './components/ForecastTab';
 import { MetricsTab } from './components/MetricsTab';
 import './App.css';
 
-type TabId = 'setup' | 'forecast' | 'metrics';
+type TabId = 'overview' | 'setup' | 'forecast' | 'metrics';
 
 const TABS: { id: TabId; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
   { id: 'setup', label: 'Setup' },
   { id: 'forecast', label: 'Forecast' },
   { id: 'metrics', label: 'Metrics' },
 ];
 
 function App() {
-  const [tab, setTab] = useState<TabId>('setup');
+  const [tab, setTab] = useState<TabId>('overview');
   return (
     <AppProvider>
       <main style={{ maxWidth: 1800, margin: '0 auto', padding: '1.5rem 2rem' }}>
@@ -50,6 +52,7 @@ function App() {
           })}
         </nav>
 
+        {tab === 'overview' && <OverviewTab />}
         {tab === 'setup' && <SetupTab />}
         {tab === 'forecast' && <ForecastTab />}
         {tab === 'metrics' && <MetricsTab />}

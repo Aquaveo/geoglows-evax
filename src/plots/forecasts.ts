@@ -4,7 +4,7 @@ import type { RpThresholds } from '../lib/types';
 import { rpBandShapes } from './helpers';
 
 /**
- * Per-init forecast plot. Mirrors pygeoglows _plots/plotly_forecasts.py
+ * Per-date forecast plot. Mirrors pygeoglows _plots/plotly_forecasts.py
  * (`forecast_stats`):
  *   - filled min/max band
  *   - filled p25/p75 band
@@ -17,7 +17,7 @@ import { rpBandShapes } from './helpers';
 export function forecastFigure(
   f: ForecastResult,
   rp: RpThresholds,
-  initDate: string,
+  startDate: string,
 ): { data: Data[]; layout: Partial<Layout> } {
   const x = f.time;
   const xRev = [...x].reverse();
@@ -66,7 +66,7 @@ export function forecastFigure(
   const yCeiling = Math.max(...f.stats.max.filter(Number.isFinite));
 
   const layout: Partial<Layout> = {
-    title: { text: `Forecast — init ${initDate}` },
+    title: { text: `Forecast — start ${startDate}` },
     margin: { l: 60, r: 20, t: 40, b: 40 },
     xaxis: { title: { text: 'Date (UTC)' } },
     yaxis: { title: { text: 'Streamflow (m³/s)' }, rangemode: 'tozero' },

@@ -2,7 +2,7 @@ import { createContext, useContext, useMemo, useState, type ReactNode } from 're
 import type { ForecastResult } from '../data/rfs';
 import type { LeadBuckets, RpThresholds, TimeSeries } from '../lib/types';
 import type { ReachMetadata } from '../data/reachMetadata';
-import type { PerLeadDistribution } from '../plots/kgeVsLead';
+import type { PerLeadDistribution } from '../plots/distributionVsLead';
 
 interface AppState {
   // Inputs
@@ -28,29 +28,28 @@ interface AppState {
   setObsRp: (r: RpThresholds | null) => void;
 
   // Forecast phase
-  /** Event window start, 'YYYY-MM-DD' (UTC). Drives the forecast download range. */
-  eventStart: string | null;
-  setEventStart: (d: string | null) => void;
-
-  /** Event window end, 'YYYY-MM-DD' (UTC). */
-  eventEnd: string | null;
-  setEventEnd: (d: string | null) => void;
-
   forecasts: Map<string, ForecastResult>;
   setForecasts: (m: Map<string, ForecastResult>) => void;
 
   forecastProgress: { done: number; total: number } | null;
   setForecastProgress: (p: { done: number; total: number } | null) => void;
 
-  selectedInitDate: string | null;
-  setSelectedInitDate: (d: string | null) => void;
+  selectedDate: string | null;
+  setSelectedDate: (d: string | null) => void;
 
   // Metric phase
   leadBuckets: LeadBuckets | null;
   setLeadBuckets: (b: LeadBuckets | null) => void;
 
-  kgeDistribution: PerLeadDistribution | null;
-  setKgeDistribution: (d: PerLeadDistribution | null) => void;
+  mccDistribution: PerLeadDistribution | null;
+  setMccDistribution: (d: PerLeadDistribution | null) => void;
+
+  hssDistribution: PerLeadDistribution | null;
+  setHssDistribution: (d: PerLeadDistribution | null) => void;
+
+  /** Maximum observed return period exceeded during the event (0 if none). */
+  eventReturnPeriod: number | null;
+  setEventReturnPeriod: (n: number | null) => void;
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -63,13 +62,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [eventData, setEventData] = useState<TimeSeries | null>(null);
   const [historicalData, setHistoricalData] = useState<TimeSeries | null>(null);
   const [obsRp, setObsRp] = useState<RpThresholds | null>(null);
-  const [eventStart, setEventStart] = useState<string | null>(null);
-  const [eventEnd, setEventEnd] = useState<string | null>(null);
   const [forecasts, setForecasts] = useState<Map<string, ForecastResult>>(new Map());
   const [forecastProgress, setForecastProgress] = useState<{ done: number; total: number } | null>(null);
-  const [selectedInitDate, setSelectedInitDate] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [leadBuckets, setLeadBuckets] = useState<LeadBuckets | null>(null);
-  const [kgeDistribution, setKgeDistribution] = useState<PerLeadDistribution | null>(null);
+  const [mccDistribution, setMccDistribution] = useState<PerLeadDistribution | null>(null);
+  const [hssDistribution, setHssDistribution] = useState<PerLeadDistribution | null>(null);
+  const [eventReturnPeriod, setEventReturnPeriod] = useState<number | null>(null);
 
   const value = useMemo<AppState>(
     () => ({
@@ -80,15 +79,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       eventData, setEventData,
       historicalData, setHistoricalData,
       obsRp, setObsRp,
-      eventStart, setEventStart,
-      eventEnd, setEventEnd,
       forecasts, setForecasts,
       forecastProgress, setForecastProgress,
-      selectedInitDate, setSelectedInitDate,
+      selectedDate, setSelectedDate,
       leadBuckets, setLeadBuckets,
-      kgeDistribution, setKgeDistribution,
+      mccDistribution, setMccDistribution,
+      hssDistribution, setHssDistribution,
+      eventReturnPeriod, setEventReturnPeriod,
     }),
-    [riverId, reach, retro, simRp, eventData, historicalData, obsRp, eventStart, eventEnd, forecasts, forecastProgress, selectedInitDate, leadBuckets, kgeDistribution],
+    [riverId, reach, retro, simRp, eventData, historicalData, obsRp, forecasts, forecastProgress, selectedDate, leadBuckets, mccDistribution, hssDistribution, eventReturnPeriod],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

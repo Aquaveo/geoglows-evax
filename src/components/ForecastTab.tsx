@@ -1,12 +1,23 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../state/AppContext';
 import { fetchForecasts } from '../data/rfs';
 import { dailyDateRange } from '../lib/leadBuckets';
 import { Plot } from './Plot';
 import { forecastFigure } from '../plots/forecasts';
 
+const INIT_LOOKBACK_DAYS = 15;
 const MAX_EVENT_WINDOW_DAYS = 31;
 const DAY_MS = 24 * 3600 * 1000;
+
+function utcDayFloor(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+function ymd(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(
+    d.getUTCDate(),
+  ).padStart(2, '0')}`;
+}
 
 function parseYmd(s: string): Date {
   const [y, m, d] = s.split('-').map(Number);
@@ -16,64 +27,101 @@ function parseYmd(s: string): Date {
 export function ForecastTab() {
   const app = useApp();
 
+  // Auto-derive defaults from the uploaded event CSV.
+  const csvBounds = useMemo(() => {
+    if (!app.eventData || app.eventData.time.length === 0) return null;
+    return {
+      start: utcDayFloor(app.eventData.time[0]),
+      end: utcDayFloor(app.eventData.time[app.eventData.time.length - 1]),
+    };
+  }, [app.eventData]);
+
+  // User-overridable event window. Defaults to the CSV's first/last day.
+  const [eventStartStr, setEventStartStr] = useState<string>('');
+  const [eventEndStr, setEventEndStr] = useState<string>('');
+  useEffect(() => {
+    if (csvBounds && !eventStartStr) setEventStartStr(ymd(csvBounds.start));
+    if (csvBounds && !eventEndStr) setEventEndStr(ymd(csvBounds.end));
+  }, [csvBounds, eventStartStr, eventEndStr]);
+
   const validation = useMemo(() => {
-    if (!app.eventStart || !app.eventEnd) {
-      return { ok: false as const, reason: 'Set both start and end dates.' };
+    if (!eventStartStr || !eventEndStr) {
+      return { ok: false as const, reason: 'Set both event start and end.' };
     }
-    const start = parseYmd(app.eventStart);
-    const end = parseYmd(app.eventEnd);
-    if (end.getTime() < start.getTime()) {
+    const eventStart = parseYmd(eventStartStr);
+    const eventEnd = parseYmd(eventEndStr);
+    if (eventEnd.getTime() < eventStart.getTime()) {
       return { ok: false as const, reason: 'End date must be on or after start date.' };
     }
-    const days = Math.round((end.getTime() - start.getTime()) / DAY_MS) + 1;
-    if (days > MAX_EVENT_WINDOW_DAYS) {
-      return { ok: false as const, reason: `Event window is ${days} days; max is ${MAX_EVENT_WINDOW_DAYS}.` };
+    const eventDays =
+      Math.round((eventEnd.getTime() - eventStart.getTime()) / DAY_MS) + 1;
+    if (eventDays > MAX_EVENT_WINDOW_DAYS) {
+      return {
+        ok: false as const,
+        reason: `Event window is ${eventDays} days; max is ${MAX_EVENT_WINDOW_DAYS}.`,
+      };
     }
-    return { ok: true as const, start, end, days };
-  }, [app.eventStart, app.eventEnd]);
+    const downloadStart = new Date(eventStart.getTime() - INIT_LOOKBACK_DAYS * DAY_MS);
+    return { ok: true as const, eventStart, eventEnd, downloadStart, eventDays };
+  }, [eventStartStr, eventEndStr]);
 
-  const initDates = useMemo(() => {
+  const forecastDates = useMemo(() => {
     if (!validation.ok) return [];
-    const fifteenBefore = new Date(validation.start.getTime() - 15 * DAY_MS);
-    return dailyDateRange(fifteenBefore, validation.end);
+    return dailyDateRange(validation.downloadStart, validation.eventEnd);
   }, [validation]);
 
-  // Default to most-recent fetched start date when forecasts arrive.
+  // Default to most-recent fetched date when forecasts arrive.
   useEffect(() => {
-    if (!app.selectedInitDate && app.forecasts.size > 0) {
+    if (!app.selectedDate && app.forecasts.size > 0) {
       const keys = [...app.forecasts.keys()].sort();
-      app.setSelectedInitDate(keys[keys.length - 1]);
+      app.setSelectedDate(keys[keys.length - 1]);
     }
-  }, [app.forecasts, app.selectedInitDate, app]);
+  }, [app.forecasts, app.selectedDate, app]);
 
   async function downloadAll() {
     if (!app.riverId || !validation.ok) return;
-    app.setForecastProgress({ done: 0, total: initDates.length });
-    const m = await fetchForecasts(app.riverId, initDates, 4, (done, total) =>
+    app.setForecastProgress({ done: 0, total: forecastDates.length });
+    const m = await fetchForecasts(app.riverId, forecastDates, 4, (done, total) =>
       app.setForecastProgress({ done, total }),
     );
     app.setForecasts(m);
     app.setForecastProgress(null);
     app.setLeadBuckets(null); // invalidate downstream
-    app.setKgeDistribution(null);
+    app.setMccDistribution(null);
+    app.setHssDistribution(null);
+    app.setEventReturnPeriod(null);
   }
 
-  const selected = app.selectedInitDate ? app.forecasts.get(app.selectedInitDate) ?? null : null;
+  const selected = app.selectedDate ? app.forecasts.get(app.selectedDate) ?? null : null;
 
   return (
     <div>
       <section style={section}>
         <h2 style={h2}>Forecast download</h2>
         {!app.riverId && <p>Pick a river_id on the Setup tab first.</p>}
-        {app.riverId && (
+        {app.riverId && !csvBounds && (
+          <p style={{ color: '#b91c1c' }}>
+            Upload the event observations CSV on the Setup tab first — the event window defaults
+            are derived from it.
+          </p>
+        )}
+        {app.riverId && csvBounds && (
           <>
-            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '0.75rem' }}>
+            <div
+              style={{
+                display: 'flex',
+                gap: '1rem',
+                flexWrap: 'wrap',
+                alignItems: 'flex-end',
+                marginBottom: '0.75rem',
+              }}
+            >
               <label style={dateLabel}>
                 <span>Event start (UTC)</span>
                 <input
                   type="date"
-                  value={app.eventStart ?? ''}
-                  onChange={(e) => app.setEventStart(e.target.value || null)}
+                  value={eventStartStr}
+                  onChange={(e) => setEventStartStr(e.target.value)}
                   style={dateInput}
                 />
               </label>
@@ -81,8 +129,8 @@ export function ForecastTab() {
                 <span>Event end (UTC)</span>
                 <input
                   type="date"
-                  value={app.eventEnd ?? ''}
-                  onChange={(e) => app.setEventEnd(e.target.value || null)}
+                  value={eventEndStr}
+                  onChange={(e) => setEventEndStr(e.target.value)}
                   style={dateInput}
                 />
               </label>
@@ -92,16 +140,28 @@ export function ForecastTab() {
             </div>
 
             {validation.ok ? (
-              <p style={{ color: '#555', margin: '0 0 0.5rem' }}>
-                Event window: <code>{validation.days}</code> day{validation.days === 1 ? '' : 's'}.{' '}
-                Forecast start-date range: <code>{initDates[0]}</code> … <code>{initDates[initDates.length - 1]}</code>{' '}
-                ({initDates.length} forecasts, including 15 days of lead-in before the event).
-              </p>
+              <>
+                <p style={{ color: '#444', margin: '0 0 0.4rem' }}>
+                  Event window: <code>{ymd(validation.eventStart)}</code> …{' '}
+                  <code>{ymd(validation.eventEnd)}</code> ({validation.eventDays} day
+                  {validation.eventDays === 1 ? '' : 's'}).
+                </p>
+                <p style={{ color: '#555', margin: '0 0 0.75rem', fontSize: '0.9rem' }}>
+                  Forecast init range (event start − {INIT_LOOKBACK_DAYS} days through event end):{' '}
+                  <code>{forecastDates[0]}</code> …{' '}
+                  <code>{forecastDates[forecastDates.length - 1]}</code> ({forecastDates.length}{' '}
+                  init date{forecastDates.length === 1 ? '' : 's'}).
+                </p>
+              </>
             ) : (
               <p style={{ color: '#b91c1c', margin: '0 0 0.5rem' }}>{validation.reason}</p>
             )}
 
-            <button onClick={downloadAll} disabled={!validation.ok || !!app.forecastProgress} style={btn}>
+            <button
+              onClick={downloadAll}
+              disabled={!validation.ok || !!app.forecastProgress}
+              style={btn}
+            >
               {app.forecastProgress
                 ? `Downloading ${app.forecastProgress.done}/${app.forecastProgress.total}…`
                 : app.forecasts.size > 0
@@ -122,11 +182,11 @@ export function ForecastTab() {
           <h2 style={h2}>Forecast plot by start date</h2>
           <DateSlider
             sortedDates={[...app.forecasts.keys()].sort()}
-            selected={app.selectedInitDate}
-            onChange={app.setSelectedInitDate}
+            selected={app.selectedDate}
+            onChange={app.setSelectedDate}
           />
           {selected && app.simRp && (
-            <Plot {...forecastFigure(selected, app.simRp, app.selectedInitDate!)} />
+            <Plot {...forecastFigure(selected, app.simRp, app.selectedDate!)} />
           )}
         </section>
       )}

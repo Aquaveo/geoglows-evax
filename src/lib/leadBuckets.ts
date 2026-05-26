@@ -6,10 +6,10 @@ const DAY_MS = 24 * HOUR_MS;
 const MEMBER_COUNT = 51;
 
 /**
- * Reorganize per-init forecasts into per-lead buckets, mirroring the
+ * Reorganize per-start-date forecasts into per-lead buckets, mirroring the
  * notebook's `reorganize_forecasts_by_daily_lead`.
  *
- *   lead 0  → t == t0 (initialization timestamp)
+ *   lead 0  → t == t0 (forecast start-date timestamp)
  *   lead d  → ((d-1)·24h, d·24h]  for d >= 1
  */
 export function reorganizeByLead(
@@ -19,8 +19,8 @@ export function reorganizeByLead(
   const buckets: LeadBuckets = {};
   for (let d = 0; d <= maxLead; d++) buckets[d] = { time: [], members: [] };
 
-  for (const [initStr, fr] of forecasts) {
-    const t0 = parseInitDate(initStr);
+  for (const [dateStr, fr] of forecasts) {
+    const t0 = parseStartDate(dateStr);
     if (!t0) continue;
 
     // Build per-timestep member rows. fr.discharge is [51 members][T].
@@ -47,7 +47,7 @@ export function reorganizeByLead(
   return buckets;
 }
 
-function parseInitDate(yyyymmdd: string): Date | null {
+function parseStartDate(yyyymmdd: string): Date | null {
   if (!/^\d{8}$/.test(yyyymmdd)) return null;
   const y = Number(yyyymmdd.slice(0, 4));
   const m = Number(yyyymmdd.slice(4, 6));

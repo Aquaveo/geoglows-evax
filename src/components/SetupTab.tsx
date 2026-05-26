@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../state/AppContext';
 import { getReachMetadata } from '../data/reachMetadata';
-import { fetchRetrospective, fetchReturnPeriods } from '../data/rfs';
+import { fetchRetrospective } from '../data/rfs';
 import { resampleHourly } from '../lib/ingest/resampleHourly';
 import { returnPeriodsFromSeries } from '../lib/gumbel';
 import { ReachMap } from './Map';
@@ -26,14 +26,21 @@ export function SetupTab() {
     setLoading(true);
     try {
       app.setRiverId(n);
-      const [reach, retro, simRp] = await Promise.all([
+      const [reach, retro] = await Promise.all([
         getReachMetadata(n),
         fetchRetrospective(n, 'daily'),
-        fetchReturnPeriods(n),
       ]);
       app.setReach(reach);
-      app.setRetro({ time: retro.time, values: retro.discharge });
-      app.setSimRp(simRp);
+      const retroSeries = { time: retro.time, values: retro.discharge };
+      app.setRetro(retroSeries);
+      // Compute simulated return periods from the daily retrospective with the
+      // same Gumbel-I fit the notebook uses (cell 78), instead of the server's
+      // precomputed values. Negatives are clamped to 0 to match the notebook.
+      const clamped = {
+        time: retroSeries.time,
+        values: retroSeries.values.map((v) => (Number.isFinite(v) && v < 0 ? 0 : v)),
+      };
+      app.setSimRp(returnPeriodsFromSeries(clamped));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       app.setRiverId(null);
@@ -48,7 +55,7 @@ export function SetupTab() {
   return (
     <div>
       <section style={sectionStyle}>
-        <h2 style={h2}>1. Choose a reach</h2>
+        <h2 style={h2}>Choose a reach</h2>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <input
             value={input}
@@ -73,13 +80,13 @@ export function SetupTab() {
 
       {app.reach && app.reach.lat != null && app.reach.lon != null && (
         <section style={sectionStyle}>
-          <h2 style={h2}>2. Reach location</h2>
+          <h2 style={h2}>Reach location</h2>
           <ReachMap lat={app.reach.lat} lon={app.reach.lon} riverId={app.reach.riverId} />
         </section>
       )}
 
       <section style={sectionStyle}>
-        <h2 style={h2}>3. Upload observed data</h2>
+        <h2 style={h2}>Upload observed data</h2>
         <CsvUploader
           label="Event observations (must be UTC, datetime + discharge)"
           onParsed={(s) => app.setEventData(resampleHourly(s))}

@@ -27,7 +27,7 @@ declare module 'riverforecastsystem' {
   export interface ForecastArgs {
     riverId?: number;
     idx?: number;
-    /** Initialization date as YYYYMMDD. */
+    /** Forecast start date as YYYYMMDD. */
     date: string;
     baseUrl?: string;
   }
