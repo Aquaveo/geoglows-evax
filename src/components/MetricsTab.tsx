@@ -9,12 +9,19 @@ import {
 } from '../lib/metrics/contingency';
 import { computeMcc } from '../lib/metrics/mcc';
 import { computeHss } from '../lib/metrics/hss';
+import { computePeakTimingError } from '../lib/metrics/peakTiming';
+import { computeThresholdCrossing } from '../lib/metrics/thresholdCrossing';
+import { kge } from '../lib/metrics/kge';
+import { computeCrpsByLead } from '../lib/metrics/crps';
 import { Plot } from './Plot';
 import {
   distributionVsLeadFigure,
   type PerLeadDistribution,
 } from '../plots/distributionVsLead';
 import { deterministicLimitFigure } from '../plots/deterministicLimit';
+import { crpsPerLeadFigure } from '../plots/crpsPerLead';
+import { RP_LEVELS } from '../lib/types';
+import type { CrossingDetection } from '../state/AppContext';
 
 const MAX_LEAD = 15;
 const MEMBER_COUNT = 51;
@@ -37,12 +44,30 @@ export function MetricsTab() {
   const [matrixLead, setMatrixLead] = useState(3);
   const [matrixSeriesKey, setMatrixSeriesKey] = useState<string>('stat:median');
 
+  // Timing metrics state
+  const [computingTiming, setComputingTiming] = useState(false);
+  const [timingError, setTimingError] = useState<string | null>(null);
+  const [crossingRp, setCrossingRp] = useState<number>(2);
+
+  // Accuracy metrics state
+  const [computingAccuracy, setComputingAccuracy] = useState(false);
+  const [accuracyError, setAccuracyError] = useState<string | null>(null);
+
+  // Probabilistic (CRPS) state
+  const [computingCrps, setComputingCrps] = useState(false);
+  const [crpsError, setCrpsError] = useState<string | null>(null);
+
   const canCompute = !!(
     app.eventData &&
     app.forecasts.size > 0 &&
     app.obsRp &&
     app.simRp
   );
+
+  const canComputeTiming = !!(app.eventData && app.forecasts.size > 0);
+  const canComputeCrossing = canComputeTiming && !!(app.obsRp && app.simRp);
+  const canComputeAccuracy = !!(app.eventData && app.forecasts.size > 0);
+  const canComputeCrps = !!(app.eventData && app.forecasts.size > 0);
 
   function computeCategoricalMetrics() {
     setError(null);
@@ -95,6 +120,176 @@ export function MetricsTab() {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
         setComputing(false);
+      }
+    }, 0);
+  }
+
+  function computeTimingMetrics() {
+    setTimingError(null);
+    if (!app.eventData) return;
+    setComputingTiming(true);
+    setTimeout(() => {
+      try {
+        // Reuse lead buckets if already computed; otherwise build them.
+        const buckets =
+          app.leadBuckets ?? reorganizeByLead(app.forecasts, MAX_LEAD);
+        if (!app.leadBuckets) app.setLeadBuckets(buckets);
+
+        // Peak timing distribution
+        const peakDist: PerLeadDistribution = { leads: [], values: [] };
+        for (let lead = 0; lead <= MAX_LEAD; lead++) {
+          peakDist.leads.push(lead);
+          const vals: number[] = [];
+          const bucket = buckets[lead];
+          if (bucket && bucket.time.length > 0) {
+            for (let m = 0; m < MEMBER_COUNT; m++) {
+              const dt = computePeakTimingError(
+                memberSeries(bucket, m),
+                app.eventData!,
+              );
+              if (dt != null && Number.isFinite(dt)) vals.push(dt);
+            }
+          }
+          peakDist.values.push(vals);
+        }
+        app.setPeakTimingDistribution(peakDist);
+
+        // Threshold crossing — only if both RP sets are present.
+        if (app.obsRp && app.simRp) {
+          const crossDists: Record<number, PerLeadDistribution> = {};
+          const crossDets: Record<number, CrossingDetection> = {};
+          for (const rp of RP_LEVELS) {
+            const obsThr = app.obsRp[rp];
+            const simThr = app.simRp[rp];
+            const dist: PerLeadDistribution = { leads: [], values: [] };
+            const det: CrossingDetection = {
+              leads: [],
+              nCrossed: [],
+              nObsOnly: [],
+              nNoObs: [],
+              nTotal: [],
+            };
+            for (let lead = 0; lead <= MAX_LEAD; lead++) {
+              dist.leads.push(lead);
+              det.leads.push(lead);
+              const vals: number[] = [];
+              let nCrossed = 0;
+              let nObsOnly = 0;
+              let nNoObs = 0;
+              let nTotal = 0;
+              const bucket = buckets[lead];
+              if (bucket && bucket.time.length > 0) {
+                for (let m = 0; m < MEMBER_COUNT; m++) {
+                  nTotal += 1;
+                  const r = computeThresholdCrossing(
+                    memberSeries(bucket, m),
+                    app.eventData!,
+                    obsThr,
+                    simThr,
+                  );
+                  if (r.deltaT != null) {
+                    vals.push(r.deltaT);
+                    nCrossed += 1;
+                  } else if (r.crossedObs && !r.crossedFcst) {
+                    nObsOnly += 1;
+                  } else if (!r.crossedObs) {
+                    nNoObs += 1;
+                  }
+                }
+              }
+              dist.values.push(vals);
+              det.nCrossed.push(nCrossed);
+              det.nObsOnly.push(nObsOnly);
+              det.nNoObs.push(nNoObs);
+              det.nTotal.push(nTotal);
+            }
+            crossDists[rp] = dist;
+            crossDets[rp] = det;
+          }
+          app.setCrossingDistributions(crossDists);
+          app.setCrossingDetections(crossDets);
+        } else {
+          app.setCrossingDistributions(null);
+          app.setCrossingDetections(null);
+        }
+      } catch (e) {
+        setTimingError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setComputingTiming(false);
+      }
+    }, 0);
+  }
+
+  function computeAccuracyMetrics() {
+    setAccuracyError(null);
+    if (!app.eventData) return;
+    setComputingAccuracy(true);
+    setTimeout(() => {
+      try {
+        const buckets =
+          app.leadBuckets ?? reorganizeByLead(app.forecasts, MAX_LEAD);
+        if (!app.leadBuckets) app.setLeadBuckets(buckets);
+
+        const kgeDist: PerLeadDistribution = { leads: [], values: [] };
+        const rDist: PerLeadDistribution = { leads: [], values: [] };
+        const betaDist: PerLeadDistribution = { leads: [], values: [] };
+        const gammaDist: PerLeadDistribution = { leads: [], values: [] };
+
+        for (let lead = 0; lead <= MAX_LEAD; lead++) {
+          kgeDist.leads.push(lead);
+          rDist.leads.push(lead);
+          betaDist.leads.push(lead);
+          gammaDist.leads.push(lead);
+
+          const kVals: number[] = [];
+          const rVals: number[] = [];
+          const bVals: number[] = [];
+          const gVals: number[] = [];
+
+          const bucket = buckets[lead];
+          if (bucket && bucket.time.length > 0) {
+            for (let m = 0; m < MEMBER_COUNT; m++) {
+              const result = kge(memberSeries(bucket, m), app.eventData!);
+              if (Number.isFinite(result.kge)) kVals.push(result.kge);
+              if (Number.isFinite(result.r)) rVals.push(result.r);
+              if (Number.isFinite(result.beta)) bVals.push(result.beta);
+              if (Number.isFinite(result.gamma)) gVals.push(result.gamma);
+            }
+          }
+          kgeDist.values.push(kVals);
+          rDist.values.push(rVals);
+          betaDist.values.push(bVals);
+          gammaDist.values.push(gVals);
+        }
+
+        app.setKgeDistribution(kgeDist);
+        app.setRDistribution(rDist);
+        app.setBetaDistribution(betaDist);
+        app.setGammaDistribution(gammaDist);
+      } catch (e) {
+        setAccuracyError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setComputingAccuracy(false);
+      }
+    }, 0);
+  }
+
+  function computeCrpsMetrics() {
+    setCrpsError(null);
+    if (!app.eventData) return;
+    setComputingCrps(true);
+    setTimeout(() => {
+      try {
+        const buckets =
+          app.leadBuckets ?? reorganizeByLead(app.forecasts, MAX_LEAD);
+        if (!app.leadBuckets) app.setLeadBuckets(buckets);
+
+        const result = computeCrpsByLead(buckets, app.eventData!, MAX_LEAD);
+        app.setCrpsResults(result);
+      } catch (e) {
+        setCrpsError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setComputingCrps(false);
       }
     }, 0);
   }
@@ -326,6 +521,286 @@ export function MetricsTab() {
           </div>
         )}
       </CollapsibleBlock>
+
+      <CollapsibleBlock
+        title="Timing metrics"
+        description="Peak timing error (Δt_peak) and first-ascending threshold crossing error (Δt_RP), per ensemble member, by lead day."
+      >
+        {!canComputeTiming && (
+          <p style={{ color: '#555' }}>
+            Need observed event data and downloaded forecasts before computing timing metrics.
+          </p>
+        )}
+        {canComputeTiming && (
+          <button onClick={computeTimingMetrics} disabled={computingTiming} style={btn}>
+            {computingTiming
+              ? 'Computing…'
+              : app.peakTimingDistribution
+                ? 'Re-compute timing metrics'
+                : 'Compute timing metrics'}
+          </button>
+        )}
+        {!canComputeCrossing && canComputeTiming && (
+          <p style={{ color: '#666', marginTop: '0.6rem', fontSize: '0.9rem' }}>
+            Threshold crossing requires both observed and simulated return periods — upload
+            historical observations on the Setup tab to enable it.
+          </p>
+        )}
+        {timingError && <p style={{ color: '#b91c1c' }}>{timingError}</p>}
+
+        {app.peakTimingDistribution && (
+          <div style={subBlock}>
+            <h3 style={h3}>Peak timing error (Δt_peak) by lead day</h3>
+            <Plot
+              {...distributionVsLeadFigure(app.peakTimingDistribution, {
+                metricLabel: 'Δt_peak',
+                title: `Peak Timing Error per Lead Day${riverIdSuffix}`,
+                subtitle:
+                  't_peak,forecast − t_peak,observed (hours)  |  51 members (leads 0–15)  |  negative = early',
+                yAxisLabel: 'Δt_peak (hours)',
+                valueFormat: '+.1f',
+                zeroLine: true,
+              })}
+            />
+          </div>
+        )}
+
+        {app.crossingDistributions && app.crossingDetections && (
+          <div style={subBlock}>
+            <h3 style={h3}>Threshold crossing timing error (Δt_RP)</h3>
+            <label style={lbl}>
+              Return period:&nbsp;
+              <select
+                value={crossingRp}
+                onChange={(e) => setCrossingRp(Number(e.target.value))}
+                style={sel}
+              >
+                {RP_LEVELS.map((rp) => (
+                  <option key={rp} value={rp}>
+                    {rp}-year
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div style={{ marginTop: '0.75rem' }}>
+              <Plot
+                {...distributionVsLeadFigure(app.crossingDistributions[crossingRp], {
+                  metricLabel: 'Δt_RP',
+                  title: `Threshold Crossing Timing Error (${crossingRp}-yr RP)${riverIdSuffix}`,
+                  subtitle:
+                    'First ascending crossing  |  Only members that crossed both obs and forecast threshold  |  negative = early',
+                  yAxisLabel: 'Δt_RP (hours)',
+                  valueFormat: '+.1f',
+                  zeroLine: true,
+                })}
+              />
+            </div>
+            <DetectionTable detection={app.crossingDetections[crossingRp]} />
+          </div>
+        )}
+      </CollapsibleBlock>
+
+      <CollapsibleBlock
+        title="Accuracy metrics"
+        description="Kling-Gupta efficiency (KGE') and its decomposition: Pearson correlation r, bias ratio β = μ_f/μ_o, variability ratio γ = CV_f/CV_o (Kling et al., 2012)."
+      >
+        {!canComputeAccuracy && (
+          <p style={{ color: '#555' }}>
+            Need observed event data and downloaded forecasts before computing accuracy metrics.
+          </p>
+        )}
+        {canComputeAccuracy && (
+          <button onClick={computeAccuracyMetrics} disabled={computingAccuracy} style={btn}>
+            {computingAccuracy
+              ? 'Computing…'
+              : app.kgeDistribution
+                ? 'Re-compute accuracy metrics'
+                : 'Compute accuracy metrics'}
+          </button>
+        )}
+        {accuracyError && <p style={{ color: '#b91c1c' }}>{accuracyError}</p>}
+
+        {app.kgeDistribution && (
+          <div style={subBlock}>
+            <h3 style={h3}>KGE' distribution by lead day</h3>
+            <Plot
+              {...distributionVsLeadFigure(app.kgeDistribution, {
+                metricLabel: "KGE'",
+                title: `KGE' Distribution per Lead Day${riverIdSuffix}`,
+                subtitle:
+                  "1 − √((r−1)² + (β−1)² + (γ−1)²)  |  Kling et al. (2012)  |  51 members (leads 0–15)",
+                yAxisLabel: "KGE'",
+                referenceLines: [
+                  { y: 1, label: "KGE' = 1 (perfect)", color: 'green' },
+                  { y: -0.41, label: "KGE' = -0.41 (mean-flow benchmark)", color: 'red', dash: 'dot' },
+                ],
+                zeroLine: true,
+              })}
+            />
+          </div>
+        )}
+
+        {app.rDistribution && (
+          <div style={subBlock}>
+            <h3 style={h3}>Pearson correlation (r) by lead day</h3>
+            <Plot
+              {...distributionVsLeadFigure(app.rDistribution, {
+                metricLabel: 'r',
+                title: `Pearson Correlation per Lead Day${riverIdSuffix}`,
+                subtitle: 'KGE component  |  51 members (leads 0–15)',
+                yAxisLabel: 'r',
+                referenceLines: [{ y: 1, label: 'r = 1 (perfect)', color: 'green' }],
+                zeroLine: true,
+              })}
+            />
+          </div>
+        )}
+
+        {app.betaDistribution && (
+          <div style={subBlock}>
+            <h3 style={h3}>Bias ratio (β) by lead day</h3>
+            <Plot
+              {...distributionVsLeadFigure(app.betaDistribution, {
+                metricLabel: 'β',
+                title: `Bias Ratio per Lead Day${riverIdSuffix}`,
+                subtitle:
+                  'β = μ_forecast / μ_observed  |  β < 1 underestimate, β > 1 overestimate  |  51 members',
+                yAxisLabel: 'β',
+                referenceLines: [{ y: 1, label: 'β = 1 (no bias)', color: 'green' }],
+              })}
+            />
+          </div>
+        )}
+
+        {app.gammaDistribution && (
+          <div style={subBlock}>
+            <h3 style={h3}>Variability ratio (γ) by lead day</h3>
+            <Plot
+              {...distributionVsLeadFigure(app.gammaDistribution, {
+                metricLabel: 'γ',
+                title: `Variability Ratio per Lead Day${riverIdSuffix}`,
+                subtitle:
+                  'γ = CV_forecast / CV_observed (Kling et al., 2012)  |  γ < 1 under-varies, γ > 1 over-varies  |  51 members',
+                yAxisLabel: 'γ',
+                referenceLines: [{ y: 1, label: 'γ = 1 (perfect)', color: 'green' }],
+              })}
+            />
+          </div>
+        )}
+      </CollapsibleBlock>
+
+      <CollapsibleBlock
+        title="Probabilistic metrics"
+        description="Continuous Ranked Probability Score (CRPS) via the energy-score decomposition (Gneiting & Raftery, 2007): CRPS = MAE component − Spread. Evaluates the 51-member ensemble as a distribution; one scalar per lead day."
+      >
+        {!canComputeCrps && (
+          <p style={{ color: '#555' }}>
+            Need observed event data and downloaded forecasts before computing CRPS.
+          </p>
+        )}
+        {canComputeCrps && (
+          <button onClick={computeCrpsMetrics} disabled={computingCrps} style={btn}>
+            {computingCrps
+              ? 'Computing…'
+              : app.crpsResults
+                ? 'Re-compute CRPS'
+                : 'Compute CRPS'}
+          </button>
+        )}
+        {crpsError && <p style={{ color: '#b91c1c' }}>{crpsError}</p>}
+
+        {app.crpsResults && (
+          <div style={subBlock}>
+            <h3 style={h3}>CRPS and components by lead day</h3>
+            <Plot
+              {...crpsPerLeadFigure(app.crpsResults, {
+                riverId: app.reach?.riverId ?? undefined,
+              })}
+            />
+            <CrpsTable r={app.crpsResults} />
+            <p style={{ marginTop: '0.6rem', color: '#555', fontSize: '0.9rem' }}>
+              <strong>Reading the plot:</strong> the red MAE line is the raw mean absolute
+              error of the members against the observation; the green Spread line is the
+              ensemble's internal disagreement (half the mean pairwise absolute
+              difference). CRPS = MAE − Spread; the shaded green region is the "discount"
+              the ensemble earns for being appropriately dispersed. Same units as
+              discharge (m³/s); lower is better.
+            </p>
+          </div>
+        )}
+      </CollapsibleBlock>
+    </div>
+  );
+}
+
+function CrpsTable({ r }: { r: import('../lib/metrics/crps').CrpsPerLead }) {
+  return (
+    <div style={{ marginTop: '0.75rem', overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+        <thead>
+          <tr>
+            <th style={cmth}>Lead</th>
+            <th style={cmth}>CRPS (m³/s)</th>
+            <th style={cmth}>MAE component</th>
+            <th style={cmth}>Spread</th>
+            <th style={cmth}>N timesteps</th>
+          </tr>
+        </thead>
+        <tbody>
+          {r.leads.map((l, i) => {
+            const c = r.crps[i];
+            const m = r.mae[i];
+            const s = r.spread[i];
+            const n = r.nTimesteps[i];
+            const fmt = (v: number) => (Number.isFinite(v) ? v.toFixed(2) : '—');
+            return (
+              <tr key={l}>
+                <td style={cmtd}>{l}</td>
+                <td style={cmtd}>{fmt(c)}</td>
+                <td style={cmtd}>{fmt(m)}</td>
+                <td style={cmtd}>{fmt(s)}</td>
+                <td style={cmtd}>{n}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DetectionTable({ detection }: { detection: CrossingDetection }) {
+  return (
+    <div style={{ marginTop: '0.75rem', overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+        <thead>
+          <tr>
+            <th style={cmth}>Lead</th>
+            <th style={cmth}>Members</th>
+            <th style={cmth}>Crossed (Δt)</th>
+            <th style={cmth}>Obs ✓ / Fcst ✗</th>
+            <th style={cmth}>Obs ✗</th>
+            <th style={cmth}>Detection</th>
+          </tr>
+        </thead>
+        <tbody>
+          {detection.leads.map((l, i) => {
+            const total = detection.nTotal[i];
+            const crossed = detection.nCrossed[i];
+            const rate = total > 0 ? `${Math.round((100 * crossed) / total)}%` : '—';
+            return (
+              <tr key={l}>
+                <td style={cmtd}>{l}</td>
+                <td style={cmtd}>{total}</td>
+                <td style={cmtd}>{crossed}</td>
+                <td style={cmtd}>{detection.nObsOnly[i]}</td>
+                <td style={cmtd}>{detection.nNoObs[i]}</td>
+                <td style={cmtd}>{rate}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

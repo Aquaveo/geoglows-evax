@@ -3,6 +3,7 @@ import type { ForecastResult } from '../data/rfs';
 import type { LeadBuckets, RpThresholds, TimeSeries } from '../lib/types';
 import type { ReachMetadata } from '../data/reachMetadata';
 import type { PerLeadDistribution } from '../plots/distributionVsLead';
+import type { CrpsPerLead } from '../lib/metrics/crps';
 
 interface AppState {
   // Inputs
@@ -47,9 +48,48 @@ interface AppState {
   hssDistribution: PerLeadDistribution | null;
   setHssDistribution: (d: PerLeadDistribution | null) => void;
 
+  peakTimingDistribution: PerLeadDistribution | null;
+  setPeakTimingDistribution: (d: PerLeadDistribution | null) => void;
+
+  kgeDistribution: PerLeadDistribution | null;
+  setKgeDistribution: (d: PerLeadDistribution | null) => void;
+
+  rDistribution: PerLeadDistribution | null;
+  setRDistribution: (d: PerLeadDistribution | null) => void;
+
+  betaDistribution: PerLeadDistribution | null;
+  setBetaDistribution: (d: PerLeadDistribution | null) => void;
+
+  gammaDistribution: PerLeadDistribution | null;
+  setGammaDistribution: (d: PerLeadDistribution | null) => void;
+
+  /** Per-RP distribution of Δt crossing across ensemble members. */
+  crossingDistributions: Record<number, PerLeadDistribution> | null;
+  setCrossingDistributions: (d: Record<number, PerLeadDistribution> | null) => void;
+
+  /** Per-RP detection counts per lead day. */
+  crossingDetections: Record<number, CrossingDetection> | null;
+  setCrossingDetections: (d: Record<number, CrossingDetection> | null) => void;
+
   /** Maximum observed return period exceeded during the event (0 if none). */
   eventReturnPeriod: number | null;
   setEventReturnPeriod: (n: number | null) => void;
+
+  /** Mean CRPS / MAE component / Spread per lead day (scalar per lead). */
+  crpsResults: CrpsPerLead | null;
+  setCrpsResults: (r: CrpsPerLead | null) => void;
+}
+
+export interface CrossingDetection {
+  leads: number[];
+  /** Members that crossed both obs and fcst thresholds (Δt computed). */
+  nCrossed: number[];
+  /** Members where obs crossed but fcst did not. */
+  nObsOnly: number[];
+  /** Members where neither crossed (obs below threshold for the window). */
+  nNoObs: number[];
+  /** Total member count contributing to this lead (typically MEMBER_COUNT). */
+  nTotal: number[];
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -68,7 +108,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [leadBuckets, setLeadBuckets] = useState<LeadBuckets | null>(null);
   const [mccDistribution, setMccDistribution] = useState<PerLeadDistribution | null>(null);
   const [hssDistribution, setHssDistribution] = useState<PerLeadDistribution | null>(null);
+  const [peakTimingDistribution, setPeakTimingDistribution] = useState<PerLeadDistribution | null>(null);
+  const [kgeDistribution, setKgeDistribution] = useState<PerLeadDistribution | null>(null);
+  const [rDistribution, setRDistribution] = useState<PerLeadDistribution | null>(null);
+  const [betaDistribution, setBetaDistribution] = useState<PerLeadDistribution | null>(null);
+  const [gammaDistribution, setGammaDistribution] = useState<PerLeadDistribution | null>(null);
+  const [crossingDistributions, setCrossingDistributions] = useState<
+    Record<number, PerLeadDistribution> | null
+  >(null);
+  const [crossingDetections, setCrossingDetections] = useState<
+    Record<number, CrossingDetection> | null
+  >(null);
   const [eventReturnPeriod, setEventReturnPeriod] = useState<number | null>(null);
+  const [crpsResults, setCrpsResults] = useState<CrpsPerLead | null>(null);
 
   const value = useMemo<AppState>(
     () => ({
@@ -85,9 +137,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       leadBuckets, setLeadBuckets,
       mccDistribution, setMccDistribution,
       hssDistribution, setHssDistribution,
+      peakTimingDistribution, setPeakTimingDistribution,
+      kgeDistribution, setKgeDistribution,
+      rDistribution, setRDistribution,
+      betaDistribution, setBetaDistribution,
+      gammaDistribution, setGammaDistribution,
+      crossingDistributions, setCrossingDistributions,
+      crossingDetections, setCrossingDetections,
       eventReturnPeriod, setEventReturnPeriod,
+      crpsResults, setCrpsResults,
     }),
-    [riverId, reach, retro, simRp, eventData, historicalData, obsRp, forecasts, forecastProgress, selectedDate, leadBuckets, mccDistribution, hssDistribution, eventReturnPeriod],
+    [riverId, reach, retro, simRp, eventData, historicalData, obsRp, forecasts, forecastProgress, selectedDate, leadBuckets, mccDistribution, hssDistribution, peakTimingDistribution, kgeDistribution, rDistribution, betaDistribution, gammaDistribution, crossingDistributions, crossingDetections, eventReturnPeriod, crpsResults],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
