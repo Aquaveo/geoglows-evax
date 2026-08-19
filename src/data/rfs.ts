@@ -3,24 +3,50 @@ import rfs, {
   type RetrospectiveResult,
   type ReturnPeriodsResult,
 } from 'riverforecastsystem';
+import { cacheKey, readCache, writeCache } from './cache';
 
 export type { ForecastResult, RetrospectiveResult, ReturnPeriodsResult };
 
-export function fetchRetrospective(riverId: number, resolution: 'hourly' | 'daily' | 'monthly' | 'yearly' = 'daily') {
-  return rfs.v2.retrospective({ riverId, resolution });
+export async function getAndCacheRetrospective(
+  riverId: number,
+  resolution: 'hourly' | 'daily' | 'monthly' | 'yearly' = 'daily',
+): Promise<RetrospectiveResult> {
+  // Resolution is part of the key so hourly/daily/etc. don't collide.
+  const key = `${cacheKey({ riverId, type: 'retro' })}_${resolution}`;
+  const cached = await readCache<RetrospectiveResult>(key);
+  if (cached) return cached;
+  const data = await rfs.v2.retrospective({ riverId, resolution });
+  await writeCache(key, data);
+  return data;
 }
 
-export function fetchReturnPeriods(riverId: number) {
-  return rfs.v2.returnPeriods({ riverId });
+export async function getAndCacheReturnPeriods(
+  riverId: number,
+): Promise<ReturnPeriodsResult> {
+  const key = cacheKey({ riverId, type: 'retper' });
+  const cached = await readCache<ReturnPeriodsResult>(key);
+  if (cached) return cached;
+  const data = await rfs.v2.returnPeriods({ riverId });
+  await writeCache(key, data);
+  return data;
 }
 
 /** date as YYYYMMDD (no separators). */
-export function fetchForecast(riverId: number, date: string) {
-  return rfs.v2.forecast({ riverId, date });
+export async function getAndCacheForecast(
+  riverId: number,
+  date: string,
+): Promise<ForecastResult> {
+  const key = cacheKey({ riverId, type: 'forecast', date });
+  const cached = await readCache<ForecastResult>(key);
+  if (cached) return cached;
+  const data = await rfs.v2.forecast({ riverId, date });
+  await writeCache(key, data);
+  return data;
 }
 
 /**
  * Fetch forecasts for a list of dates with bounded concurrency.
+ * Each date is served from IndexedDB when cached, otherwise fetched and saved.
  * `onProgress` reports completed/total as each finishes.
  */
 export async function fetchForecasts(
@@ -38,7 +64,7 @@ export async function fetchForecasts(
       const i = cursor++;
       const date = dates[i];
       try {
-        const r = await fetchForecast(riverId, date);
+        const r = await getAndCacheForecast(riverId, date);
         results.set(date, r);
       } catch (e) {
         console.warn(`forecast fetch failed for ${date}:`, e);

@@ -20,6 +20,13 @@ export interface DistributionFigureOptions {
   valueFormat?: string;
   /** Draw a horizontal y = 0 dashed reference line. */
   zeroLine?: boolean;
+  /** Additional horizontal reference lines (e.g. y = 1 "perfect" for KGE/r/β/γ). */
+  referenceLines?: Array<{
+    y: number;
+    label: string;
+    color?: string;
+    dash?: 'solid' | 'dot' | 'dash' | 'dashdot' | 'longdash' | 'longdashdot';
+  }>;
   /** Base color as "r, g, b" — used for boxes and points. */
   rgb?: string;
   /** Legend name for the box-trace group. */
@@ -183,6 +190,19 @@ export function distributionVsLeadFigure(
       name: `${opts.metricLabel} = 0`,
       hoverinfo: 'skip',
     });
+  }
+  if (opts.referenceLines) {
+    for (const ref of opts.referenceLines) {
+      data.push({
+        type: 'scatter',
+        mode: 'lines',
+        x: [xMin, xMax],
+        y: [ref.y, ref.y],
+        line: { color: ref.color ?? 'green', dash: ref.dash ?? 'dash', width: 1.5 },
+        name: ref.label,
+        hoverinfo: 'skip',
+      });
+    }
   }
 
   const baseTitle = opts.title ?? `${opts.metricLabel} Distribution per Lead Day`;

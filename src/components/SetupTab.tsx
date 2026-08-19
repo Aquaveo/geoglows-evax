@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../state/AppContext';
 import { getReachMetadata } from '../data/reachMetadata';
-import { fetchRetrospective } from '../data/rfs';
+import { getAndCacheRetrospective } from '../data/rfs';
 import { resampleHourly } from '../lib/ingest/resampleHourly';
 import { returnPeriodsFromSeries } from '../lib/gumbel';
 import { ReachMap } from './Map';
@@ -28,7 +28,7 @@ export function SetupTab() {
       app.setRiverId(n);
       const [reach, retro] = await Promise.all([
         getReachMetadata(n),
-        fetchRetrospective(n, 'daily'),
+        getAndCacheRetrospective(n, 'daily'),
       ]);
       app.setReach(reach);
       const retroSeries = { time: retro.time, values: retro.discharge };
