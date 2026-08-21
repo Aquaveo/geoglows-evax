@@ -97,7 +97,7 @@ export function SetupTab() {
           onParsed={(s) => app.setEventData(sortByTime(s))}
         />
         <CsvUploader
-          label="Historical observations (for observed return periods)"
+          label="Historical observations — long record (observed return periods, bias correction, CRPSS)"
           onParsed={(s) => {
             app.setHistoricalData(s);
             try {

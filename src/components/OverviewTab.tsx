@@ -171,6 +171,101 @@ export function OverviewTab() {
       </section>
 
       <section style={sectionStyle}>
+        <h2 style={h2}>Bias correction</h2>
+
+        <h3 style={h3}>Why it exists, and which metrics need it</h3>
+        <p style={p}>
+          GEOGLOWS is a global model, and at any individual reach it can run systematically high
+          or low. Metrics that compare raw discharge values — NSE, KGE′ and its components, and
+          CRPS — therefore measure that bias as much as they measure forecast skill. A model
+          running 40% low will show β near 0.6 and a large squared-error penalty however well it
+          captured the event's shape and timing.
+        </p>
+        <p style={p}>
+          The categorical family is already insulated. Its dual-threshold design classifies
+          observations against observed return periods and forecasts against simulated ones,
+          which absorbs magnitude bias by construction. Correcting the forecasts <em>and</em>{' '}
+          classifying them against simulated thresholds would apply the adjustment twice, so the
+          contingency matrix, MCC, HSS and the timing metrics are deliberately left uncorrected.
+          A bias-corrected variant is offered only for <strong>Accuracy</strong>,{' '}
+          <strong>Probabilistic</strong> and <strong>Skill summary</strong>.
+        </p>
+
+        <h3 style={h3}>The method</h3>
+        <p style={p}>
+          This is a TypeScript port of <code>geoglows.bias.correct_forecast</code>, verified
+          bit-for-bit against the Python package. It is monthly empirical quantile mapping:
+        </p>
+        <ul style={ul}>
+          <li>
+            Take the simulated retrospective values for the forecast's calendar month, build a
+            histogram CDF, and convert each forecast value into an exceedance probability.
+          </li>
+          <li>
+            Take the uploaded observed record for the same month, build its CDF, and read the
+            flow at that same probability back out.
+          </li>
+          <li>
+            The result is a forecast expressed on the observed distribution's scale. Values are
+            clipped at zero.
+          </li>
+        </ul>
+        <p style={p}>
+          Correction is applied to raw forecast values <em>before</em> lead bucketing and before
+          any grid aggregation, because quantile mapping is nonlinear — correcting a daily mean is
+          not the same as averaging corrected sub-daily values.
+        </p>
+        <p style={p}>
+          It requires the <strong>historical observations</strong> upload, not the event CSV: a
+          few days of data cannot form a monthly distribution. That upload also gates CRPSS,
+          which needs an observed climatological baseline.
+        </p>
+
+        <h3 style={h3}>Limits worth knowing before you trust it</h3>
+        <ul style={ul}>
+          <li>
+            <strong>Extreme forecasts can map to infinity.</strong> The method's histogram bins
+            deliberately extend past the data, which leaves the top of each CDF flat. Inverting a
+            flat region is undefined, so a forecast above the simulated monthly maximum can map
+            to infinity rather than a number. Whether it does turns on a floating-point margin
+            between the two CDFs. Any run this affects is excluded whole, with the reason shown —
+            excluding only the offending timesteps would delete exactly the peaks and flatter the
+            remaining scores.
+          </li>
+          <li>
+            <strong>Low flows keep their raw values.</strong> Below the simulated monthly minimum
+            the mapping is likewise undefined, and the reference implementation retains the
+            original number there. Those cells are therefore uncorrected; the count is reported
+            in the banner rather than hidden, because the values look entirely plausible.
+          </li>
+          <li>
+            <strong>The distributions are daily.</strong> Forecasts are typically sub-daily, so
+            sub-daily peaks are compressed toward the observed daily maximum. β and KGE′ can
+            improve while peak magnitude is degraded.
+          </li>
+          <li>
+            <strong>A short observed record lowers the ceiling.</strong> The mapping cannot
+            produce a flow larger than the observed record contains for that month, so a few
+            years of data will visibly flatten extreme forecasts.
+          </li>
+          <li>
+            <strong>The correction is in-sample.</strong> Your observed record almost certainly
+            contains the event being verified, so corrected scores are optimistic by an
+            unquantified amount.
+          </li>
+          <li>
+            <strong>A dry month collapses the mapping.</strong> An all-zero observed month drives
+            every corrected value to almost zero. The banner flags this as a flat record.
+          </li>
+        </ul>
+        <p style={p}>
+          Bias correction fixes magnitude, not skill. If the model's timing or hydrograph shape is
+          wrong at a reach — visible as low r — correction cannot repair it, and a corrected
+          score that looks much better while r stays poor is worth treating with suspicion.
+        </p>
+      </section>
+
+      <section style={sectionStyle}>
         <h2 style={h2}>The dual-threshold design</h2>
 
         <h3 style={h3}>Motivation</h3>

@@ -13,7 +13,7 @@ import { computePeakTimingError } from '../lib/metrics/peakTiming';
 import { computePeakTimingByRun } from '../lib/metrics/peakTimingByRun';
 import { computeThresholdCrossing } from '../lib/metrics/thresholdCrossing';
 import { kge } from '../lib/metrics/kge';
-import { computeCrpsByLead, buildClimatology } from '../lib/metrics/crps';
+import { computeCrpsByLead, buildClimatology, type CrpsPerLead } from '../lib/metrics/crps';
 import { Plot } from './Plot';
 import {
   distributionVsLeadFigure,
@@ -24,6 +24,8 @@ import { crpssPerLeadFigure } from '../plots/crpssPerLead';
 import { contingencySeriesFigure } from '../plots/contingencySeries';
 import { skillBarsFigure } from '../plots/skillBars';
 import { skillByLead, skillByRun } from '../lib/metrics/skillSummary';
+import { correctForecasts } from '../lib/bias/correctForecasts';
+import type { BiasCorrection } from '../lib/bias/correctForecasts';
 import { PlotNote } from './PlotNote';
 import { detectCadence } from '../lib/ingest/cadence';
 import {
@@ -56,6 +58,102 @@ const MIN_PAIRS_RATIO = 3;
 const FEW_PAIRS_REASON = `fewer than ${MIN_PAIRS_CORRELATION} forecast/observation pairs at this resolution`;
 const TOO_FEW_FOR_RATIO = `fewer than ${MIN_PAIRS_RATIO} pairs`;
 
+/** Which forecast values a metric family is showing. */
+export type MetricVariant = 'raw' | 'corrected';
+
+/** Pairs at one lead: grid bins where both a forecast and an observation exist. */
+function countPairs(bucket: LeadBucket | undefined, obs: TimeSeries): number {
+  if (!bucket || bucket.time.length === 0) return 0;
+  const keys = new Set(obs.time.map((d) => d.getTime()));
+  let n = 0;
+  for (const t of bucket.time) if (keys.has(t.getTime())) n++;
+  return n;
+}
+
+/** Bring one set of lead buckets and the observations onto the comparison grid. */
+function griddedFor(
+  buckets: LeadBuckets,
+  eventData: TimeSeries,
+  stepMs: number,
+  how: Aggregation,
+): { obs: TimeSeries; buckets: LeadBuckets } {
+  const obs = aggregateSeries(eventData, stepMs, how);
+  const out: LeadBuckets = {};
+  for (let lead = 0; lead <= MAX_LEAD; lead++) {
+    out[lead] = aggregateBucket(buckets[lead], stepMs, how);
+  }
+  return { obs, buckets: out };
+}
+
+export interface AccuracyDistributions {
+  kge: PerLeadDistribution;
+  r: PerLeadDistribution;
+  beta: PerLeadDistribution;
+  gamma: PerLeadDistribution;
+}
+
+/**
+ * KGE' and its components per lead, across ensemble members.
+ *
+ * Pure so that the raw and bias-corrected variants are computed by the same
+ * code — anything that diverged between them would be indistinguishable from a
+ * real difference in the forecasts.
+ */
+function accuracyDistributions(
+  buckets: LeadBuckets,
+  eventData: TimeSeries,
+): AccuracyDistributions {
+  const mk = (): PerLeadDistribution => ({ leads: [], values: [], pairs: [], skipped: [] });
+  const kgeDist = mk();
+  const rDist = mk();
+  const betaDist = mk();
+  const gammaDist = mk();
+
+  for (let lead = 0; lead <= MAX_LEAD; lead++) {
+    kgeDist.leads.push(lead);
+    rDist.leads.push(lead);
+    betaDist.leads.push(lead);
+    gammaDist.leads.push(lead);
+
+    const kVals: number[] = [];
+    const rVals: number[] = [];
+    const bVals: number[] = [];
+    const gVals: number[] = [];
+
+    const bucket = buckets[lead];
+    const pairs = countPairs(bucket, eventData);
+    for (const dist of [kgeDist, rDist, betaDist, gammaDist]) dist.pairs!.push(pairs);
+
+    // r, γ and KGE' are joint moments and need a real sample. β is a ratio of
+    // means and survives a much smaller one, so it is guarded separately rather
+    // than being suppressed alongside them.
+    const tooFewForCorrelation = pairs < MIN_PAIRS_CORRELATION;
+    const tooFewForRatio = pairs < MIN_PAIRS_RATIO;
+    kgeDist.skipped!.push(tooFewForCorrelation ? FEW_PAIRS_REASON : null);
+    rDist.skipped!.push(tooFewForCorrelation ? FEW_PAIRS_REASON : null);
+    gammaDist.skipped!.push(tooFewForCorrelation ? FEW_PAIRS_REASON : null);
+    betaDist.skipped!.push(tooFewForRatio ? TOO_FEW_FOR_RATIO : null);
+
+    if (bucket && bucket.time.length > 0) {
+      for (let m = 0; m < MEMBER_COUNT; m++) {
+        const result = kge(memberSeries(bucket, m), eventData);
+        if (!tooFewForCorrelation) {
+          if (Number.isFinite(result.kge)) kVals.push(result.kge);
+          if (Number.isFinite(result.r)) rVals.push(result.r);
+          if (Number.isFinite(result.gamma)) gVals.push(result.gamma);
+        }
+        if (!tooFewForRatio && Number.isFinite(result.beta)) bVals.push(result.beta);
+      }
+    }
+    kgeDist.values.push(kVals);
+    rDist.values.push(rVals);
+    betaDist.values.push(bVals);
+    gammaDist.values.push(gVals);
+  }
+
+  return { kge: kgeDist, r: rDist, beta: betaDist, gamma: gammaDist };
+}
+
 const STAT_OPTIONS: { key: StatKey; label: string }[] = [
   { key: 'median', label: 'Ensemble median' },
   { key: 'mean', label: 'Ensemble mean' },
@@ -64,6 +162,78 @@ const STAT_OPTIONS: { key: StatKey; label: string }[] = [
   { key: 'min', label: 'Ensemble min' },
   { key: 'max', label: 'Ensemble max' },
 ];
+
+/**
+ * Raw / bias-corrected switch. A labelled <select> because that is the only
+ * selector idiom in this codebase — there are no checkbox or toggle components
+ * anywhere in src/.
+ *
+ * Rendered once per block rather than globally: Categorical and Timing
+ * deliberately have no corrected variant (their dual-threshold classification
+ * already absorbs magnitude bias), so a global control would imply they switch.
+ */
+function VariantSelect({
+  value,
+  onChange,
+  disabledReason,
+}: {
+  value: MetricVariant;
+  onChange: (v: MetricVariant) => void;
+  disabledReason: string | null;
+}) {
+  return (
+    <label style={lbl}>
+      Forecasts:&nbsp;
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as MetricVariant)}
+        style={sel}
+      >
+        <option value="raw">Raw</option>
+        <option value="corrected" disabled={!!disabledReason}>
+          Bias-corrected{disabledReason ? ` — ${disabledReason}` : ''}
+        </option>
+      </select>
+    </label>
+  );
+}
+
+/** What the correction actually did, so corrected numbers are never unexplained. */
+function CorrectionBanner({ c }: { c: BiasCorrection }) {
+  return (
+    <div style={correctionBanner}>
+      <strong>Bias-corrected</strong> by monthly quantile mapping of the forecasts onto the
+      uploaded observed record ({c.observedCadence}), using the retrospective (
+      {c.simulatedCadence}) as the simulated distribution.
+      <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.2rem' }}>
+        {c.months.map((m) => (
+          <li key={m.month}>
+            Month {m.month}:{' '}
+            {m.ok
+              ? `${m.nSimulated} simulated and ${m.nObserved} observed values in season`
+              : `no mapping — ${m.reason}`}
+            {m.degenerateRange && ' — flat record, the mapping collapses'}
+          </li>
+        ))}
+        {c.excluded.length > 0 && (
+          <li>
+            <strong>{c.excluded.length} run{c.excluded.length === 1 ? '' : 's'} excluded:</strong>{' '}
+            {c.excluded.slice(0, 3).map((e) => `${e.date} (${e.reason})`).join('; ')}
+            {c.excluded.length > 3 && ` and ${c.excluded.length - 3} more`}
+          </li>
+        )}
+        {c.nanKeptRaw > 0 && (
+          <li>
+            {c.nanKeptRaw} member-timestep{c.nanKeptRaw === 1 ? '' : 's'} kept their{' '}
+            <em>raw</em> value: below the simulated monthly minimum the mapping is undefined,
+            and the reference retains the original number there.
+          </li>
+        )}
+        {c.negativeClipped > 0 && <li>{c.negativeClipped} negative results clipped to zero.</li>}
+      </ul>
+    </div>
+  );
+}
 
 export function MetricsTab() {
   const app = useApp();
@@ -86,6 +256,15 @@ export function MetricsTab() {
   // Probabilistic (CRPS) state
   const [computingCrps, setComputingCrps] = useState(false);
   const [crpsError, setCrpsError] = useState<string | null>(null);
+
+  // Bias-corrected variants. Local state rather than AppContext: app.leadBuckets
+  // must keep meaning *raw* for ForecastTab, and the context's dependency array
+  // is manual and already long.
+  const [correctedAccuracy, setCorrectedAccuracy] = useState<AccuracyDistributions | null>(null);
+  const [correctedCrps, setCorrectedCrps] = useState<CrpsPerLead | null>(null);
+  const [accuracyVariant, setAccuracyVariant] = useState<MetricVariant>('raw');
+  const [skillVariant, setSkillVariant] = useState<MetricVariant>('raw');
+  const [crpsVariant, setCrpsVariant] = useState<MetricVariant>('raw');
 
   const canCompute = !!(
     app.eventData &&
@@ -128,19 +307,54 @@ export function MetricsTab() {
   // built in one memo so they stay in step with the underlying data.
   const gridded = useMemo(() => {
     if (!app.eventData || !rawBuckets || !grid) return null;
-    const build = (how: Aggregation) => {
-      const obs = aggregateSeries(app.eventData!, grid.stepMs, how);
-      const buckets: LeadBuckets = {};
-      for (let lead = 0; lead <= MAX_LEAD; lead++) {
-        buckets[lead] = aggregateBucket(rawBuckets[lead], grid.stepMs, how);
-      }
-      return { obs, buckets };
+    return {
+      mean: griddedFor(rawBuckets, app.eventData, grid.stepMs, 'mean'),
+      max: griddedFor(rawBuckets, app.eventData, grid.stepMs, 'max'),
     };
-    return { mean: build('mean'), max: build('max') };
   }, [app.eventData, rawBuckets, grid]);
 
   const griddedMean = gridded?.mean ?? null;
   const griddedMax = gridded?.max ?? null;
+
+  // --- Bias correction ------------------------------------------------------
+  // Correction runs on RAW forecast values, upstream of lead-bucketing and grid
+  // aggregation, because quantile mapping is nonlinear: correcting a bin mean is
+  // not the mean of corrected values.
+  const correction = useMemo(() => {
+    if (app.forecasts.size === 0 || !app.retro || !app.historicalData) return null;
+    return correctForecasts(app.forecasts, app.retro, app.historicalData);
+  }, [app.forecasts, app.retro, app.historicalData]);
+
+  const correctedBuckets = useMemo(
+    () =>
+      correction && correction.forecasts.size > 0
+        ? reorganizeByLead(correction.forecasts, MAX_LEAD)
+        : null,
+    [correction],
+  );
+
+  // Reuses the SAME grid as the raw side. Correction changes values, not
+  // timestamps — but excluding runs removes timestamps, which could shift
+  // bucketCadence's median and select a different grid. The two variants must
+  // share one grid or they are not comparable.
+  //
+  // Only 'mean' is built: Categorical and Timing stay raw-only, so 'max' is
+  // never needed here.
+  const griddedCorrected = useMemo(() => {
+    if (!app.eventData || !correctedBuckets || !grid) return null;
+    return griddedFor(correctedBuckets, app.eventData, grid.stepMs, 'mean');
+  }, [app.eventData, correctedBuckets, grid]);
+
+  const correctedAvailable = !!griddedCorrected;
+
+  /** Why the corrected variant cannot be offered, if it cannot. */
+  const correctedUnavailableReason = useMemo(() => {
+    if (correctedAvailable) return null;
+    if (!app.historicalData) return 'upload historical observations on the Setup tab';
+    if (!app.retro) return 'load a reach on the Setup tab';
+    if (app.forecasts.size === 0) return 'download forecasts on the Forecast tab';
+    return correction?.unavailable ?? 'correction produced no usable runs';
+  }, [correctedAvailable, app.historicalData, app.retro, app.forecasts.size, correction]);
 
   /** Pairs available per lead once both sides are on the grid. */
   const pairsPerLead = useMemo(() => {
@@ -156,15 +370,6 @@ export function MetricsTab() {
     }
     return best;
   }, [griddedMean]);
-
-  /** Pairs at one lead: grid bins where both a forecast and an observation exist. */
-  function countPairs(bucket: LeadBucket | undefined, obs: TimeSeries): number {
-    if (!bucket || bucket.time.length === 0) return 0;
-    const keys = new Set(obs.time.map((d) => d.getTime()));
-    let n = 0;
-    for (const t of bucket.time) if (keys.has(t.getTime())) n++;
-    return n;
-  }
 
   const canComputeTiming = !!(app.eventData && app.forecasts.size > 0);
   const canComputeCrossing = canComputeTiming && !!(app.obsRp && app.simRp);
@@ -347,58 +552,11 @@ export function MetricsTab() {
         const buckets = griddedMean.buckets;
         const eventData = griddedMean.obs;
 
-        const mk = (): PerLeadDistribution => ({
-          leads: [],
-          values: [],
-          pairs: [],
-          skipped: [],
-        });
-        const kgeDist = mk();
-        const rDist = mk();
-        const betaDist = mk();
-        const gammaDist = mk();
-
-        for (let lead = 0; lead <= MAX_LEAD; lead++) {
-          kgeDist.leads.push(lead);
-          rDist.leads.push(lead);
-          betaDist.leads.push(lead);
-          gammaDist.leads.push(lead);
-
-          const kVals: number[] = [];
-          const rVals: number[] = [];
-          const bVals: number[] = [];
-          const gVals: number[] = [];
-
-          const bucket = buckets[lead];
-          const pairs = countPairs(bucket, eventData);
-          for (const dist of [kgeDist, rDist, betaDist, gammaDist]) dist.pairs!.push(pairs);
-
-          // r, γ and KGE' are joint moments and need a real sample. β is a ratio
-          // of means and survives a much smaller one, so it is guarded separately
-          // rather than being suppressed alongside them.
-          const tooFewForCorrelation = pairs < MIN_PAIRS_CORRELATION;
-          const tooFewForRatio = pairs < MIN_PAIRS_RATIO;
-          kgeDist.skipped!.push(tooFewForCorrelation ? FEW_PAIRS_REASON : null);
-          rDist.skipped!.push(tooFewForCorrelation ? FEW_PAIRS_REASON : null);
-          gammaDist.skipped!.push(tooFewForCorrelation ? FEW_PAIRS_REASON : null);
-          betaDist.skipped!.push(tooFewForRatio ? TOO_FEW_FOR_RATIO : null);
-
-          if (bucket && bucket.time.length > 0) {
-            for (let m = 0; m < MEMBER_COUNT; m++) {
-              const result = kge(memberSeries(bucket, m), eventData);
-              if (!tooFewForCorrelation) {
-                if (Number.isFinite(result.kge)) kVals.push(result.kge);
-                if (Number.isFinite(result.r)) rVals.push(result.r);
-                if (Number.isFinite(result.gamma)) gVals.push(result.gamma);
-              }
-              if (!tooFewForRatio && Number.isFinite(result.beta)) bVals.push(result.beta);
-            }
-          }
-          kgeDist.values.push(kVals);
-          rDist.values.push(rVals);
-          betaDist.values.push(bVals);
-          gammaDist.values.push(gVals);
-        }
+        const dists = accuracyDistributions(buckets, eventData);
+        const { kge: kgeDist, r: rDist, beta: betaDist, gamma: gammaDist } = dists;
+        setCorrectedAccuracy(
+          griddedCorrected ? accuracyDistributions(griddedCorrected.buckets, griddedCorrected.obs) : null,
+        );
 
         app.setKgeDistribution(kgeDist);
         app.setRDistribution(rDist);
@@ -423,19 +581,34 @@ export function MetricsTab() {
         const buckets = griddedMean.buckets;
         const eventData = griddedMean.obs;
 
-        // Climatological reference for the skill score. Null when the
-        // retrospective is missing or too short in season — CRPS still works,
-        // CRPSS is just omitted. The retrospective is daily, so it is aggregated
-        // to the grid too when the grid is coarser than that.
-        const clim = app.retro
+        // CRPSS climatology: ALWAYS the observed record, and required.
+        //
+        // The reference is scored against observations, so a baseline built from
+        // model output is biased wherever the model is — which makes it
+        // artificially easy to beat. Using one shared reference for both variants
+        // is also the only way CRPSS_corrected - CRPSS_raw reflects a change in
+        // the forecast rather than a change in the denominator.
+        //
+        // Without a historical upload there is no honest reference, so CRPSS is
+        // omitted entirely. CRPS itself needs no climatology and still renders.
+        const clim = app.historicalData
           ? buildClimatology(
-              aggregateSeries(app.retro, Math.max(grid!.stepMs, DAY_MS), 'mean'),
+              aggregateSeries(app.historicalData, Math.max(grid!.stepMs, DAY_MS), 'mean'),
               eventData,
               CLIMATOLOGY_WINDOW_DAYS,
             )
           : null;
-        const result = computeCrpsByLead(buckets, eventData, MAX_LEAD, clim);
-        app.setCrpsResults(result);
+        app.setCrpsResults(computeCrpsByLead(buckets, eventData, MAX_LEAD, clim));
+        setCorrectedCrps(
+          griddedCorrected
+            ? computeCrpsByLead(
+                griddedCorrected.buckets,
+                griddedCorrected.obs,
+                MAX_LEAD,
+                clim,
+              )
+            : null,
+        );
       } catch (e) {
         setCrpsError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -475,6 +648,78 @@ export function MetricsTab() {
     const obs = aggregateSeries(app.eventData, grid.stepMs, 'mean');
     return skillByRun(gridded, obs, { minPairs: MIN_PAIRS_CORRELATION });
   }, [app.forecasts, app.eventData, grid]);
+
+  /** Which accuracy distributions the plots should render. */
+  const accuracyDisplay = useMemo(() => {
+    if (accuracyVariant === 'corrected' && correctedAccuracy) {
+      return correctedAccuracy;
+    }
+    return {
+      kge: app.kgeDistribution,
+      r: app.rDistribution,
+      beta: app.betaDistribution,
+      gamma: app.gammaDistribution,
+    };
+  }, [
+    accuracyVariant,
+    correctedAccuracy,
+    app.kgeDistribution,
+    app.rDistribution,
+    app.betaDistribution,
+    app.gammaDistribution,
+  ]);
+
+  /** Appended to plot titles so a screenshot always says which variant it is. */
+  const variantSuffix = (v: MetricVariant) => (v === 'corrected' ? ' (bias-corrected)' : '');
+
+  const skillLeadCorrected = useMemo(
+    () =>
+      griddedCorrected
+        ? skillByLead(griddedCorrected.buckets, griddedCorrected.obs, {
+            minPairs: MIN_PAIRS_CORRELATION,
+            maxLead: MAX_LEAD,
+          })
+        : null,
+    [griddedCorrected],
+  );
+
+  const skillRunCorrected = useMemo(() => {
+    if (!app.eventData || !correction || correction.forecasts.size === 0 || !grid) return null;
+    const griddedRuns = new Map<string, { time: Date[]; discharge: number[][] }>();
+    for (const [date, run] of correction.forecasts) {
+      const perMember = run.discharge.map((series) =>
+        aggregateSeries({ time: run.time, values: series }, grid.stepMs, 'mean'),
+      );
+      if (perMember.length === 0) continue;
+      griddedRuns.set(date, {
+        time: perMember[0].time,
+        discharge: perMember.map((x) => x.values),
+      });
+    }
+    const obs = aggregateSeries(app.eventData, grid.stepMs, 'mean');
+    const rows = skillByRun(griddedRuns, obs, { minPairs: MIN_PAIRS_CORRELATION });
+    // Excluded runs appear as labelled n/a bars, so a run vanishing from the
+    // corrected view is visible rather than silent.
+    for (const ex of correction.excluded) {
+      const label = /^\d{8}$/.test(ex.date)
+        ? `${ex.date.slice(0, 4)}-${ex.date.slice(4, 6)}-${ex.date.slice(6, 8)}`
+        : ex.date;
+      rows.push({ label, nse: NaN, kge: NaN, pairs: 0, members: 0, skipped: ex.reason });
+    }
+    rows.sort((a, b) => a.label.localeCompare(b.label));
+    return rows;
+  }, [app.eventData, correction, grid]);
+
+  const skillDisplay = useMemo(
+    () =>
+      skillVariant === 'corrected' && skillLeadCorrected
+        ? { lead: skillLeadCorrected, run: skillRunCorrected }
+        : { lead: skillLead, run: skillRun },
+    [skillVariant, skillLeadCorrected, skillRunCorrected, skillLead, skillRun],
+  );
+
+  const crpsDisplay =
+    crpsVariant === 'corrected' && correctedCrps ? correctedCrps : app.crpsResults;
 
   // Peak timing grouped by how far ahead of the observed peak each run was
   // issued. Works straight off the raw forecasts — no lead buckets needed, so
@@ -876,7 +1121,7 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Accuracy metrics"
-        description="Kling-Gupta efficiency (KGE') and its decomposition: Pearson correlation r, bias ratio β = μ_f/μ_o, variability ratio γ = CV_f/CV_o (Kling et al., 2012)."
+        description="Kling-Gupta efficiency (KGE') and its decomposition: Pearson correlation r, bias ratio β = μ_f/μ_o, variability ratio γ = CV_f/CV_o (Kling et al., 2012). These compare raw discharge, so a bias-corrected variant is available once historical observations are uploaded."
       >
         {!canComputeAccuracy && (
           <p style={{ color: '#555' }}>
@@ -895,10 +1140,21 @@ export function MetricsTab() {
         {accuracyError && <p style={{ color: '#b91c1c' }}>{accuracyError}</p>}
 
         {app.kgeDistribution && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <VariantSelect
+              value={accuracyVariant}
+              onChange={setAccuracyVariant}
+              disabledReason={correctedAccuracy ? null : correctedUnavailableReason}
+            />
+            {accuracyVariant === 'corrected' && correction && <CorrectionBanner c={correction} />}
+          </div>
+        )}
+
+        {accuracyDisplay.kge && (
           <div style={subBlock}>
             <h3 style={h3}>KGE' distribution by lead day</h3>
             <Plot
-              {...distributionVsLeadFigure(app.kgeDistribution, {
+              {...distributionVsLeadFigure(accuracyDisplay.kge!, {
                 metricLabel: "KGE'",
                 title: `KGE' Distribution per Lead Day${riverIdSuffix}`,
                 subtitle:
@@ -922,11 +1178,11 @@ export function MetricsTab() {
           </div>
         )}
 
-        {app.rDistribution && (
+        {accuracyDisplay.r && (
           <div style={subBlock}>
             <h3 style={h3}>Pearson correlation (r) by lead day</h3>
             <Plot
-              {...distributionVsLeadFigure(app.rDistribution, {
+              {...distributionVsLeadFigure(accuracyDisplay.r!, {
                 metricLabel: 'r',
                 title: `Pearson Correlation per Lead Day${riverIdSuffix}`,
                 subtitle: 'KGE component  |  51 members (leads 0–15)',
@@ -945,11 +1201,11 @@ export function MetricsTab() {
           </div>
         )}
 
-        {app.betaDistribution && (
+        {accuracyDisplay.beta && (
           <div style={subBlock}>
             <h3 style={h3}>Bias ratio (β) by lead day</h3>
             <Plot
-              {...distributionVsLeadFigure(app.betaDistribution, {
+              {...distributionVsLeadFigure(accuracyDisplay.beta!, {
                 metricLabel: 'β',
                 title: `Bias Ratio per Lead Day${riverIdSuffix}`,
                 subtitle:
@@ -968,11 +1224,11 @@ export function MetricsTab() {
           </div>
         )}
 
-        {app.gammaDistribution && (
+        {accuracyDisplay.gamma && (
           <div style={subBlock}>
             <h3 style={h3}>Variability ratio (γ) by lead day</h3>
             <Plot
-              {...distributionVsLeadFigure(app.gammaDistribution, {
+              {...distributionVsLeadFigure(accuracyDisplay.gamma!, {
                 metricLabel: 'γ',
                 title: `Variability Ratio per Lead Day${riverIdSuffix}`,
                 subtitle:
@@ -994,7 +1250,7 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Skill summary"
-        description="NSE and KGE' side by side, coloured by performance band — a single glance at where the forecast is usable. One view by lead day, one by forecast initialization."
+        description="NSE and KGE' side by side, coloured by performance band — a single glance at where the forecast is usable. One view by lead day, one by forecast initialization. Both compare raw discharge, so a bias-corrected variant is available."
       >
         {!skillLead && !skillRun && (
           <p style={{ color: '#555' }}>
@@ -1002,13 +1258,24 @@ export function MetricsTab() {
           </p>
         )}
 
-        {skillLead && (
+        {(skillLead || skillLeadCorrected) && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <VariantSelect
+              value={skillVariant}
+              onChange={setSkillVariant}
+              disabledReason={skillLeadCorrected ? null : correctedUnavailableReason}
+            />
+            {skillVariant === 'corrected' && correction && <CorrectionBanner c={correction} />}
+          </div>
+        )}
+
+        {skillDisplay.lead && (
           <div style={subBlock}>
             <h3 style={h3}>By lead day</h3>
             <Plot
-              {...skillBarsFigure(skillLead, {
+              {...skillBarsFigure(skillDisplay.lead!, {
                 categoryLabel: 'Lead day',
-                title: `Skill by Lead Day${riverIdSuffix}`,
+                title: `Skill by Lead Day${riverIdSuffix}${variantSuffix(skillVariant)}`,
                 subtitle:
                   'Median across the 51 ensemble members  |  bars coloured by band  |' +
                   ` dotted = do-nothing benchmark (NSE 0, KGE' ${'−'}0.41), dashed = 0.5`,
@@ -1032,13 +1299,13 @@ export function MetricsTab() {
           </div>
         )}
 
-        {skillRun && skillRun.length > 0 && (
+        {skillDisplay.run && skillDisplay.run.length > 0 && (
           <div style={subBlock}>
             <h3 style={h3}>By forecast initialization</h3>
             <Plot
-              {...skillBarsFigure(skillRun, {
+              {...skillBarsFigure(skillDisplay.run!, {
                 categoryLabel: 'Initialized (UTC)',
-                title: `Skill by Forecast Run${riverIdSuffix}`,
+                title: `Skill by Forecast Run${riverIdSuffix}${variantSuffix(skillVariant)}`,
                 subtitle:
                   "Each run scored over its own horizon against the observed event  |  median of 51 members",
               })}
@@ -1063,7 +1330,7 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Probabilistic metrics"
-        description="Continuous Ranked Probability Score (CRPS) via the energy-score decomposition (Gneiting & Raftery, 2007): CRPS = MAE component − Spread. Evaluates the 51-member ensemble as a distribution; one scalar per lead day. CRPSS = 1 − CRPS/CRPS_climatology normalises it against a seasonal climatological forecast."
+        description="Continuous Ranked Probability Score (CRPS) via the energy-score decomposition (Gneiting & Raftery, 2007): CRPS = MAE component − Spread. Evaluates the 51-member ensemble as a distribution; one scalar per lead day. CRPSS = 1 − CRPS/CRPS_climatology normalises it against a seasonal climatological forecast built from the observed record, which is why it requires the historical observations upload."
       >
         {!canComputeCrps && (
           <p style={{ color: '#555' }}>
@@ -1082,14 +1349,26 @@ export function MetricsTab() {
         {crpsError && <p style={{ color: '#b91c1c' }}>{crpsError}</p>}
 
         {app.crpsResults && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <VariantSelect
+              value={crpsVariant}
+              onChange={setCrpsVariant}
+              disabledReason={correctedCrps ? null : correctedUnavailableReason}
+            />
+            {crpsVariant === 'corrected' && correction && <CorrectionBanner c={correction} />}
+          </div>
+        )}
+
+        {crpsDisplay && (
           <div style={subBlock}>
             <h3 style={h3}>CRPS and components by lead day</h3>
             <Plot
-              {...crpsPerLeadFigure(app.crpsResults, {
+              {...crpsPerLeadFigure(crpsDisplay, {
                 riverId: app.reach?.riverId ?? undefined,
+                title: `CRPS and Components per Lead Day${riverIdSuffix}${variantSuffix(crpsVariant)}`,
               })}
             />
-            <CrpsTable r={app.crpsResults} />
+            <CrpsTable r={crpsDisplay} />
             <PlotNote>
               the red MAE line is the raw mean absolute error of the members against the
               observation; the green Spread line is the ensemble's internal disagreement (half
@@ -1100,13 +1379,15 @@ export function MetricsTab() {
               being honestly uncertain instead of confidently wrong.
             </PlotNote>
 
-            {app.crpsResults.crpss.some((v) => Number.isFinite(v)) ? (
+            {crpsDisplay.crpss.some((v) => Number.isFinite(v)) ? (
               <div style={{ marginTop: '1.5rem' }}>
                 <h3 style={h3}>CRPS skill score by lead day</h3>
                 <Plot
-                  {...crpssPerLeadFigure(app.crpsResults, {
+                  {...crpssPerLeadFigure(crpsDisplay, {
                     riverId: app.reach?.riverId ?? undefined,
                     windowDays: CLIMATOLOGY_WINDOW_DAYS,
+                    climatologySource: 'observed record',
+                    titleSuffix: variantSuffix(crpsVariant),
                   })}
                 />
                 <PlotNote>
@@ -1123,8 +1404,11 @@ export function MetricsTab() {
               </div>
             ) : (
               <p style={{ color: '#666', marginTop: '1rem', fontSize: '0.9rem' }}>
-                CRPS skill score needs the retrospective record to build a climatological
-                reference — load a reach on the Setup tab to enable it.
+                CRPS skill score needs a climatological reference, and that reference must come
+                from the <strong>observed</strong> record — a baseline built from model output is
+                biased wherever the model is, which makes it artificially easy to beat. Upload
+                historical observations on the Setup tab to enable CRPSS. The CRPS plot above
+                needs no climatology and is unaffected.
               </p>
             )}
           </div>
@@ -1369,6 +1653,15 @@ const btn: React.CSSProperties = {
   padding: '0.4rem 0.8rem',
   fontSize: '1rem',
   cursor: 'pointer',
+};
+const correctionBanner: React.CSSProperties = {
+  margin: '0.75rem 0 1rem',
+  padding: '0.6rem 0.9rem',
+  border: '1px solid #fcd34d',
+  background: '#fffbeb',
+  borderRadius: 6,
+  fontSize: '0.88rem',
+  color: '#4a3a12',
 };
 const lbl: React.CSSProperties = { display: 'inline-flex', alignItems: 'center' };
 const sel: React.CSSProperties = { padding: '0.3rem 0.5rem', fontSize: '0.95rem' };

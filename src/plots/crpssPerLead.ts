@@ -5,6 +5,14 @@ export interface CrpssFigureOptions {
   riverId?: number;
   /** Calendar half-width in days used to sample the climatology. */
   windowDays?: number;
+  /**
+   * Where the climatological reference came from. Always stated on the plot: the
+   * same CRPSS number means different things against an observed baseline and a
+   * model-derived one, so the provenance must never be implicit.
+   */
+  climatologySource?: string;
+  /** e.g. " (bias-corrected)" — appended to the title. */
+  titleSuffix?: string;
 }
 
 /**
@@ -70,10 +78,11 @@ export function crpssPerLeadFigure(
     },
   ];
 
+  const source = opts.climatologySource ?? 'retrospective record';
   const seasonNote =
     opts.windowDays != null
-      ? `Climatology = retrospective values within ±${opts.windowDays} days of the event's time of year`
-      : 'Climatology sampled from the retrospective record';
+      ? `Climatology = ${source} within ±${opts.windowDays} days of the event's time of year`
+      : `Climatology sampled from the ${source}`;
   const counted = r.nTimesteps.filter((n) => n > 0);
   const pairNote =
     counted.length === 0
@@ -82,7 +91,8 @@ export function crpssPerLeadFigure(
         ? `  |  ${counted[0]} pairs per lead`
         : `  |  ${Math.min(...counted)}–${Math.max(...counted)} pairs per lead`;
   const title =
-    `CRPS Skill Score per Lead Day${opts.riverId != null ? `  |  River ${opts.riverId}` : ''}` +
+    `CRPS Skill Score per Lead Day${opts.titleSuffix ?? ''}` +
+    `${opts.riverId != null ? `  |  River ${opts.riverId}` : ''}` +
     `<br><sup>1 − CRPS/CRPS_clim  |  ${seasonNote}${pairNote}</sup>`;
 
   const layout: Partial<Layout> = {
