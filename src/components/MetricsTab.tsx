@@ -25,6 +25,9 @@ import { contingencySeriesFigure } from '../plots/contingencySeries';
 import { skillBarsFigure } from '../plots/skillBars';
 import { skillByLead, skillByRun } from '../lib/metrics/skillSummary';
 import { correctForecasts } from '../lib/bias/correctForecasts';
+import { correctionEffectByLead } from '../lib/bias/correctionEffect';
+import { biasCdfsFigure, biasTransferFigure } from '../plots/biasTransfer';
+import { biasHydrographFigure } from '../plots/biasHydrograph';
 import type { BiasCorrection } from '../lib/bias/correctForecasts';
 import { PlotNote } from './PlotNote';
 import { detectCadence } from '../lib/ingest/cadence';
@@ -265,6 +268,8 @@ export function MetricsTab() {
   const [accuracyVariant, setAccuracyVariant] = useState<MetricVariant>('raw');
   const [skillVariant, setSkillVariant] = useState<MetricVariant>('raw');
   const [crpsVariant, setCrpsVariant] = useState<MetricVariant>('raw');
+  const [biasMonth, setBiasMonth] = useState<number | null>(null);
+  const [biasRunDate, setBiasRunDate] = useState<string | null>(null);
 
   const canCompute = !!(
     app.eventData &&
@@ -720,6 +725,46 @@ export function MetricsTab() {
 
   const crpsDisplay =
     crpsVariant === 'corrected' && correctedCrps ? correctedCrps : app.crpsResults;
+
+  // --- Bias-correction diagnostics ------------------------------------------
+  const biasMonths = useMemo(
+    () => (correction ? [...correction.mappings.keys()].sort((a, b) => a - b) : []),
+    [correction],
+  );
+  const activeBiasMonth =
+    biasMonth != null && biasMonths.includes(biasMonth) ? biasMonth : (biasMonths[0] ?? null);
+  const activeMapping =
+    correction && activeBiasMonth != null ? (correction.mappings.get(activeBiasMonth) ?? null) : null;
+
+  /** Raw forecast values in the selected month, for the transfer-curve rug. */
+  const biasRugValues = useMemo(() => {
+    if (activeBiasMonth == null || app.forecasts.size === 0) return [];
+    const out: number[] = [];
+    for (const run of app.forecasts.values()) {
+      if (run.time.length === 0) continue;
+      if (run.time[0].getUTCMonth() + 1 !== activeBiasMonth) continue;
+      for (const series of run.discharge) {
+        for (const v of series) if (Number.isFinite(v)) out.push(v);
+      }
+    }
+    return out;
+  }, [activeBiasMonth, app.forecasts]);
+
+  const correctionEffect = useMemo(
+    () =>
+      rawBuckets && correctedBuckets
+        ? correctionEffectByLead(rawBuckets, correctedBuckets, MAX_LEAD)
+        : null,
+    [rawBuckets, correctedBuckets],
+  );
+
+  /** Runs available to compare raw against corrected. */
+  const biasRunDates = useMemo(
+    () => (correction ? [...correction.forecasts.keys()].sort() : []),
+    [correction],
+  );
+  const activeBiasRun =
+    biasRunDate && biasRunDates.includes(biasRunDate) ? biasRunDate : (biasRunDates[0] ?? null);
 
   // Peak timing grouped by how far ahead of the observed peak each run was
   // issued. Works straight off the raw forecasts — no lead buckets needed, so
@@ -1243,6 +1288,153 @@ export function MetricsTab() {
               damped peaks and shallow recessions, the usual signature of a smoothed forecast.
               Above 1 it swings harder than reality. Together with β this separates "right shape,
               wrong size" from "wrong shape".
+            </PlotNote>
+          </div>
+        )}
+      </CollapsibleBlock>
+
+      <CollapsibleBlock
+        title="Bias correction"
+        description="What the correction actually does to your forecasts: the transfer curve it applies, the two monthly distributions it matches, how much it shifts each lead day, and one run before and after. Diagnostics only — no metric here."
+      >
+        {!correction && (
+          <p style={{ color: '#555' }}>
+            {correctedUnavailableReason ?? 'Bias correction is not available yet.'}
+          </p>
+        )}
+
+        {correction && <CorrectionBanner c={correction} />}
+
+        {activeMapping && (
+          <>
+            {biasMonths.length > 1 && (
+              <label style={lbl}>
+                Month:&nbsp;
+                <select
+                  value={activeBiasMonth ?? ''}
+                  onChange={(e) => setBiasMonth(Number(e.target.value))}
+                  style={sel}
+                >
+                  {biasMonths.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <div style={subBlock}>
+              <h3 style={h3}>Transfer curve</h3>
+              <Plot
+                {...biasTransferFigure(activeMapping, {
+                  forecastValues: biasRugValues,
+                  riverId: app.reach?.riverId ?? undefined,
+                })}
+              />
+              <PlotNote>
+                read a simulated flow off the bottom axis and the corrected value off the side.
+                Distance from the grey 1:1 line is the size of the correction; where the blue
+                "Applied" line <em>sits on</em> 1:1, the correction is doing nothing there.
+                <br />
+                <br />
+                The red dotted line is the raw quantile map, and its gaps are the whole story
+                behind the caveats. Below the simulated monthly minimum and above its maximum the
+                observed CDF is flat, so the inverse is undefined — at the low end the reference
+                keeps the raw value (hence Applied returning to 1:1), and at the high end it
+                returns infinity and the run is excluded. The black tick marks along the bottom
+                are your actual forecast values, so you can see which part of this curve your
+                event really uses.
+              </PlotNote>
+            </div>
+
+            <div style={subBlock}>
+              <h3 style={h3}>The two distributions being matched</h3>
+              <Plot
+                {...biasCdfsFigure(activeMapping, { riverId: app.reach?.riverId ?? undefined })}
+              />
+              <PlotNote>
+                the correction reads a probability off the blue simulated curve and the flow at
+                that same probability off the black observed one. Horizontal distance between the
+                curves at a given height is the bias being removed. Drawn as steps because they
+                are histogram CDFs, and the flat treads are exactly where the inverse mapping
+                fails — a tall flat segment on the black curve is a wide band of probabilities
+                with no distinct observed flow to map back to.
+              </PlotNote>
+            </div>
+          </>
+        )}
+
+        {correctionEffect && (
+          <div style={subBlock}>
+            <h3 style={h3}>How much it shifts each lead day</h3>
+            <Plot
+              {...distributionVsLeadFigure(correctionEffect, {
+                metricLabel: 'Δ',
+                title: `Correction Shift per Lead Day${riverIdSuffix}`,
+                subtitle: 'corrected − raw, m³/s, across ensemble members  |  above zero = inflated',
+                yAxisLabel: 'corrected − raw (m³/s)',
+                valueFormat: '+.2f',
+                zeroLine: true,
+                membersLabel: 'members',
+              })}
+            />
+            <PlotNote>
+              how far the correction moves the forecast at each lead day. Above the dashed zero
+              line it inflated the values, below it deflated them, and a box sitting on zero means
+              the mapping was a no-op for that lead.
+              <br />
+              <br />
+              One caution about reading a trend here: the transfer curve is the{' '}
+              <strong>same at every lead</strong>, because the simulated distribution comes from
+              the retrospective, which has no lead dimension. So any lead-dependence you see is
+              not the correction treating long leads differently — it is those leads occupying a
+              different part of one fixed curve. That is also the method's main structural limit:
+              forecast error grows with lead, but the correction cannot know that.
+            </PlotNote>
+          </div>
+        )}
+
+        {activeBiasRun && app.eventData && correction && (
+          <div style={subBlock}>
+            <h3 style={h3}>One run, before and after</h3>
+            <label style={lbl}>
+              Run:&nbsp;
+              <select
+                value={activeBiasRun}
+                onChange={(e) => setBiasRunDate(e.target.value)}
+                style={sel}
+              >
+                {biasRunDates.map((d) => (
+                  <option key={d} value={d}>
+                    {`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {app.forecasts.get(activeBiasRun) && (
+              <Plot
+                {...biasHydrographFigure(
+                  app.forecasts.get(activeBiasRun)!,
+                  correction.forecasts.get(activeBiasRun)!,
+                  app.eventData,
+                  {
+                    label: `${activeBiasRun.slice(0, 4)}-${activeBiasRun.slice(4, 6)}-${activeBiasRun.slice(6, 8)}`,
+                    riverId: app.reach?.riverId ?? undefined,
+                  },
+                )}
+              />
+            )}
+            <PlotNote>
+              the plainest test of whether the correction helped: if the blue corrected line moves
+              toward the black observations relative to the grey raw line, it did. If it overshoots
+              past them, the mapping is over-inflating — which happens when the observed record's
+              upper tail is heavier than the simulated one. Where grey and blue coincide the mapping
+              was undefined and the raw value was kept; the subtitle counts those timesteps.
+              <br />
+              <br />
+              Only runs that survived correction appear in this list, so a date missing here was
+              excluded — the banner above says why.
             </PlotNote>
           </div>
         )}

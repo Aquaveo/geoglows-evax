@@ -26,6 +26,12 @@ export interface MonthDiagnostic {
 export interface BiasCorrection {
   /** Runs that survived the exclusion policy. Feed straight to reorganizeByLead. */
   forecasts: Map<string, ForecastRun>
+  /**
+   * The mapping actually used, per calendar month. Exposed so the diagnostic
+   * plots draw the real transfer curve rather than rebuilding it and risking
+   * drift from what was applied.
+   */
+  mappings: Map<number, MonthlyMapping>
   excluded: RunExclusion[]
   months: MonthDiagnostic[]
   /** Cadence the CDFs were built at. */
@@ -78,6 +84,7 @@ export function correctForecasts(
 
   const base: BiasCorrection = {
     forecasts: new Map(),
+    mappings: new Map(),
     excluded: [],
     months: [],
     cdfStepMs,
@@ -191,9 +198,13 @@ export function correctForecasts(
         : 'no runs could be corrected'
       : null
 
+  const usedMappings = new Map<number, MonthlyMapping>()
+  for (const [m, v] of mappings) if (v) usedMappings.set(m, v)
+
   return {
     ...base,
     forecasts: corrected,
+    mappings: usedMappings,
     excluded,
     months,
     nanKeptRaw,
