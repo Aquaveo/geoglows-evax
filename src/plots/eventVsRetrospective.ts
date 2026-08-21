@@ -14,7 +14,7 @@ export interface EventVsRetrospectiveOptions {
 }
 
 /**
- * Uploaded event observations against the GEOGLOWS retrospective simulation.
+ * Uploaded event observations against the RFS retrospective simulation.
  *
  * The retrospective is *sliced* to the event window ± `padDays` rather than
  * plotted in full and clamped with an axis range. That matters for more than
@@ -53,7 +53,7 @@ export function eventVsRetrospectiveFigure(
     {
       type: 'scatter',
       mode: 'lines',
-      name: 'Retrospective (simulated, daily)',
+      name: 'RFS retrospective (simulated, daily)',
       x: retroWindow.time,
       y: retroWindow.values,
       line: { color: '#1f77b4', width: 1.5 },

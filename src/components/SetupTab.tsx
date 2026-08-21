@@ -120,7 +120,7 @@ export function SetupTab() {
         <section style={sectionStyle}>
           <h2 style={h2}>Event vs retrospective</h2>
           <p style={note}>
-            Uploaded event observations against the GEOGLOWS retrospective simulation over the
+            Uploaded event observations against the RFS retrospective simulation over the
             same period. Click a legend entry to hide a series — the y-axis rescales to what is
             left, which is what you want when observed and simulated magnitudes differ.
           </p>
@@ -131,7 +131,7 @@ export function SetupTab() {
             })}
           />
           <PlotNote>
-            black is the discharge you uploaded, blue is what the GEOGLOWS model simulated over
+            black is the discharge you uploaded, blue is what the RFS model simulated over
             the same dates. A persistent gap between them means the model has a magnitude bias at
             this reach — which is why forecasts are later scored against <em>simulated</em>{' '}
             return periods rather than observed ones. If the two peak at different times, that is

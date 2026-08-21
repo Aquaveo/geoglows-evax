@@ -26,10 +26,13 @@ export function OverviewTab() {
           improvement efforts.
         </p>
         <p style={p}>
-          This app implements a verification framework for ECMWF ensemble streamflow forecasts
-          produced by the GEOGLOWS system. The framework evaluates forecasts issued during a
-          specific flood event against observed gauge data, across multiple lead times (0–15 days)
-          and all 51 ensemble members.
+          This app implements a verification framework for the ensemble streamflow forecasts
+          produced by <strong>RFS</strong> (the River Forecast System), the hydrological model
+          delivered through GEOGLOWS. RFS is forced by ECMWF numerical weather prediction output.
+          The framework evaluates forecasts issued during a specific flood event against observed
+          gauge data, across multiple lead times (0–15 days) and all 51 ensemble members.
+          Throughout, "RFS" means the model and "GEOGLOWS" the programme and data service it is
+          published through.
         </p>
 
         <h3 style={h3}>Why ensemble verification is different</h3>
@@ -99,7 +102,7 @@ export function OverviewTab() {
         <h3 style={h3}>The rule</h3>
         <p style={p}>
           Observations are uploaded by the user and can arrive at any sampling interval —
-          15-minute, hourly, 3-hourly, daily. Forecasts arrive at whatever interval GEOGLOWS
+          15-minute, hourly, 3-hourly, daily. Forecasts arrive at whatever interval RFS
           publishes. Every metric in this app therefore compares two series that may not share a
           clock, and the rule it follows is:
         </p>
@@ -175,7 +178,7 @@ export function OverviewTab() {
 
         <h3 style={h3}>Why it exists, and which metrics need it</h3>
         <p style={p}>
-          GEOGLOWS is a global model, and at any individual reach it can run systematically high
+          RFS is a global model, and at any individual reach it can run systematically high
           or low. Metrics that compare raw discharge values — NSE, KGE′ and its components, and
           CRPS — therefore measure that bias as much as they measure forecast skill. A model
           running 40% low will show β near 0.6 and a large squared-error penalty however well it
@@ -193,7 +196,8 @@ export function OverviewTab() {
 
         <h3 style={h3}>The method</h3>
         <p style={p}>
-          This is a TypeScript port of <code>geoglows.bias.correct_forecast</code>, verified
+          This is a TypeScript port of <code>geoglows.bias.correct_forecast</code> (the Python
+          package keeps the programme name), verified
           bit-for-bit against the Python package. It is monthly empirical quantile mapping:
         </p>
         <ul style={ul}>
@@ -271,8 +275,8 @@ export function OverviewTab() {
         <h3 style={h3}>Motivation</h3>
         <p style={p}>
           A fundamental challenge in verifying global hydrological forecasts is that the model's{' '}
-          <em>climatology</em> differs from the observed climatology. GEOGLOWS produces streamflow
-          using a hydrological model forced by numerical weather prediction output. Return-period
+          <em>climatology</em> differs from the observed climatology. RFS produces streamflow by
+          routing numerical weather prediction output through a hydrological model. Return-period
           thresholds derived from this simulated climatology are systematically different from
           those derived from observed gauge records.
         </p>
@@ -291,7 +295,7 @@ export function OverviewTab() {
           </li>
           <li>
             <strong>Forecasts</strong> are classified using return periods computed from the
-            GEOGLOWS retrospective daily simulation, also fitted with a Gumbel distribution.
+            RFS retrospective daily simulation, also fitted with a Gumbel distribution.
           </li>
         </ul>
 
@@ -339,7 +343,7 @@ export function OverviewTab() {
 
         <h3 style={h3}>The challenge: multiple initialization dates</h3>
         <p style={p}>
-          GEOGLOWS issues a new ensemble forecast every day. For a flood event spanning, say, 4
+          RFS issues a new ensemble forecast every day. For a flood event spanning, say, 4
           days, the system has issued forecasts initialized on each of the preceding 15 days plus
           the event days themselves. Each initialization produces a 15-day ensemble covering a
           different temporal window.
