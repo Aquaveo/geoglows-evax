@@ -16,6 +16,24 @@ export interface ContingencyResult {
   overestimation: number;
   /** Total counted timesteps. */
   n: number;
+  /**
+   * The individual timesteps behind the counts, in order. Lets a plot show
+   * exactly which points produced the off-diagonal cells, and guarantees the
+   * picture and the table can never disagree.
+   */
+  detail: ContingencyDetail;
+}
+
+export interface ContingencyDetail {
+  time: Date[];
+  /** Observed discharge at each counted timestep. */
+  obs: number[];
+  /** Forecast discharge at each counted timestep. */
+  fcst: number[];
+  /** Observed return-period category (0 = below the 2-year threshold). */
+  obsCat: number[];
+  /** Forecast return-period category, classified against the simulated thresholds. */
+  fcstCat: number[];
 }
 
 /**
@@ -111,6 +129,8 @@ export function buildContingencyMatrix(
   const matrix: number[][] = [];
   for (let i = 0; i < K; i++) matrix.push(new Array(K).fill(0));
 
+  const detail: ContingencyDetail = { time: [], obs: [], fcst: [], obsCat: [], fcstCat: [] };
+
   const empty: ContingencyResult = {
     matrix,
     categories: cats,
@@ -119,6 +139,7 @@ export function buildContingencyMatrix(
     underestimation: 0,
     overestimation: 0,
     n: 0,
+    detail,
   };
 
   if (forecast.time.length === 0 || observed.time.length === 0) return empty;
@@ -154,6 +175,11 @@ export function buildContingencyMatrix(
     if (oi === undefined || fi === undefined) continue;
     matrix[oi][fi] += 1;
     n += 1;
+    detail.time.push(forecast.time[i]);
+    detail.obs.push(ov);
+    detail.fcst.push(fv);
+    detail.obsCat.push(oc);
+    detail.fcstCat.push(fc);
   }
 
   let hits = 0;
@@ -167,5 +193,14 @@ export function buildContingencyMatrix(
       else over += v;
     }
   }
-  return { matrix, categories: cats, labels, hits, underestimation: under, overestimation: over, n };
+  return {
+    matrix,
+    categories: cats,
+    labels,
+    hits,
+    underestimation: under,
+    overestimation: over,
+    n,
+    detail,
+  };
 }

@@ -1,4 +1,20 @@
+import { useApp } from '../state/AppContext';
+import { detectCadence } from '../lib/ingest/cadence';
+import { chooseGrid } from '../lib/ingest/grid';
+import { ResolutionNotice } from './ResolutionNotice';
+
 export function OverviewTab() {
+  const app = useApp();
+  const obsCadence = app.eventData ? detectCadence(app.eventData) : null;
+
+  // Cadence of the forecast output itself, read off any downloaded run.
+  const firstRun = app.forecasts.values().next().value;
+  const fcstCadence = firstRun
+    ? detectCadence({ time: firstRun.time, values: firstRun.time.map(() => 0) })
+    : null;
+
+  const grid = obsCadence && fcstCadence ? chooseGrid(obsCadence, fcstCadence) : null;
+
   return (
     <div>
       <section style={sectionStyle}>
@@ -75,6 +91,83 @@ export function OverviewTab() {
             </tr>
           </tbody>
         </table>
+      </section>
+
+      <section style={sectionStyle}>
+        <h2 style={h2}>Temporal resolution</h2>
+
+        <h3 style={h3}>The rule</h3>
+        <p style={p}>
+          Observations are uploaded by the user and can arrive at any sampling interval —
+          15-minute, hourly, 3-hourly, daily. Forecasts arrive at whatever interval GEOGLOWS
+          publishes. Every metric in this app therefore compares two series that may not share a
+          clock, and the rule it follows is:
+        </p>
+        <p style={{ ...p, fontWeight: 600, color: '#1f2937' }}>
+          Comparison happens at the coarser of the two resolutions. The finer series is aggregated
+          down; the coarser series is never interpolated up.
+        </p>
+        <p style={p}>
+          Interpolating upward would manufacture data. A daily record stretched to hourly invents
+          23 values for every real measurement, and every metric would then count them as
+          independent samples — inflating the sample size roughly 24-fold, smoothing the
+          hydrograph, and quantising peak timing to whichever hour the daily value sits on while
+          still reporting the answer in hours. Aggregating downward loses detail instead, which is
+          honest, and keeps the pair count equal to the number of real observations.
+        </p>
+
+        <h3 style={h3}>Mean or maximum</h3>
+        <p style={p}>
+          How values are combined inside a bin depends on the question, so the app uses both:
+        </p>
+        <ul style={ul}>
+          <li>
+            <strong>Bin mean</strong> for error and distribution metrics (CRPS, CRPSS, KGE' and its
+            components), which are about volume and shape.
+          </li>
+          <li>
+            <strong>Bin maximum</strong> for the categorical and threshold families (contingency
+            matrix, MCC, HSS, peak timing, threshold crossing), which are about how high the flow
+            got. A daily <em>mean</em> can fall below a return-period threshold that the day's
+            actual flow crossed, which would erase the exceedance the metric exists to detect.
+          </li>
+        </ul>
+        <p style={p}>
+          These answer different questions and are labelled accordingly — "daily maximum discharge"
+          is not "daily mean discharge".
+        </p>
+
+        <h3 style={h3}>Consequences worth knowing</h3>
+        <ul style={ul}>
+          <li>
+            Aggregation snaps timestamps onto exact bin boundaries. Before this, matching required
+            exact millisecond equality, so a gauge reporting at five past the hour matched nothing
+            at all and every metric silently returned zero pairs.
+          </li>
+          <li>
+            Gaps stay gaps. An empty bin produces no forecast/observation pair rather than a filled
+            value.
+          </li>
+          <li>
+            Coarse observations mean few pairs. Daily data over a four-day event yields four pairs
+            per lead day, which is not enough for the correlation-based scores (r, γ, KGE') to mean
+            anything, however confident the box plots look.
+          </li>
+          <li>
+            Peak timing can only resolve to the grid interval. On daily data, Δt<sub>peak</sub> is
+            really answering "which day", not "which hour".
+          </li>
+        </ul>
+
+        <h3 style={h3}>What your current data looks like</h3>
+        {obsCadence || fcstCadence ? (
+          <ResolutionNotice obs={obsCadence} fcst={fcstCadence} grid={grid} />
+        ) : (
+          <p style={p}>
+            Upload an event CSV on the Setup tab and download forecasts on the Forecast tab, and
+            the detected resolutions and the resulting comparison grid will be reported here.
+          </p>
+        )}
       </section>
 
       <section style={sectionStyle}>

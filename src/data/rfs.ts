@@ -48,6 +48,11 @@ export async function getAndCacheForecast(
  * Fetch forecasts for a list of dates with bounded concurrency.
  * Each date is served from IndexedDB when cached, otherwise fetched and saved.
  * `onProgress` reports completed/total as each finishes.
+ *
+ * The returned Map iterates in `dates` order, NOT completion order. Downstream
+ * code (`reorganizeByLead` → every metric) depends on chronological ordering,
+ * and with concurrent workers a cached date resolves while an uncached
+ * neighbour is still in flight, so insertion order is otherwise scrambled.
  */
 export async function fetchForecasts(
   riverId: number,
@@ -75,5 +80,12 @@ export async function fetchForecasts(
   }
 
   await Promise.all(Array.from({ length: Math.min(concurrency, dates.length) }, worker));
-  return results;
+
+  // Re-key in `dates` order. Failed fetches were never set, so they drop out.
+  const ordered = new Map<string, ForecastResult>();
+  for (const date of dates) {
+    const r = results.get(date);
+    if (r) ordered.set(date, r);
+  }
+  return ordered;
 }

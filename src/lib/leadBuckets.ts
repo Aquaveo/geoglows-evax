@@ -44,7 +44,27 @@ export function reorganizeByLead(
       buckets[lead].members.push(row);
     }
   }
+
+  // Every consumer treats a bucket as a chronological series: the metrics take
+  // time[0]/time[last] as the window bounds, and threshold crossing walks the
+  // array in order looking for the *first* ascending crossing. Enforce that
+  // invariant here rather than trusting the order forecasts arrived in.
+  for (let d = 0; d <= maxLead; d++) buckets[d] = sortBucket(buckets[d]);
   return buckets;
+}
+
+function sortBucket(b: LeadBucket): LeadBucket {
+  let ordered = true;
+  for (let i = 1; i < b.time.length; i++) {
+    if (b.time[i].getTime() < b.time[i - 1].getTime()) {
+      ordered = false;
+      break;
+    }
+  }
+  if (ordered) return b;
+  const idx = b.time.map((_, i) => i);
+  idx.sort((a, c) => b.time[a].getTime() - b.time[c].getTime());
+  return { time: idx.map((i) => b.time[i]), members: idx.map((i) => b.members[i]) };
 }
 
 function parseStartDate(yyyymmdd: string): Date | null {

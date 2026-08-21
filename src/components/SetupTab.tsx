@@ -2,13 +2,15 @@ import { useState } from 'react';
 import { useApp } from '../state/AppContext';
 import { getReachMetadata } from '../data/reachMetadata';
 import { getAndCacheRetrospective } from '../data/rfs';
-import { resampleHourly } from '../lib/ingest/resampleHourly';
+import { detectCadence } from '../lib/ingest/cadence';
 import { returnPeriodsFromSeries } from '../lib/gumbel';
 import { ReachMap } from './Map';
 import { CsvUploader } from './CsvUploader';
 import { Plot } from './Plot';
 import { retrospectiveFigure } from '../plots/retrospective';
-import { RP_LEVELS } from '../lib/types';
+import { eventVsRetrospectiveFigure } from '../plots/eventVsRetrospective';
+import { PlotNote } from './PlotNote';
+import { RP_LEVELS, type TimeSeries } from '../lib/types';
 
 export function SetupTab() {
   const app = useApp();
@@ -89,7 +91,10 @@ export function SetupTab() {
         <h2 style={h2}>Upload observed data</h2>
         <CsvUploader
           label="Event observations (must be UTC, datetime + discharge)"
-          onParsed={(s) => app.setEventData(resampleHourly(s))}
+          // Stored at its native cadence — deliberately NOT resampled. The
+          // comparison grid is chosen later, against the forecast cadence, so
+          // that a coarse upload is never interpolated up into invented samples.
+          onParsed={(s) => app.setEventData(sortByTime(s))}
         />
         <CsvUploader
           label="Historical observations (for observed return periods)"
@@ -102,7 +107,44 @@ export function SetupTab() {
             }
           }}
         />
+        {app.eventData && (
+          <p style={{ ...note, marginTop: '0.75rem' }}>
+            Stored at its native{' '}
+            <strong>{detectCadence(app.eventData)?.label ?? 'unknown'}</strong> resolution — see{' '}
+            <em>Temporal resolution</em> on the Overview tab for how this sets the comparison grid.
+          </p>
+        )}
       </section>
+
+      {app.eventData && app.retro && (
+        <section style={sectionStyle}>
+          <h2 style={h2}>Event vs retrospective</h2>
+          <p style={note}>
+            Uploaded event observations against the GEOGLOWS retrospective simulation over the
+            same period. Click a legend entry to hide a series — the y-axis rescales to what is
+            left, which is what you want when observed and simulated magnitudes differ.
+          </p>
+          <Plot
+            {...eventVsRetrospectiveFigure(app.retro, app.eventData, {
+              simRp: app.simRp,
+              obsRp: app.obsRp,
+            })}
+          />
+          <PlotNote>
+            black is the discharge you uploaded, blue is what the GEOGLOWS model simulated over
+            the same dates. A persistent gap between them means the model has a magnitude bias at
+            this reach — which is why forecasts are later scored against <em>simulated</em>{' '}
+            return periods rather than observed ones. If the two peak at different times, that is
+            a timing bias, quantified on the Metrics tab.
+          </PlotNote>
+        </section>
+      )}
+
+      {app.eventData && !app.retro && (
+        <p style={{ ...note, marginBottom: '2rem' }}>
+          Load a reach above to compare the uploaded event against the retrospective simulation.
+        </p>
+      )}
 
       {(app.simRp || app.obsRp) && (
         <section style={sectionStyle}>
@@ -115,6 +157,12 @@ export function SetupTab() {
         <section style={sectionStyle}>
           <h2 style={h2}>Retrospective daily discharge</h2>
           <Plot {...retrospectiveFigure(app.retro)} />
+          <PlotNote>
+            the model's full simulated daily record for this reach. The simulated return periods
+            in the table above are a Gumbel-I fit to this series, so its annual peaks are what
+            set those thresholds. Compare the height of past peaks against your event to judge
+            how unusual the event was in the model's own terms.
+          </PlotNote>
         </section>
       )}
     </div>
@@ -144,6 +192,13 @@ function RpTable({ simRp, obsRp }: { simRp: Record<number, number> | null; obsRp
   );
 }
 
+/** Ascending by timestamp; every downstream metric assumes chronological order. */
+function sortByTime(s: TimeSeries): TimeSeries {
+  const idx = s.time.map((_, i) => i);
+  idx.sort((a, b) => s.time[a].getTime() - s.time[b].getTime());
+  return { time: idx.map((i) => s.time[i]), values: idx.map((i) => s.values[i]) };
+}
+
 const sectionStyle: React.CSSProperties = {
   marginBottom: '2rem',
   padding: '1rem 1.25rem',
@@ -152,6 +207,11 @@ const sectionStyle: React.CSSProperties = {
   background: '#fff',
 };
 const h2: React.CSSProperties = { marginTop: 0, fontSize: '1.05rem' };
+const note: React.CSSProperties = {
+  color: '#555',
+  fontSize: '0.9rem',
+  margin: '0 0 0.5rem',
+};
 const btn: React.CSSProperties = {
   padding: '0.4rem 0.8rem',
   fontSize: '1rem',

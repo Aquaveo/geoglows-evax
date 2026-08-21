@@ -1,13 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../state/AppContext';
 import { fetchForecasts } from '../data/rfs';
-import { dailyDateRange } from '../lib/leadBuckets';
+import { dailyDateRange, reorganizeByLead, statSeries, type StatKey } from '../lib/leadBuckets';
 import { Plot } from './Plot';
 import { forecastFigure } from '../plots/forecasts';
+import { eventVsLeadFigure, type LeadSeries } from '../plots/eventVsLead';
+import { PlotNote } from './PlotNote';
 
 const INIT_LOOKBACK_DAYS = 15;
 const MAX_EVENT_WINDOW_DAYS = 31;
 const DAY_MS = 24 * 3600 * 1000;
+const MAX_LEAD = 15;
+
+const STAT_OPTIONS: { key: StatKey; label: string }[] = [
+  { key: 'median', label: 'Ensemble median' },
+  { key: 'mean', label: 'Ensemble mean' },
+  { key: 'p25', label: 'Ensemble p25' },
+  { key: 'p75', label: 'Ensemble p75' },
+  { key: 'min', label: 'Ensemble min' },
+  { key: 'max', label: 'Ensemble max' },
+];
+
+/** Shown on load; the rest are one legend click away. */
+const DEFAULT_VISIBLE_LEADS = [1, 3, 5, 7, 10, 15];
 
 function utcDayFloor(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -93,6 +108,28 @@ export function ForecastTab() {
   }
 
   const selected = app.selectedDate ? app.forecasts.get(app.selectedDate) ?? null : null;
+
+  // --- Event vs lead time ---
+  const [leadStat, setLeadStat] = useState<StatKey>('median');
+
+  // Reuse the buckets the Metrics tab already built when they are current;
+  // downloading forecasts clears them, so fall back to building our own.
+  const leadBuckets = useMemo(() => {
+    if (app.forecasts.size === 0) return null;
+    return app.leadBuckets ?? reorganizeByLead(app.forecasts, MAX_LEAD);
+  }, [app.leadBuckets, app.forecasts]);
+
+  // Every lead with data gets a trace; the legend decides which are drawn.
+  const leadSeries = useMemo<LeadSeries[]>(() => {
+    if (!leadBuckets) return [];
+    const out: LeadSeries[] = [];
+    for (let lead = 0; lead <= MAX_LEAD; lead++) {
+      const bucket = leadBuckets[lead];
+      if (!bucket || bucket.time.length === 0) continue;
+      out.push({ lead, series: statSeries(bucket, leadStat) });
+    }
+    return out;
+  }, [leadBuckets, leadStat]);
 
   return (
     <div>
@@ -186,7 +223,71 @@ export function ForecastTab() {
             onChange={app.setSelectedDate}
           />
           {selected && app.simRp && (
-            <Plot {...forecastFigure(selected, app.simRp, app.selectedDate!)} />
+            <>
+              <Plot {...forecastFigure(selected, app.simRp, app.selectedDate!)} />
+              <PlotNote>
+                one initialization of the 51-member ensemble. The pale envelope is the full
+                min–max spread and the darker band the 25th–75th percentile, so a wide envelope
+                means the members disagree and the forecast is uncertain. Mean and median far
+                apart indicates a skewed ensemble — usually a minority of members predicting a
+                much larger peak. Height against the simulated return-period bands is the
+                model's own severity signal for this initialization.
+              </PlotNote>
+            </>
+          )}
+        </section>
+      )}
+
+      {app.forecasts.size > 0 && (
+        <section style={section}>
+          <h2 style={h2}>Event vs forecast lead time</h2>
+          {!app.eventData ? (
+            <p style={{ color: '#b91c1c', margin: 0 }}>
+              Upload the event observations CSV on the Setup tab to compare against forecasts.
+            </p>
+          ) : (
+            <>
+              <p style={{ color: '#555', fontSize: '0.9rem', margin: '0 0 0.75rem' }}>
+                Each line holds lead time constant and walks forward through the event: every
+                forecast start date contributes the timesteps that fall that far ahead of its own
+                initialization. Short leads are blue, long leads red. Leads {' '}
+                {DEFAULT_VISIBLE_LEADS.join(', ')} are drawn on load — click legend entries to
+                show the rest or hide the observed series, and the y-axis rescales to what is
+                left.
+              </p>
+              <label style={{ ...dateLabel, marginBottom: '0.75rem' }}>
+                <span>Ensemble statistic</span>
+                <select
+                  value={leadStat}
+                  onChange={(e) => setLeadStat(e.target.value as StatKey)}
+                  style={{ ...dateInput, maxWidth: 220 }}
+                >
+                  {STAT_OPTIONS.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <Plot
+                {...eventVsLeadFigure(app.eventData, leadSeries, {
+                  statLabel: STAT_OPTIONS.find((s) => s.key === leadStat)!.label,
+                  maxLead: MAX_LEAD,
+                  obsRp: app.obsRp,
+                  simRp: app.simRp,
+                  visibleLeads: DEFAULT_VISIBLE_LEADS,
+                })}
+              />
+              <PlotNote>
+                vertical distance from the black observed line is the forecast error at that lead
+                time. If the blue (short-lead) lines hug the observations more closely than the
+                red (long-lead) ones, skill degrades with lead time as expected; lines that stay
+                bunched together mean lead time barely mattered for this event. A line that sits
+                consistently above or below black is a bias at that lead, not a timing problem —
+                a line with the right shape shifted sideways is the reverse.
+              </PlotNote>
+            </>
           )}
         </section>
       )}
