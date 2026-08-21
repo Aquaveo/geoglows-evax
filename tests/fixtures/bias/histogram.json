@@ -1,0 +1,177 @@
+{
+ "versions": {
+  "geoglows": "2.2.0",
+  "numpy": "2.2.3",
+  "scipy": "1.15.2",
+  "pandas": "2.3.0"
+ },
+ "cases": [
+  {
+   "name": "last-edge-closed",
+   "description": "value exactly on the final edge falls in the LAST bin",
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    2.999999
+   ],
+   "bins": [
+    0.0,
+    1.0,
+    2.0,
+    3.0
+   ],
+   "counts": [
+    1,
+    1,
+    3
+   ],
+   "edgesReturned": [
+    0.0,
+    1.0,
+    2.0,
+    3.0
+   ]
+  },
+  {
+   "name": "interior-edge-right-open",
+   "description": "value on an interior edge goes to the UPPER bin",
+   "values": [
+    1.0,
+    2.0
+   ],
+   "bins": [
+    0.0,
+    1.0,
+    2.0,
+    3.0
+   ],
+   "counts": [
+    0,
+    1,
+    1
+   ],
+   "edgesReturned": [
+    0.0,
+    1.0,
+    2.0,
+    3.0
+   ]
+  },
+  {
+   "name": "first-edge",
+   "description": "value exactly on the first edge is counted",
+   "values": [
+    0.0,
+    0.5
+   ],
+   "bins": [
+    0.0,
+    1.0,
+    2.0
+   ],
+   "counts": [
+    2,
+    0
+   ],
+   "edgesReturned": [
+    0.0,
+    1.0,
+    2.0
+   ]
+  },
+  {
+   "name": "outside-dropped",
+   "description": "values outside the range are not counted at all",
+   "values": [
+    -5.0,
+    0.5,
+    99.0
+   ],
+   "bins": [
+    0.0,
+    1.0,
+    2.0
+   ],
+   "counts": [
+    1,
+    0
+   ],
+   "edgesReturned": [
+    0.0,
+    1.0,
+    2.0
+   ]
+  },
+  {
+   "name": "negative-bins",
+   "description": "bins starting below zero, as buildMonthlyCdf always does",
+   "values": [
+    -0.5,
+    0.0,
+    0.4,
+    1.2
+   ],
+   "bins": [
+    -1.0,
+    0.0,
+    1.0,
+    2.0
+   ],
+   "counts": [
+    1,
+    2,
+    1
+   ],
+   "edgesReturned": [
+    -1.0,
+    0.0,
+    1.0,
+    2.0
+   ]
+  },
+  {
+   "name": "single-bin",
+   "description": "one bin, closed at both ends",
+   "values": [
+    0.0,
+    0.5,
+    1.0
+   ],
+   "bins": [
+    0.0,
+    1.0
+   ],
+   "counts": [
+    3
+   ],
+   "edgesReturned": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "name": "all-outside",
+   "description": "nothing lands in range",
+   "values": [
+    10.0,
+    20.0
+   ],
+   "bins": [
+    0.0,
+    1.0,
+    2.0
+   ],
+   "counts": [
+    0,
+    0
+   ],
+   "edgesReturned": [
+    0.0,
+    1.0,
+    2.0
+   ]
+  }
+ ]
+}
