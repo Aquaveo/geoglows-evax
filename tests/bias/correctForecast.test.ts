@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { BiasCorrectionError } from '../../src/lib/bias/quantileMap'
 import { correctForecastLike } from '../../src/lib/bias/correctForecast'
-import type { ForecastRunLike } from '../../src/lib/bias/correctForecast'
+import type { ForecastRun } from '../../src/lib/bias/correctForecast'
 import { expectBitEqual, reviveNumbers, seriesValues } from '../fixtures/load'
 import fixture from '../fixtures/bias/correct-forecast.json'
 
@@ -19,7 +19,7 @@ describe(`correct_forecast parity (geoglows ${fixture.versions.geoglows})`, () =
   for (const c of fixture.cases) {
     const sim = toTimeSeries(records[c.simulatedRef])
     const obs = toTimeSeries(records[c.observedRef])
-    const run: ForecastRunLike = {
+    const run: ForecastRun = {
       time: c.forecast.time.map((t) => new Date(`${t}Z`)),
       discharge: c.forecast.members.map((m) => reviveNumbers(m)),
     }

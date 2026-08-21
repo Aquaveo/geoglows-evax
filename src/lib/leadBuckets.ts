@@ -1,5 +1,4 @@
-import type { ForecastResult } from '../data/rfs';
-import type { LeadBucket, LeadBuckets, TimeSeries } from './types';
+import type { ForecastRun, LeadBucket, LeadBuckets, TimeSeries } from './types';
 
 const HOUR_MS = 3600 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -13,7 +12,7 @@ const MEMBER_COUNT = 51;
  *   lead d  → ((d-1)·24h, d·24h]  for d >= 1
  */
 export function reorganizeByLead(
-  forecasts: Map<string, ForecastResult>,
+  forecasts: Map<string, ForecastRun>,
   maxLead = 15,
 ): LeadBuckets {
   const buckets: LeadBuckets = {};

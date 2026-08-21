@@ -1,14 +1,9 @@
-import type { TimeSeries } from '../types';
+import type { ForecastRun, TimeSeries } from '../types';
 
 const HOUR_MS = 3600 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
-/** Structural shape of a forecast run — matches `ForecastResult` without the dependency. */
-export interface ForecastRun {
-  time: Date[];
-  /** [member][timestep]. */
-  discharge: number[][];
-}
+export type { ForecastRun };
 
 export interface PeakTimingByRunOptions {
   /**

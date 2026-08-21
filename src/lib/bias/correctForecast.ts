@@ -1,12 +1,9 @@
-import type { TimeSeries } from '../types'
+import type { ForecastRun, TimeSeries } from '../types'
 import { BiasCorrectionError, buildMonthlyCdf, flowToProbability, probabilityToFlow } from './quantileMap'
 import type { MonthlyCdf } from './quantileMap'
 
-/** Structural shape of a forecast run: `discharge` is [member][timestep]. */
-export interface ForecastRunLike {
-  time: Date[]
-  discharge: number[][]
-}
+/** Re-exported for callers that only import from this module. */
+export type { ForecastRun }
 
 /** The pair of CDFs that define one month's mapping. */
 export interface MonthlyMapping {
@@ -96,7 +93,7 @@ export function mapValue(m: MonthlyMapping, v: number): number {
  * Finally the whole frame is clipped at 0 and sorted by time.
  */
 export function correctForecastRun(
-  run: ForecastRunLike,
+  run: ForecastRun,
   mapping: MonthlyMapping,
 ): CorrectedRun {
   const nT = run.time.length
@@ -157,7 +154,7 @@ export function correctForecastRun(
 
 /** Full-signature convenience mirroring `correct_forecast`, used by the fixtures. */
 export function correctForecastLike(
-  run: ForecastRunLike,
+  run: ForecastRun,
   simulated: TimeSeries,
   observed: TimeSeries,
   useMonth: 0 | -1 = 0,

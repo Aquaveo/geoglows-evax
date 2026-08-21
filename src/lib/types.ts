@@ -4,6 +4,18 @@ export interface TimeSeries {
   values: number[];
 }
 
+/**
+ * Structural shape of one forecast run. `ForecastResult` from the
+ * riverforecastsystem package is assignable to this, but a locally-derived run
+ * (e.g. bias-corrected values) cannot supply that type's `stats`, so anything
+ * that only needs time + members should accept this instead.
+ */
+export interface ForecastRun {
+  time: Date[];
+  /** [member][timestep]. */
+  discharge: number[][];
+}
+
 /** Return-period thresholds in m³/s, keyed by RP year (2, 5, 10, 25, 50, 100). */
 export type RpThresholds = Record<number, number>;
 

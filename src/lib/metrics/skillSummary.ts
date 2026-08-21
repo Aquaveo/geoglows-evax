@@ -1,4 +1,4 @@
-import type { LeadBuckets, TimeSeries } from '../types';
+import type { ForecastRun, LeadBuckets, TimeSeries } from '../types';
 import { memberSeries } from '../leadBuckets';
 import { kge } from './kge';
 
@@ -88,7 +88,7 @@ export function skillByLead(
  * are a single ensemble.
  */
 export function skillByRun(
-  forecasts: Map<string, { time: Date[]; discharge: number[][] }>,
+  forecasts: Map<string, ForecastRun>,
   observed: TimeSeries,
   opts: SkillSummaryOptions = {},
 ): SkillRow[] {
