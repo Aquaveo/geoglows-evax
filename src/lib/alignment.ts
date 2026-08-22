@@ -48,3 +48,21 @@ export function alignTimes(forecast: TimeSeries, observed: TimeSeries): {
   }
   return { time, forecast: f, observed: o };
 }
+
+/**
+ * Timestamps present in both series, ignoring member-level gaps.
+ *
+ * The achievable overlap for a bucket or run — an upper bound on any single
+ * member's pair count, and the right denominator to report, since individual
+ * members can each be missing different timesteps.
+ */
+export function countAlignedPairs(time: readonly Date[], observed: TimeSeries): number {
+  if (time.length === 0 || observed.time.length === 0) return 0;
+  const keys = new Set<number>();
+  for (let i = 0; i < observed.time.length; i++) {
+    if (Number.isFinite(observed.values[i])) keys.add(observed.time[i].getTime());
+  }
+  let n = 0;
+  for (const t of time) if (keys.has(t.getTime())) n++;
+  return n;
+}

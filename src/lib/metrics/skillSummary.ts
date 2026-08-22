@@ -1,5 +1,6 @@
 import type { ForecastRun, LeadBuckets, TimeSeries } from '../types';
 import { memberSeries } from '../leadBuckets';
+import { countAlignedPairs } from '../alignment';
 import { kge } from './kge';
 
 /** One bar row: a lead day or a forecast run, scored on NSE and KGE'. */
@@ -50,22 +51,35 @@ export function skillByLead(
     const memberCount = bucket.members[0]?.length ?? 0;
     const nseVals: number[] = [];
     const kgeVals: number[] = [];
-    let pairs = 0;
+    // Member-independent: individual members can each be missing different
+    // timesteps (the fetched ensemble is union-joined across cadences and padded
+    // with NaN), so no single member's count describes the lead.
+    const pairs = countAlignedPairs(bucket.time, observed);
+    let bestMemberPairs = 0;
+
     for (let m = 0; m < memberCount; m++) {
       const res = kge(memberSeries(bucket, m), observed);
-      pairs = res.n;
+      if (res.n > bestMemberPairs) bestMemberPairs = res.n;
+      // Score only members with their own adequate sample. A member with four
+      // aligned points yields a wild-but-finite score that would otherwise enter
+      // the median beside members with thirty.
+      if (res.n < minPairs) continue;
       if (Number.isFinite(res.nse)) nseVals.push(res.nse);
       if (Number.isFinite(res.kge)) kgeVals.push(res.kge);
     }
 
-    if (pairs < minPairs) {
+    const scored = Math.max(nseVals.length, kgeVals.length);
+    if (scored === 0) {
       rows.push({
         label,
         nse: NaN,
         kge: NaN,
         pairs,
         members: 0,
-        skipped: `only ${pairs} pair${pairs === 1 ? '' : 's'}`,
+        skipped:
+          pairs < minPairs
+            ? `only ${pairs} overlapping timestep${pairs === 1 ? '' : 's'}`
+            : `no member had ${minPairs} usable pairs (best ${bestMemberPairs})`,
       });
       continue;
     }
@@ -74,7 +88,7 @@ export function skillByLead(
       nse: median(nseVals),
       kge: median(kgeVals),
       pairs,
-      members: Math.max(nseVals.length, kgeVals.length),
+      members: scored,
     });
   }
   return rows;
@@ -107,24 +121,31 @@ export function skillByRun(
 
     const nseVals: number[] = [];
     const kgeVals: number[] = [];
-    let pairs = 0;
+    const pairs = countAlignedPairs(run.time, observed);
+    let bestMemberPairs = 0;
+
     for (let m = 0; m < run.discharge.length; m++) {
       const series = run.discharge[m];
       if (!series) continue;
       const res = kge({ time: run.time, values: series }, observed);
-      pairs = res.n;
+      if (res.n > bestMemberPairs) bestMemberPairs = res.n;
+      if (res.n < minPairs) continue;
       if (Number.isFinite(res.nse)) nseVals.push(res.nse);
       if (Number.isFinite(res.kge)) kgeVals.push(res.kge);
     }
 
-    if (pairs < minPairs) {
+    const scored = Math.max(nseVals.length, kgeVals.length);
+    if (scored === 0) {
       rows.push({
         label,
         nse: NaN,
         kge: NaN,
         pairs,
         members: 0,
-        skipped: `only ${pairs} pair${pairs === 1 ? '' : 's'} overlapping the event`,
+        skipped:
+          pairs < minPairs
+            ? `only ${pairs} timestep${pairs === 1 ? '' : 's'} overlapping the event`
+            : `no member had ${minPairs} usable pairs (best ${bestMemberPairs})`,
       });
       continue;
     }
@@ -133,7 +154,7 @@ export function skillByRun(
       nse: median(nseVals),
       kge: median(kgeVals),
       pairs,
-      members: Math.max(nseVals.length, kgeVals.length),
+      members: scored,
     });
   }
 

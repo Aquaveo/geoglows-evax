@@ -18,6 +18,14 @@ export interface SkillBarsOptions {
   subtitle?: string;
   /** Sort descending by NSE rather than keeping the natural row order. */
   sortByScore?: boolean;
+  /**
+   * Axis floor. Both scores are unbounded below, and a single catastrophic value
+   * (NSE of -1250 is entirely possible on a badly biased reach) flattens every
+   * other bar to invisibility. Below about -1 the exact number carries no extra
+   * meaning — it is all "far worse than predicting the mean" — so bars are drawn
+   * to this floor and annotated with their true value instead.
+   */
+  floor?: number;
 }
 
 function bandColor(v: number): string {
@@ -48,10 +56,11 @@ export function skillBarsFigure(
   // Plotly draws the first category at the bottom; reverse so the natural
   // order reads top-to-bottom.
   const display = [...ordered].reverse();
+  const floor = opts.floor ?? -1;
+  const clampToFloor = (v: number) => (Number.isFinite(v) && v < floor ? floor : v);
   const labels = display.map((r) => r.label);
-  const nse = display.map((r) => (Number.isFinite(r.nse) ? r.nse : null));
-  const kge = display.map((r) => (Number.isFinite(r.kge) ? r.kge : null));
-  const meta = display.map((r) => [r.pairs, r.members, r.skipped ?? ''] as [number, number, string]);
+  const nse = display.map((r) => (Number.isFinite(r.nse) ? clampToFloor(r.nse) : null));
+  const kge = display.map((r) => (Number.isFinite(r.kge) ? clampToFloor(r.kge) : null));
 
   const data: Data[] = [
     {
@@ -63,9 +72,9 @@ export function skillBarsFigure(
       xaxis: 'x',
       yaxis: 'y',
       showlegend: false,
-      customdata: meta,
+      customdata: display.map((r) => [r.pairs, r.members, r.nse] as [number, number, number]),
       hovertemplate:
-        '<b>%{y}</b><br>NSE: %{x:.3f}<br>%{customdata[0]} pairs, %{customdata[1]} members<extra></extra>',
+        '<b>%{y}</b><br>NSE: %{customdata[2]:.3f}<br>%{customdata[0]} pairs, %{customdata[1]} members<extra></extra>',
     },
     {
       type: 'bar',
@@ -76,9 +85,9 @@ export function skillBarsFigure(
       xaxis: 'x2',
       yaxis: 'y2',
       showlegend: false,
-      customdata: meta,
+      customdata: display.map((r) => [r.pairs, r.members, r.kge] as [number, number, number]),
       hovertemplate:
-        "<b>%{y}</b><br>KGE': %{x:.3f}<br>%{customdata[0]} pairs, %{customdata[1]} members<extra></extra>",
+        "<b>%{y}</b><br>KGE': %{customdata[2]:.3f}<br>%{customdata[0]} pairs, %{customdata[1]} members<extra></extra>",
     },
   ];
 
@@ -118,6 +127,34 @@ export function skillBarsFigure(
     font: { size: 10, color: '#b45309' },
   }));
 
+  // Bars that ran off the floor: say what they actually are, on their own panel.
+  for (const r of display) {
+    if (Number.isFinite(r.nse) && r.nse < floor) {
+      annotations.push({
+        x: floor,
+        y: r.label,
+        xref: 'x' as const,
+        yref: 'y' as const,
+        text: `◄ ${r.nse.toFixed(r.nse > -100 ? 1 : 0)}`,
+        showarrow: false,
+        xanchor: 'left' as const,
+        font: { size: 10, color: COLOR_POOR },
+      });
+    }
+    if (Number.isFinite(r.kge) && r.kge < floor) {
+      annotations.push({
+        x: floor,
+        y: r.label,
+        xref: 'x2' as const,
+        yref: 'y2' as const,
+        text: `◄ ${r.kge.toFixed(r.kge > -100 ? 1 : 0)}`,
+        showarrow: false,
+        xanchor: 'left' as const,
+        font: { size: 10, color: COLOR_POOR },
+      });
+    }
+  }
+
   const refLine = (
     x: number,
     axis: 'x' | 'x2',
@@ -134,17 +171,38 @@ export function skillBarsFigure(
     line: { color: 'rgba(70,70,70,0.75)', width: 1.25, dash },
   });
 
+  const nseFinite = display.map((r) => r.nse).filter((v) => Number.isFinite(v) && v >= floor);
+  const kgeFinite = display.map((r) => r.kge).filter((v) => Number.isFinite(v) && v >= floor);
+
   const layout: Partial<Layout> = {
     title: {
-      text: opts.subtitle
-        ? `${opts.title ?? 'Skill summary'}<br><sup>${opts.subtitle}</sup>`
-        : (opts.title ?? 'Skill summary'),
+      text: (() => {
+        const clamped = display.filter(
+          (r) =>
+            (Number.isFinite(r.nse) && r.nse < floor) || (Number.isFinite(r.kge) && r.kge < floor),
+        ).length;
+        const note = clamped > 0 ? `  |  ${clamped} row${clamped === 1 ? '' : 's'} clipped at ${floor}, true value labelled` : '';
+        const sub = `${opts.subtitle ?? ''}${note}`;
+        return sub ? `${opts.title ?? 'Skill summary'}<br><sup>${sub}</sup>` : (opts.title ?? 'Skill summary');
+      })(),
       x: 0.5,
     },
     margin: { l: 130, r: 30, t: 70, b: 60 },
     // Two panels, one shared row order.
-    xaxis: { domain: [0, 0.46], title: { text: 'NSE' }, zeroline: true, zerolinecolor: '#444' },
-    xaxis2: { domain: [0.54, 1], title: { text: "KGE'" }, zeroline: true, zerolinecolor: '#444' },
+    xaxis: {
+      domain: [0, 0.46],
+      title: { text: 'NSE' },
+      zeroline: true,
+      zerolinecolor: '#444',
+      range: [floor, Math.max(1, ...nseFinite)],
+    },
+    xaxis2: {
+      domain: [0.54, 1],
+      title: { text: "KGE'" },
+      zeroline: true,
+      zerolinecolor: '#444',
+      range: [floor, Math.max(1, ...kgeFinite)],
+    },
     yaxis: { type: 'category', automargin: true, title: { text: opts.categoryLabel } },
     yaxis2: { type: 'category', anchor: 'x2', matches: 'y', showticklabels: false },
     shapes: [
