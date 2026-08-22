@@ -20,6 +20,18 @@ export interface MonthDiagnostic {
   ok: boolean
   /** The reference's max == min branch fired: the mapping collapses. */
   degenerateRange: boolean
+  /** Largest share of the simulated month falling in a single histogram bin. */
+  simMaxBinShare: number
+  /** Same for the observed month. */
+  obsMaxBinShare: number
+  /**
+   * True when both distributions pile into one bin. Sturges' rule fixes the bin
+   * COUNT and the width comes from the range, so a right-skewed record — normal
+   * for streamflow — puts almost everything in the first bin. The mapping then
+   * has no resolution where the data actually is and collapses to a single
+   * linear scale factor rather than matching distributions.
+   */
+  lowResolution: boolean
   reason?: string
 }
 
@@ -146,12 +158,17 @@ export function correctForecasts(
       try {
         const m = buildMonthlyMapping(month, simDaily, obsDaily)
         mappings.set(month, m)
+        const simShare = Math.max(...m.simulated.counts)
+        const obsShare = Math.max(...m.observed.counts)
         monthDiags.set(month, {
           month,
           nSimulated: m.simulated.n,
           nObserved: m.observed.n,
           ok: true,
           degenerateRange: m.simulated.degenerateRange || m.observed.degenerateRange,
+          simMaxBinShare: simShare,
+          obsMaxBinShare: obsShare,
+          lowResolution: simShare >= 0.5 && obsShare >= 0.5,
         })
       } catch (e) {
         const reason = e instanceof BiasCorrectionError ? e.message : String(e)
@@ -162,6 +179,9 @@ export function correctForecasts(
           nObserved: 0,
           ok: false,
           degenerateRange: false,
+          simMaxBinShare: 0,
+          obsMaxBinShare: 0,
+          lowResolution: false,
           reason,
         })
       }

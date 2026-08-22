@@ -216,6 +216,15 @@ function CorrectionBanner({ c }: { c: BiasCorrection }) {
               ? `${m.nSimulated} simulated and ${m.nObserved} observed values in season`
               : `no mapping — ${m.reason}`}
             {m.degenerateRange && ' — flat record, the mapping collapses'}
+            {m.ok && m.lowResolution && (
+              <>
+                {' '}
+                — <strong>low resolution</strong>: {Math.round(m.simMaxBinShare * 100)}% of
+                simulated and {Math.round(m.obsMaxBinShare * 100)}% of observed values fall in a
+                single histogram bin, so the mapping has little detail where the data is and
+                behaves close to a constant scale factor. Check the transfer curve.
+              </>
+            )}
           </li>
         ))}
         {c.excluded.length > 0 && (
