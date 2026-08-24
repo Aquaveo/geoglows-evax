@@ -24,5 +24,9 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["tests"]
+  /* src/types carries the ambient module declarations for plotly.js-dist-min and
+     riverforecastsystem. Without it, any test that imports a src module which
+     imports those packages fails with TS7016 -- the declarations live outside
+     this project's include, so the import resolves to an implicit any. */
+  "include": ["tests", "src/types"]
 }
