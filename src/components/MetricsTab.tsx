@@ -385,6 +385,22 @@ export function MetricsTab() {
     return best;
   }, [griddedMean]);
 
+  /**
+   * The most pairs any lead can achieve. If this is already below the
+   * correlation threshold, every lead will blank out — and sixteen identical
+   * "n/a" marks are a far worse explanation than one sentence saying the
+   * threshold is unreachable at this resolution.
+   */
+  const feasibility = useMemo(() => {
+    if (!griddedMean || !grid) return null;
+    let best = 0;
+    for (let lead = 0; lead <= MAX_LEAD; lead++) {
+      const n = countPairs(griddedMean.buckets[lead], griddedMean.obs);
+      if (n > best) best = n;
+    }
+    return { achievable: best, enough: best >= MIN_PAIRS_CORRELATION };
+  }, [griddedMean, grid]);
+
   const canComputeTiming = !!(app.eventData && app.forecasts.size > 0);
   const canComputeCrossing = canComputeTiming && !!(app.obsRp && app.simRp);
   const canComputeAccuracy = !!(app.eventData && app.forecasts.size > 0);
@@ -822,6 +838,23 @@ export function MetricsTab() {
 
   return (
     <div>
+      {feasibility && !feasibility.enough && grid && (
+        <p style={feasibilityBanner}>
+          <strong>This event cannot support the correlation-based scores.</strong> At{' '}
+          {grid.label} resolution the longest lead day reaches only{' '}
+          <strong>{feasibility.achievable}</strong> forecast/observation pair
+          {feasibility.achievable === 1 ? '' : 's'}, and r, γ, KGE′, NSE, MCC and HSS need at
+          least {MIN_PAIRS_CORRELATION} to mean anything — so they are reported as
+          <em> n/a</em> throughout rather than as confident-looking noise.
+          <br />
+          The limit is arithmetic, not data quality: pairs per lead are capped by the number of{' '}
+          {grid.label === 'daily' ? 'days' : 'grid intervals'} your event spans, because the
+          coarser series sets the comparison resolution. To get these metrics you need either a
+          longer event window or observations at a finer cadence. β and the CRPS family survive
+          small samples and are still reported.
+        </p>
+      )}
+
       {grid && (
         <p style={gridBanner}>
           Metrics computed at <strong>{grid.label}</strong> resolution
@@ -1791,6 +1824,16 @@ function leadOptions(): number[] {
   return out;
 }
 
+const feasibilityBanner: React.CSSProperties = {
+  margin: '0 0 1rem',
+  padding: '0.7rem 1rem',
+  border: '1px solid #fcd34d',
+  background: '#fffbeb',
+  borderRadius: 6,
+  fontSize: '0.9rem',
+  lineHeight: 1.6,
+  color: '#4a3a12',
+};
 const gridBanner: React.CSSProperties = {
   margin: '0 0 1.25rem',
   padding: '0.5rem 0.85rem',

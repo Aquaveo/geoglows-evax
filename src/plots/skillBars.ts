@@ -112,16 +112,36 @@ export function skillBarsFigure(
     });
   }
 
-  // Rows that were not scored: mark them so a missing bar is never ambiguous.
-  const skippedRows = display
-    .map((r, i) => ({ r, i }))
-    .filter(({ r }) => r.skipped != null && r.skipped !== '');
-  const annotations: NonNullable<Layout['annotations']> = skippedRows.map(({ r }) => ({
+  // Rows that were not scored. When many share one reason, repeating it on every
+  // row is noise that buries the bars — state it once and mark the rows compactly.
+  const skippedRows = display.filter((r) => r.skipped != null && r.skipped !== '');
+  const byReason = new Map<string, string[]>();
+  for (const r of skippedRows) {
+    const list = byReason.get(r.skipped!) ?? [];
+    list.push(r.label);
+    byReason.set(r.skipped!, list);
+  }
+  const REPEAT_LIMIT = 2;
+  const groupedReasons: string[] = [];
+  for (const [reason, labels] of byReason) {
+    if (labels.length > REPEAT_LIMIT) {
+      groupedReasons.push(
+        `${labels.length} rows n/a (${labels[0]}–${labels[labels.length - 1]}): ${reason}`,
+      );
+    }
+  }
+  const inlineReasonRows = new Set(
+    [...byReason.entries()]
+      .filter(([, labels]) => labels.length <= REPEAT_LIMIT)
+      .flatMap(([, labels]) => labels),
+  );
+
+  const annotations: NonNullable<Layout['annotations']> = skippedRows.map((r) => ({
     x: 0,
     y: r.label,
     xref: 'x' as const,
     yref: 'y' as const,
-    text: `  n/a — ${r.skipped}`,
+    text: inlineReasonRows.has(r.label) ? `  n/a — ${r.skipped}` : '  n/a',
     showarrow: false,
     xanchor: 'left' as const,
     font: { size: 10, color: '#b45309' },
@@ -182,7 +202,8 @@ export function skillBarsFigure(
             (Number.isFinite(r.nse) && r.nse < floor) || (Number.isFinite(r.kge) && r.kge < floor),
         ).length;
         const note = clamped > 0 ? `  |  ${clamped} row${clamped === 1 ? '' : 's'} clipped at ${floor}, true value labelled` : '';
-        const sub = `${opts.subtitle ?? ''}${note}`;
+        const skipNote = groupedReasons.length > 0 ? `<br>${groupedReasons.join('  |  ')}` : '';
+        const sub = `${opts.subtitle ?? ''}${note}${skipNote}`;
         return sub ? `${opts.title ?? 'Skill summary'}<br><sup>${sub}</sup>` : (opts.title ?? 'Skill summary');
       })(),
       x: 0.5,

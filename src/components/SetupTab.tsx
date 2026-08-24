@@ -3,6 +3,7 @@ import { useApp } from '../state/AppContext';
 import { getReachMetadata } from '../data/reachMetadata';
 import { getAndCacheRetrospective } from '../data/rfs';
 import { detectCadence } from '../lib/ingest/cadence';
+import { assessEventData } from '../lib/ingest/dataQuality';
 import { returnPeriodsFromSeries } from '../lib/gumbel';
 import { ReachMap } from './Map';
 import { CsvUploader } from './CsvUploader';
@@ -108,11 +109,14 @@ export function SetupTab() {
           }}
         />
         {app.eventData && (
-          <p style={{ ...note, marginTop: '0.75rem' }}>
-            Stored at its native{' '}
-            <strong>{detectCadence(app.eventData)?.label ?? 'unknown'}</strong> resolution — see{' '}
-            <em>Temporal resolution</em> on the Overview tab for how this sets the comparison grid.
-          </p>
+          <>
+            <p style={{ ...note, marginTop: '0.75rem' }}>
+              Stored at its native{' '}
+              <strong>{detectCadence(app.eventData)?.label ?? 'unknown'}</strong> resolution — see{' '}
+              <em>Temporal resolution</em> on the Overview tab for how this sets the comparison grid.
+            </p>
+            <EventQualityNotice event={app.eventData} reference={app.historicalData} />
+          </>
         )}
       </section>
 
@@ -169,6 +173,67 @@ export function SetupTab() {
   );
 }
 
+/**
+ * Gaps and extreme values in the uploaded event series.
+ *
+ * Both are invisible in a plot of a short event but dominate every magnitude
+ * metric: one reading far above the historical record owns almost all of the
+ * observed variance, so NSE and KGE' stop measuring forecast skill. A gap
+ * through the peak means the true maximum may not be in the file at all.
+ */
+function EventQualityNotice({
+  event,
+  reference,
+}: {
+  event: TimeSeries;
+  reference: TimeSeries | null;
+}) {
+  const q = assessEventData(event, reference);
+  if (!q) return null;
+  const hasIssue = q.outliers.length > 0 || q.totalMissingSteps > 0;
+  if (!hasIssue) return null;
+
+  const fmt = (d: Date) => d.toISOString().slice(0, 16).replace('T', ' ');
+
+  return (
+    <div style={qualityNotice}>
+      <strong>Check the event data before trusting the metrics.</strong>
+      <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.2rem', lineHeight: 1.6 }}>
+        {q.totalMissingSteps > 0 && (
+          <li>
+            <strong>{q.totalMissingSteps} missing {q.cadenceLabel} value
+            {q.totalMissingSteps === 1 ? '' : 's'}</strong>
+            {q.gaps.length > 0 && (
+              <>
+                {' '}— largest gap {q.gaps[0].missingSteps} step
+                {q.gaps[0].missingSteps === 1 ? '' : 's'} after {fmt(q.gaps[0].after)}
+              </>
+            )}
+            . If a gap covers the peak, the observed maximum may not be in the file.
+          </li>
+        )}
+        {q.outliers.length > 0 && q.referenceMax != null && (
+          <li>
+            <strong>
+              {q.outliers.length} value{q.outliers.length === 1 ? '' : 's'} above the historical
+              maximum
+            </strong>{' '}
+            of {q.referenceMax.toFixed(1)} m³/s:{' '}
+            {q.outliers
+              .slice(0, 3)
+              .map((o) => `${o.value.toFixed(1)} (${o.ratio.toFixed(1)}×) at ${fmt(o.time)}`)
+              .join('; ')}
+            {q.outliers.length > 3 && ` and ${q.outliers.length - 3} more`}. A single reading many
+            times the record owns almost all of a short event's variance, so NSE and KGE′ will
+            mostly be measuring whether the forecast reproduced that one value — which no forecast
+            will. Verify it against the gauge before reading the magnitude metrics.
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
 function RpTable({ simRp, obsRp }: { simRp: Record<number, number> | null; obsRp: Record<number, number> | null }) {
   return (
     <table style={{ borderCollapse: 'collapse', minWidth: 360 }}>
@@ -207,6 +272,15 @@ const sectionStyle: React.CSSProperties = {
   background: '#fff',
 };
 const h2: React.CSSProperties = { marginTop: 0, fontSize: '1.05rem' };
+const qualityNotice: React.CSSProperties = {
+  marginTop: '0.75rem',
+  padding: '0.7rem 1rem',
+  border: '1px solid #fca5a5',
+  background: '#fef2f2',
+  borderRadius: 6,
+  fontSize: '0.9rem',
+  color: '#7f1d1d',
+};
 const note: React.CSSProperties = {
   color: '#555',
   fontSize: '0.9rem',
