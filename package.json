@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "leaflet": "^1.9.4",
+    "numcodecs": "^0.3.2",
     "papaparse": "^5.5.3",
     "plotly.js-dist-min": "^3.5.1",
     "react": "^19.2.6",
