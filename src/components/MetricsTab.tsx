@@ -361,11 +361,18 @@ export function MetricsTab() {
   // never needed here.
   const griddedCorrected = useMemo(() => {
     if (!app.eventData || !correctedBuckets || !grid) return null;
+    // Gate the SOURCE, not the consumers. Every corrected dataset derives from
+    // this memo, so returning null here is what actually disables the corrected
+    // option in all three blocks. Checking selectionBias only where the reason
+    // string is built leaves the selects enabled and still serves the biased
+    // subset.
+    if (correction?.selectionBias) return null;
     return griddedFor(correctedBuckets, app.eventData, grid.stepMs, 'mean');
-  }, [app.eventData, correctedBuckets, grid]);
+  }, [app.eventData, correctedBuckets, grid, correction]);
 
-  // A biased subset is worse than no answer: it looks like a result.
-  const correctedAvailable = !!griddedCorrected && !correction?.selectionBias;
+  // A biased subset is worse than no answer: it looks like a result. The gate
+  // itself lives in griddedCorrected above.
+  const correctedAvailable = !!griddedCorrected;
 
   /** Why the corrected variant cannot be offered, if it cannot. */
   const correctedUnavailableReason = useMemo(() => {
@@ -722,6 +729,9 @@ export function MetricsTab() {
 
   const skillRunCorrected = useMemo(() => {
     if (!app.eventData || !correction || correction.forecasts.size === 0 || !grid) return null;
+    // Reads correction.forecasts directly, so it does not inherit the
+    // griddedCorrected gate and needs its own.
+    if (correction.selectionBias) return null;
     const griddedRuns = new Map<string, { time: Date[]; discharge: number[][] }>();
     for (const [date, run] of correction.forecasts) {
       const perMember = run.discharge.map((series) =>
