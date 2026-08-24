@@ -205,6 +205,11 @@ function VariantSelect({
 function CorrectionBanner({ c }: { c: BiasCorrection }) {
   return (
     <div style={correctionBanner}>
+      {c.selectionBias && (
+        <p style={{ margin: '0 0 0.5rem', color: '#7f1d1d' }}>
+          <strong>Corrected metrics are withheld for this event.</strong> {c.selectionBias}
+        </p>
+      )}
       <strong>Bias-corrected</strong> by monthly quantile mapping of the forecasts onto the
       uploaded observed record ({c.observedCadence}), using the retrospective (
       {c.simulatedCadence}) as the simulated distribution.
@@ -359,10 +364,12 @@ export function MetricsTab() {
     return griddedFor(correctedBuckets, app.eventData, grid.stepMs, 'mean');
   }, [app.eventData, correctedBuckets, grid]);
 
-  const correctedAvailable = !!griddedCorrected;
+  // A biased subset is worse than no answer: it looks like a result.
+  const correctedAvailable = !!griddedCorrected && !correction?.selectionBias;
 
   /** Why the corrected variant cannot be offered, if it cannot. */
   const correctedUnavailableReason = useMemo(() => {
+    if (correction?.selectionBias) return 'excluded runs are a biased subset — see the banner';
     if (correctedAvailable) return null;
     if (!app.historicalData) return 'upload historical observations on the Setup tab';
     if (!app.retro) return 'load a reach on the Setup tab';

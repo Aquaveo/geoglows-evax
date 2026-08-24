@@ -56,6 +56,18 @@ export interface BiasCorrection {
   negativeClipped: number
   /** Non-null when nothing usable came out; render this instead of numbers. */
   unavailable: string | null
+  /**
+   * Non-null when the surviving runs are a BIASED subset rather than a sample.
+   *
+   * Exclusion is triggered by forecasts exceeding the simulated monthly maximum,
+   * which is exactly what the runs that predicted the event do. So exclusions
+   * concentrate on the runs closest to the event, and what survives is
+   * disproportionately the runs that missed it. Metrics computed on that subset
+   * measure skill on the forecasts that failed, which is worse than useless
+   * because it looks like a result. When this is set the corrected variant must
+   * not be offered.
+   */
+  selectionBias: string | null
 }
 
 export interface CorrectForecastsOptions {
@@ -105,6 +117,7 @@ export function correctForecasts(
     nanKeptRaw: 0,
     negativeClipped: 0,
     unavailable: null,
+    selectionBias: null,
   }
 
   if (forecasts.size === 0) {
@@ -218,6 +231,19 @@ export function correctForecasts(
         : 'no runs could be corrected'
       : null
 
+  // Exclusions are not random. They fire when a forecast exceeds the simulated
+  // monthly maximum, i.e. on the runs that predicted the event, so more than a
+  // token number of them means the survivors are the runs that missed it.
+  const infExcluded = excluded.filter((e) => /infinity/.test(e.reason)).length
+  const total = forecasts.size
+  const selectionBias =
+    infExcluded > 0 && infExcluded / total > 0.1
+      ? `${infExcluded} of ${total} runs were excluded for mapping to infinity, and those are ` +
+        `the runs whose forecasts ran highest — the ones that predicted the event. What is left ` +
+        `is disproportionately the runs that missed it, so corrected scores would describe the ` +
+        `forecasts that failed rather than the forecast system.`
+      : null
+
   const usedMappings = new Map<number, MonthlyMapping>()
   for (const [m, v] of mappings) if (v) usedMappings.set(m, v)
 
@@ -230,5 +256,6 @@ export function correctForecasts(
     nanKeptRaw,
     negativeClipped,
     unavailable,
+    selectionBias,
   }
 }
