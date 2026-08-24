@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../state/AppContext';
 import { reorganizeByLead, memberSeries, statSeries, type StatKey } from '../lib/leadBuckets';
 import type { LeadBucket, TimeSeries } from '../lib/types';
@@ -25,6 +25,9 @@ import { contingencySeriesFigure } from '../plots/contingencySeries';
 import { skillBarsFigure } from '../plots/skillBars';
 import { skillByLead, skillByRun } from '../lib/metrics/skillSummary';
 import { correctForecasts } from '../lib/bias/correctForecasts';
+import { correctForecastsGlobal, type GlobalCorrection } from '../lib/bias/globalCorrection';
+import { getPolyfits } from '../lib/bias/polyfits';
+import type { RiverPolyfits } from '../lib/bias/polyfitTypes';
 import { correctionEffectByLead } from '../lib/bias/correctionEffect';
 import { biasCdfsFigure, biasTransferFigure } from '../plots/biasTransfer';
 import { biasHydrographFigure } from '../plots/biasHydrograph';
@@ -62,7 +65,7 @@ const FEW_PAIRS_REASON = `fewer than ${MIN_PAIRS_CORRELATION} forecast/observati
 const TOO_FEW_FOR_RATIO = `fewer than ${MIN_PAIRS_RATIO} pairs`;
 
 /** Which forecast values a metric family is showing. */
-export type MetricVariant = 'raw' | 'corrected';
+export type MetricVariant = 'raw' | 'corrected' | 'global';
 
 /** Pairs at one lead: grid bins where both a forecast and an observation exist. */
 function countPairs(bucket: LeadBucket | undefined, obs: TimeSeries): number {
@@ -179,10 +182,12 @@ function VariantSelect({
   value,
   onChange,
   disabledReason,
+  globalDisabledReason,
 }: {
   value: MetricVariant;
   onChange: (v: MetricVariant) => void;
   disabledReason: string | null;
+  globalDisabledReason: string | null;
 }) {
   return (
     <label style={lbl}>
@@ -194,10 +199,73 @@ function VariantSelect({
       >
         <option value="raw">Raw</option>
         <option value="corrected" disabled={!!disabledReason}>
-          Bias-corrected{disabledReason ? ` — ${disabledReason}` : ''}
+          Bias-corrected — local CDF{disabledReason ? ` — ${disabledReason}` : ''}
+        </option>
+        <option value="global" disabled={!!globalDisabledReason}>
+          Bias-corrected — global transform
+          {globalDisabledReason ? ` — ${globalDisabledReason}` : ''}
         </option>
       </select>
     </label>
+  );
+}
+
+/** What the global transform did, so its numbers are never unexplained either. */
+function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
+  const pct = (n: number) => (c.n > 0 ? ((n / c.n) * 100).toFixed(1) : '0.0');
+  const saturated = c.atCeiling + c.atFloor;
+  const nonMonotonic = c.months.filter((m) => !c.saturation[m]?.monotonic);
+  return (
+    <div style={correctionBanner}>
+      <strong>Global transform.</strong> Per-river coefficients fitted centrally and published by
+      the GEOGLOWS programme, applied per calendar month. It uses no uploaded observations at all,
+      so it cannot inherit a short gauge record's gaps — and because nothing can fail, all{' '}
+      {c.forecasts.size} runs are kept. Nothing is excluded, so the surviving set is not a biased
+      subset.
+      <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.2rem', lineHeight: 1.6 }}>
+        {saturated > 0 && (
+          <li>
+            <strong>
+              {saturated.toLocaleString()} of {c.n.toLocaleString()} values ({pct(saturated)}%) hit
+              the transform's clamp
+            </strong>{' '}
+            and were mapped onto a single value for their month. Where that happens the corrected
+            series cannot tell two different forecasts apart.
+            {c.months
+              .filter((m) => c.saturation[m]?.fromDischarge != null)
+              .map((m) => (
+                <div key={m} style={{ fontSize: '0.85em', color: '#666' }}>
+                  month {m}: every discharge above{' '}
+                  {c.saturation[m]!.fromDischarge!.toFixed(1)} m³/s maps to{' '}
+                  {c.saturation[m]!.toValue!.toFixed(1)} m³/s
+                </div>
+              ))}
+          </li>
+        )}
+        {nonMonotonic.length > 0 && (
+          <li>
+            <strong>
+              Not monotonic in month{nonMonotonic.length === 1 ? '' : 's'}{' '}
+              {nonMonotonic.join(', ')}
+            </strong>{' '}
+            — a larger forecast can transform to a smaller corrected value. These are degree-7
+            polynomial fits, and nothing constrains them to preserve order.
+          </li>
+        )}
+        {c.clippedToQmax > 0 && (
+          <li>
+            {c.clippedToQmax.toLocaleString()} values ({pct(c.clippedToQmax)}%) exceeded the fitted
+            maximum for their month and were clipped to it before transforming.
+          </li>
+        )}
+        {c.negativeClamped > 0 && (
+          <li>
+            {c.negativeClamped.toLocaleString()} transformed values came out slightly negative and
+            were clamped to zero.
+          </li>
+        )}
+      </ul>
+    </div>
   );
 }
 
@@ -279,11 +347,54 @@ export function MetricsTab() {
   // is manual and already long.
   const [correctedAccuracy, setCorrectedAccuracy] = useState<AccuracyDistributions | null>(null);
   const [correctedCrps, setCorrectedCrps] = useState<CrpsPerLead | null>(null);
+  const [globalAccuracy, setGlobalAccuracy] = useState<AccuracyDistributions | null>(null);
+  const [globalCrps, setGlobalCrps] = useState<CrpsPerLead | null>(null);
   const [accuracyVariant, setAccuracyVariant] = useState<MetricVariant>('raw');
   const [skillVariant, setSkillVariant] = useState<MetricVariant>('raw');
   const [crpsVariant, setCrpsVariant] = useState<MetricVariant>('raw');
   const [biasMonth, setBiasMonth] = useState<number | null>(null);
+  // Global transform coefficients, fetched per river from the published zarr
+  // store. Async because it is a network read; cached in IndexedDB after the
+  // first hit, so this is effectively instant on revisit.
+  //
+  // Stored as a single river-tagged entry and everything else derived from it.
+  // The obvious shape — separate polyfits/loading/error states reset at the top
+  // of the effect — sets state synchronously during the effect, which triggers a
+  // cascading re-render.
+  const [polyfitEntry, setPolyfitEntry] = useState<{
+    riverId: number;
+    fits: RiverPolyfits | null;
+    error: string | null;
+  } | null>(null);
   const [biasRunDate, setBiasRunDate] = useState<string | null>(null);
+
+  const riverId = app.reach?.riverId ?? null;
+  useEffect(() => {
+    if (riverId == null) return;
+    let cancelled = false;
+    getPolyfits(riverId)
+      .then((fits) => {
+        if (!cancelled) setPolyfitEntry({ riverId, fits, error: null });
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setPolyfitEntry({
+            riverId,
+            fits: null,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [riverId]);
+
+  // Derived, so a stale river's coefficients are never treated as current.
+  const forThisRiver = polyfitEntry?.riverId === riverId ? polyfitEntry : null;
+  const polyfits = forThisRiver?.fits ?? null;
+  const polyfitError = forThisRiver?.error ?? null;
+  const polyfitLoading = riverId != null && forThisRiver == null;
 
   const canCompute = !!(
     app.eventData &&
@@ -369,6 +480,44 @@ export function MetricsTab() {
     if (correction?.selectionBias) return null;
     return griddedFor(correctedBuckets, app.eventData, grid.stepMs, 'mean');
   }, [app.eventData, correctedBuckets, grid, correction]);
+
+  // --- Global transform variant ----------------------------------------------
+  // Same shape as the local-CDF path above, but sourced from centrally fitted
+  // per-river coefficients rather than the uploaded gauge record. No run can be
+  // excluded, so there is no selection-bias gate here — the failure mode to
+  // guard is saturation, handled by `unusable`.
+  const globalCorrection = useMemo<GlobalCorrection | null>(() => {
+    if (!polyfits || app.forecasts.size === 0) return null;
+    return correctForecastsGlobal(app.forecasts, polyfits);
+  }, [polyfits, app.forecasts]);
+
+  const globalBuckets = useMemo(
+    () =>
+      globalCorrection && !globalCorrection.unusable && globalCorrection.forecasts.size > 0
+        ? reorganizeByLead(globalCorrection.forecasts, MAX_LEAD)
+        : null,
+    [globalCorrection],
+  );
+
+  // Shares the raw side's grid, for the same reason the corrected side does.
+  const griddedGlobal = useMemo(() => {
+    if (!app.eventData || !globalBuckets || !grid) return null;
+    return griddedFor(globalBuckets, app.eventData, grid.stepMs, 'mean');
+  }, [app.eventData, globalBuckets, grid]);
+
+  const globalAvailable = !!griddedGlobal;
+
+  /** Why the global variant cannot be offered, if it cannot. */
+  const globalUnavailableReason = useMemo(() => {
+    if (riverId == null) return 'load a reach first';
+    if (polyfitLoading) return 'loading transformers…';
+    if (polyfitError) return polyfitError;
+    if (!polyfits) return 'transformers unavailable';
+    if (globalCorrection?.unusable) return 'transform saturates — see the banner';
+    if (globalAvailable) return null;
+    if (app.forecasts.size === 0) return 'download forecasts first';
+    return 'unavailable';
+  }, [riverId, polyfitLoading, polyfitError, polyfits, globalCorrection, globalAvailable, app.forecasts.size]);
 
   // A biased subset is worse than no answer: it looks like a result. The gate
   // itself lives in griddedCorrected above.
@@ -601,6 +750,9 @@ export function MetricsTab() {
         setCorrectedAccuracy(
           griddedCorrected ? accuracyDistributions(griddedCorrected.buckets, griddedCorrected.obs) : null,
         );
+        setGlobalAccuracy(
+          griddedGlobal ? accuracyDistributions(griddedGlobal.buckets, griddedGlobal.obs) : null,
+        );
 
         app.setKgeDistribution(kgeDist);
         app.setRDistribution(rDist);
@@ -653,6 +805,13 @@ export function MetricsTab() {
               )
             : null,
         );
+        // Same climatology as the other two variants, deliberately: the point of
+        // comparing CRPSS across variants is that only the forecast changed.
+        setGlobalCrps(
+          griddedGlobal
+            ? computeCrpsByLead(griddedGlobal.buckets, griddedGlobal.obs, MAX_LEAD, clim)
+            : null,
+        );
       } catch (e) {
         setCrpsError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -695,6 +854,9 @@ export function MetricsTab() {
 
   /** Which accuracy distributions the plots should render. */
   const accuracyDisplay = useMemo(() => {
+    if (accuracyVariant === 'global' && globalAccuracy) {
+      return globalAccuracy;
+    }
     if (accuracyVariant === 'corrected' && correctedAccuracy) {
       return correctedAccuracy;
     }
@@ -707,6 +869,7 @@ export function MetricsTab() {
   }, [
     accuracyVariant,
     correctedAccuracy,
+    globalAccuracy,
     app.kgeDistribution,
     app.rDistribution,
     app.betaDistribution,
@@ -714,7 +877,8 @@ export function MetricsTab() {
   ]);
 
   /** Appended to plot titles so a screenshot always says which variant it is. */
-  const variantSuffix = (v: MetricVariant) => (v === 'corrected' ? ' (bias-corrected)' : '');
+  const variantSuffix = (v: MetricVariant) =>
+    v === 'corrected' ? ' (bias-corrected, local CDF)' : v === 'global' ? ' (bias-corrected, global)' : '';
 
   const skillLeadCorrected = useMemo(
     () =>
@@ -757,16 +921,62 @@ export function MetricsTab() {
     return rows;
   }, [app.eventData, correction, grid]);
 
+  const skillLeadGlobal = useMemo(
+    () =>
+      griddedGlobal
+        ? skillByLead(griddedGlobal.buckets, griddedGlobal.obs, {
+            minPairs: MIN_PAIRS_CORRELATION,
+            maxLead: MAX_LEAD,
+          })
+        : null,
+    [griddedGlobal],
+  );
+
+  const skillRunGlobal = useMemo(() => {
+    if (!app.eventData || !globalCorrection || globalCorrection.unusable || !grid) return null;
+    // No excluded-run rows to append, unlike the local-CDF path: the global
+    // transform keeps every run, which is the point of offering it.
+    const griddedRuns = new Map<string, { time: Date[]; discharge: number[][] }>();
+    for (const [date, run] of globalCorrection.forecasts) {
+      const perMember = run.discharge.map((series) =>
+        aggregateSeries({ time: run.time, values: series }, grid.stepMs, 'mean'),
+      );
+      if (perMember.length === 0) continue;
+      griddedRuns.set(date, {
+        time: perMember[0].time,
+        discharge: perMember.map((x) => x.values),
+      });
+    }
+    const obs = aggregateSeries(app.eventData, grid.stepMs, 'mean');
+    const rows = skillByRun(griddedRuns, obs, { minPairs: MIN_PAIRS_CORRELATION });
+    rows.sort((a, b) => a.label.localeCompare(b.label));
+    return rows;
+  }, [app.eventData, globalCorrection, grid]);
+
   const skillDisplay = useMemo(
     () =>
-      skillVariant === 'corrected' && skillLeadCorrected
+      skillVariant === 'global' && skillLeadGlobal
+        ? { lead: skillLeadGlobal, run: skillRunGlobal }
+        : skillVariant === 'corrected' && skillLeadCorrected
         ? { lead: skillLeadCorrected, run: skillRunCorrected }
         : { lead: skillLead, run: skillRun },
-    [skillVariant, skillLeadCorrected, skillRunCorrected, skillLead, skillRun],
+    [
+      skillVariant,
+      skillLeadCorrected,
+      skillRunCorrected,
+      skillLeadGlobal,
+      skillRunGlobal,
+      skillLead,
+      skillRun,
+    ],
   );
 
   const crpsDisplay =
-    crpsVariant === 'corrected' && correctedCrps ? correctedCrps : app.crpsResults;
+    crpsVariant === 'global' && globalCrps
+      ? globalCrps
+      : crpsVariant === 'corrected' && correctedCrps
+        ? correctedCrps
+        : app.crpsResults;
 
   // --- Bias-correction diagnostics ------------------------------------------
   const biasMonths = useMemo(
@@ -1249,8 +1459,12 @@ export function MetricsTab() {
               value={accuracyVariant}
               onChange={setAccuracyVariant}
               disabledReason={correctedAccuracy ? null : correctedUnavailableReason}
+              globalDisabledReason={globalUnavailableReason}
             />
             {accuracyVariant === 'corrected' && correction && <CorrectionBanner c={correction} />}
+            {accuracyVariant === 'global' && globalCorrection && (
+              <GlobalCorrectionBanner c={globalCorrection} />
+            )}
           </div>
         )}
 
@@ -1528,8 +1742,12 @@ export function MetricsTab() {
               value={skillVariant}
               onChange={setSkillVariant}
               disabledReason={skillLeadCorrected ? null : correctedUnavailableReason}
+              globalDisabledReason={globalUnavailableReason}
             />
             {skillVariant === 'corrected' && correction && <CorrectionBanner c={correction} />}
+            {skillVariant === 'global' && globalCorrection && (
+              <GlobalCorrectionBanner c={globalCorrection} />
+            )}
           </div>
         )}
 
@@ -1618,8 +1836,12 @@ export function MetricsTab() {
               value={crpsVariant}
               onChange={setCrpsVariant}
               disabledReason={correctedCrps ? null : correctedUnavailableReason}
+              globalDisabledReason={globalUnavailableReason}
             />
             {crpsVariant === 'corrected' && correction && <CorrectionBanner c={correction} />}
+            {crpsVariant === 'global' && globalCorrection && (
+              <GlobalCorrectionBanner c={globalCorrection} />
+            )}
           </div>
         )}
 
