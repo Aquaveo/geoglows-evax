@@ -1,5 +1,7 @@
 import type { Data, Layout } from 'plotly.js-dist-min'
-import type { ForecastRun, TimeSeries } from '../lib/types'
+import type { ForecastRun, RpThresholds, TimeSeries } from '../lib/types'
+import { RP_LEVELS } from '../lib/types'
+import { rpBandTraces, type RpBandGroup } from './helpers'
 
 export interface BiasHydrographOptions {
   /** Run key, for the title. */
@@ -7,6 +9,23 @@ export interface BiasHydrographOptions {
   /** Ensemble statistic name shown in the subtitle. */
   statLabel?: string
   riverId?: number
+  /**
+   * Observed-side thresholds. These are the ones that apply to the observed
+   * line AND to the corrected forecast, since correction maps onto the observed
+   * distribution.
+   */
+  obsRp?: RpThresholds | null
+  /** Simulated-side thresholds — the scale the RAW forecast lives on. */
+  simRp?: RpThresholds | null
+}
+
+/** Smallest finite threshold in a set, or null. */
+function lowestThreshold(rp: RpThresholds | null | undefined): number | null {
+  if (!rp) return null
+  for (const level of RP_LEVELS) {
+    if (Number.isFinite(rp[level])) return rp[level]
+  }
+  return null
 }
 
 /** Per-timestep median across members, ignoring non-finite values. */
@@ -59,7 +78,56 @@ export function biasHydrographFigure(
     if (c === rawMed[i]) unchanged += 1
   })
 
-  const data: Data[] = [
+  // Peak of everything plotted, used to decide whether bands would swamp the axis.
+  let plottedMax = 0
+  for (const arr of [observed.values, rawMed, corMed]) {
+    for (const v of arr) if (Number.isFinite(v) && v > plottedMax) plottedMax = v
+  }
+
+  // Return-period zones. Two sets, because the lines live on two different
+  // scales: the observed and corrected lines against the OBSERVED thresholds,
+  // the raw forecast against the SIMULATED ones.
+  //
+  // Each set starts hidden when its lowest threshold is far above everything
+  // plotted — otherwise the axis stretches to the first band and squashes all
+  // three lines into a sliver. The subtitle carries the number instead, so the
+  // severity context is always legible even with the bands off.
+  const SWAMP_RATIO = 1.5
+  const bandGroups: RpBandGroup[] = []
+  const obsLow = lowestThreshold(opts.obsRp)
+  const simLow = lowestThreshold(opts.simRp)
+  if (opts.obsRp && obsLow != null) {
+    bandGroups.push({
+      label: 'observed',
+      rp: opts.obsRp,
+      defaultVisible: obsLow <= plottedMax * SWAMP_RATIO,
+    })
+  }
+  if (opts.simRp && simLow != null) {
+    bandGroups.push({
+      label: 'simulated',
+      rp: opts.simRp,
+      defaultVisible: false,
+    })
+  }
+
+  let tMin = Number.POSITIVE_INFINITY
+  let tMax = Number.NEGATIVE_INFINITY
+  for (const times of [observed.time, raw.time, corrected.time]) {
+    for (const t of times) {
+      const ms = t.getTime()
+      if (ms < tMin) tMin = ms
+      if (ms > tMax) tMax = ms
+    }
+  }
+  const span =
+    Number.isFinite(tMin) && Number.isFinite(tMax)
+      ? { lo: new Date(tMin), hi: new Date(tMax) }
+      : null
+
+  const data: Data[] = span && bandGroups.length > 0 ? rpBandTraces(bandGroups, span.lo, span.hi) : []
+
+  data.push(
     {
       type: 'scatter',
       mode: 'lines',
@@ -87,11 +155,21 @@ export function biasHydrographFigure(
       line: { color: '#1f77b4', width: 2.5 },
       hovertemplate: '%{x|%Y-%m-%d %H:%M}<br>corrected %{y:.2f} m³/s<extra></extra>',
     },
-  ]
+  )
 
   const unchangedNote =
     compared > 0 && unchanged > 0
       ? `  |  ${unchanged} of ${compared} timesteps unchanged (mapping undefined there)`
+      : ''
+
+  // Always state the severity context numerically, whether or not the bands are
+  // drawn: "nowhere near a 2-year event" is the useful fact, and it survives the
+  // bands being toggled off.
+  const rpNote =
+    obsLow != null && plottedMax > 0
+      ? obsLow > plottedMax
+        ? `  |  peak reaches ${((plottedMax / obsLow) * 100).toFixed(0)}% of the 2-year observed threshold (${obsLow.toFixed(1)} m³/s)`
+        : `  |  peak exceeds the 2-year observed threshold (${obsLow.toFixed(1)} m³/s)`
       : ''
 
   const layout: Partial<Layout> = {
@@ -99,7 +177,7 @@ export function biasHydrographFigure(
       text:
         `Raw vs bias-corrected — run ${opts.label}` +
         `${opts.riverId != null ? `  |  River ${opts.riverId}` : ''}` +
-        `<br><sup>${opts.statLabel ?? 'ensemble median'}${unchangedNote}</sup>`,
+        `<br><sup>${opts.statLabel ?? 'ensemble median'}${rpNote}${unchangedNote}</sup>`,
       x: 0.5,
     },
     margin: { l: 60, r: 20, t: 60, b: 50 },

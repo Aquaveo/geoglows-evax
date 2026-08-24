@@ -1480,6 +1480,10 @@ export function MetricsTab() {
                   {
                     label: `${activeBiasRun.slice(0, 4)}-${activeBiasRun.slice(4, 6)}-${activeBiasRun.slice(6, 8)}`,
                     riverId: app.reach?.riverId ?? undefined,
+                    // Observed thresholds apply to the observed line and to the
+                    // corrected forecast; simulated ones to the raw forecast.
+                    obsRp: app.obsRp,
+                    simRp: app.simRp,
                   },
                 )}
               />
@@ -1490,6 +1494,15 @@ export function MetricsTab() {
               past them, the mapping is over-inflating — which happens when the observed record's
               upper tail is heavier than the simulated one. Where grey and blue coincide the mapping
               was undefined and the raw value was kept; the subtitle counts those timesteps.
+              <br />
+              <br />
+              Two return-period sets are available in the legend, because the lines sit on two
+              different scales: the <strong>observed</strong> zones apply to the black observations
+              and to the corrected forecast, while the <strong>simulated</strong> zones are the
+              scale the raw forecast lives on. Each set stays hidden when its 2-year threshold is
+              far above everything plotted — drawing it would stretch the axis and flatten all
+              three lines — so the subtitle reports how close the peak came instead. Click a legend
+              entry to bring the zones in when they are in range.
               <br />
               <br />
               Only runs that survived correction appear in this list, so a date missing here was
