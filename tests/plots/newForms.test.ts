@@ -135,11 +135,61 @@ describe('divergingBarsFigure with spread', () => {
     expect(e.arrayminus.every((v) => v >= 0)).toBe(true);
   });
 
-  it('widens the axis to clear the FULL range, not just the quartiles', () => {
+  it('scales the axis to the bars and quartiles, not to the full range', () => {
     const [lo, hi] = fig.layout.xaxis!.range as [number, number];
-    // hi of 40 is the widest thing drawn; the axis must clear it.
-    expect(hi).toBeGreaterThan(40);
+    // The widest quartile edge is |-20| = 20; the widest full-range edge is 50.
+    // Letting 50 set the scale squeezed every bar into a sliver, so the axis
+    // now clears the quartiles and lets the outer whiskers run off the edge.
+    expect(hi).toBeGreaterThan(20);
+    expect(hi).toBeLessThan(50);
     expect(lo).toBeCloseTo(-hi, 10);
+  });
+
+  it('marks the rows whose full range runs past the axis edge', () => {
+    const [, hi] = fig.layout.xaxis!.range as [number, number];
+    const chevrons = (fig.layout.annotations ?? []).filter(
+      (a) => a.text === '\u203a' || a.text === '\u2039',
+    );
+    // Lead 1 (lo -50) and Lead 2 (hi 40) both exceed the axis, so clipping must
+    // be visible rather than silent.
+    expect(chevrons.length).toBeGreaterThanOrEqual(2);
+    expect(chevrons.every((a) => Math.abs(Number(a.x)) === hi)).toBe(true);
+    expect(String(fig.layout.title!.text)).toContain('range past the axis');
+  });
+
+  it('shows every full range in full when it already fits', () => {
+    const tight = divergingBarsFigure(
+      [{ label: 'a', value: 4, q1: 2, q3: 6, lo: 1, hi: 8 }],
+      { valueLabel: 'x', negativeLabel: 'lo', positiveLabel: 'hi' },
+    );
+    const [, hi] = tight.layout.xaxis!.range as [number, number];
+    expect(hi).toBeGreaterThan(8);
+    const chevrons = (tight.layout.annotations ?? []).filter(
+      (a) => a.text === '\u203a' || a.text === '\u2039',
+    );
+    expect(chevrons).toHaveLength(0);
+    expect(String(tight.layout.title!.text)).not.toContain('range past the axis');
+  });
+
+  it('puts the median values in a gutter outside the plot, not on the bars', () => {
+    // Labelling each bar in place collided with that bar's own quartile whisker.
+    const bar = barOf(fig) as unknown as { text?: unknown };
+    expect(bar.text).toBeUndefined();
+    const gutter = (fig.layout.annotations ?? []).filter((a) => a.xref === 'paper');
+    expect(gutter).toHaveLength(2);
+    expect(gutter.map((a) => String(a.text)).sort()).toEqual(['+6', '-12']);
+  });
+
+  it('omits a legend swatch for a side no bar uses', () => {
+    const allLate = divergingBarsFigure(
+      [{ label: 'a', value: 5 }, { label: 'b', value: 9 }],
+      { valueLabel: 'x', negativeLabel: 'early', positiveLabel: 'late' },
+    );
+    const names = allLate.data
+      .filter((d) => (d as { showlegend?: boolean }).showlegend)
+      .map((d) => String((d as { name?: string }).name));
+    expect(names.some((n) => n.includes('late'))).toBe(true);
+    expect(names.some((n) => n.includes('early'))).toBe(false);
   });
 
   it('draws the full range behind the bars so an outlier cannot dominate', () => {

@@ -147,18 +147,17 @@ export function divergingBarsFigure(
         `<br>middle half %{customdata[2]:+.1f} to %{customdata[3]:+.1f}` +
         `<br>full range %{customdata[4]:+.1f} to %{customdata[5]:+.1f}` +
         `<br>%{customdata[0]} members%{customdata[1]}<extra></extra>`,
-      text: scored.map((r) => `${r.value > 0 ? '+' : ''}${r.value.toFixed(1)}`),
-      textposition: 'outside',
-      textfont: { size: 10, color: MUTED },
       cliponaxis: false,
     },
   ];
 
   // Legend-only swatches: per-bar colours produce no legend entries of their own.
-  for (const [name, color] of [
-    [`◀ ${opts.negativeLabel}`, COLOR_NEG],
-    [`${opts.positiveLabel} ▶`, COLOR_POS],
-  ] as const) {
+  // Only for sides that occur — a swatch for a colour no bar uses reads as a
+  // category with zero members rather than a category that cannot arise.
+  const sideSwatches: [string, string][] = [];
+  if (scored.some((r) => r.value < 0)) sideSwatches.push([`◀ ${opts.negativeLabel}`, COLOR_NEG]);
+  if (scored.some((r) => r.value > 0)) sideSwatches.push([`${opts.positiveLabel} ▶`, COLOR_POS]);
+  for (const [name, color] of sideSwatches) {
     data.push({
       type: 'bar',
       orientation: 'h',
@@ -201,22 +200,81 @@ export function divergingBarsFigure(
     font: { size: 10, color: '#b45309' },
   }));
 
-  // The axis must clear the widest thing drawn, which is now the full range.
-  const span = maxOf(
-    scored.flatMap((r) =>
-      [r.value, r.q1, r.q3, r.lo, r.hi]
-        .filter((v): v is number => Number.isFinite(v))
-        .map(Math.abs),
-    ),
-    1,
-  );
+  // Scale to the bars and their quartile whiskers — NOT the full range.
+  //
+  // Letting the full range set the scale is what broke this chart at 16 lead
+  // days: the outer whiskers reached ±400 h while every median sat under 60 h,
+  // so each bar was squeezed into a few percent of the width and the picture
+  // showed its noise instead of its finding. The full range is still drawn — it
+  // is clipped at the axis edge, rows that continue past it are marked with a
+  // chevron, and the exact numbers stay in the hover.
+  const absOf = (keys: (number | undefined)[]) =>
+    keys.filter((v): v is number => Number.isFinite(v)).map(Math.abs);
+  const core = maxOf(scored.flatMap((r) => absOf([r.value, r.q1, r.q3])), 1);
+  const full = maxOf(scored.flatMap((r) => absOf([r.value, r.q1, r.q3, r.lo, r.hi])), 1);
   // Symmetric about zero so bar lengths are comparable across sides — an
   // asymmetric range would make a late bar look bigger than an equal early one.
-  const limit = span * 1.28;
+  // When the full range already fits comfortably nothing is clipped.
+  const limit = full <= core * 1.34 ? full * 1.1 : core * 1.34;
+  const overflowing = scored.filter(
+    (r) =>
+      (Number.isFinite(r.hi) && (r.hi as number) > limit) ||
+      (Number.isFinite(r.lo) && (r.lo as number) < -limit),
+  );
+
+  // Median values as a right-aligned column outside the plot area. Labelling
+  // each bar in place collided with that bar's own quartile whisker, and a
+  // number on every mark is noise besides; a column reads straight down and
+  // cannot overlap anything.
+  for (const r of scored) {
+    annotations.push({
+      xref: 'paper' as const,
+      x: 1.012,
+      y: r.label,
+      yref: 'y' as const,
+      text: `${r.value > 0 ? '+' : ''}${r.value.toFixed(0)}${unit}`,
+      showarrow: false,
+      xanchor: 'left' as const,
+      font: { size: 11, color: MUTED },
+    });
+  }
+
+  // Chevrons where a row's full range runs off the edge, so clipping is visible
+  // rather than silent.
+  for (const r of overflowing) {
+    if (Number.isFinite(r.hi) && (r.hi as number) > limit) {
+      annotations.push({
+        x: limit,
+        y: r.label,
+        xref: 'x' as const,
+        yref: 'y' as const,
+        text: '›',
+        showarrow: false,
+        xanchor: 'right' as const,
+        font: { size: 15, color: '#9d9b93' },
+      });
+    }
+    if (Number.isFinite(r.lo) && (r.lo as number) < -limit) {
+      annotations.push({
+        x: -limit,
+        y: r.label,
+        xref: 'x' as const,
+        yref: 'y' as const,
+        text: '‹',
+        showarrow: false,
+        xanchor: 'left' as const,
+        font: { size: 15, color: '#9d9b93' },
+      });
+    }
+  }
 
   const early = scored.filter((r) => r.value < 0).length;
   const late = scored.filter((r) => r.value > 0).length;
-  const summary = `${early} ${opts.negativeLabel}, ${late} ${opts.positiveLabel}`;
+  const summary =
+    `${early} ${opts.negativeLabel}, ${late} ${opts.positiveLabel}` +
+    (overflowing.length > 0
+      ? `  |  ${overflowing.length} row${overflowing.length === 1 ? '' : 's'} range past the axis (›)`
+      : '');
 
   const layout: Partial<Layout> = {
     title: {
@@ -225,9 +283,10 @@ export function divergingBarsFigure(
       }${summary}</sup>`,
       x: 0.5,
     },
-    margin: { l: 96, r: 56, t: 62, b: 56 },
+    // Right margin holds the value gutter; left holds the category labels.
+    margin: { l: 96, r: 84, t: 66, b: 56 },
     xaxis: {
-      title: { text: opts.valueLabel },
+      title: { text: opts.valueLabel, standoff: 12 },
       range: [-limit, limit],
       zeroline: true,
       zerolinecolor: '#52514e',
@@ -238,12 +297,14 @@ export function divergingBarsFigure(
     yaxis: {
       type: 'category',
       automargin: true,
-      title: opts.categoryLabel ? { text: opts.categoryLabel } : undefined,
+      // standoff keeps the rotated axis title off the tick labels, which it
+      // was overlapping at 16 rows.
+      title: opts.categoryLabel ? { text: opts.categoryLabel, standoff: 16 } : undefined,
       tickfont: { color: INK },
     },
     annotations,
     bargap: 0.22,
-    height: Math.max(300, 96 + display.length * 24),
+    height: Math.max(300, 104 + display.length * 28),
     legend: { orientation: 'h', y: -0.14 },
     plot_bgcolor: '#fcfcfb',
     paper_bgcolor: '#fcfcfb',
