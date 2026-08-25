@@ -118,15 +118,34 @@ export function CsvUploader({ label, onParsed }: CsvUploaderProps) {
               {busy ? 'Fetching…' : 'Fetch'}
             </button>
           </div>
-          <p style={hint}>
-            Works only if the host allows browser requests from other sites (an{' '}
-            <code>Access-Control-Allow-Origin</code> header). AWS Open Data buckets usually do;
-            private buckets usually do not. For a private object, generate a{' '}
-            <strong>presigned URL</strong> and paste that — no credentials are entered here — but
-            note it still needs the bucket to allow CORS, since signing and CORS are enforced
-            separately. If it fails, downloading the file and using <em>Local file</em> always
-            works.
-          </p>
+          <div style={notice}>
+            <div style={noticeHead}>Before you paste a URL — two things must be true</div>
+            <ol style={noticeList}>
+              <li>
+                <strong>The host must allow browser requests.</strong> It has to send an{' '}
+                <code>Access-Control-Allow-Origin</code> header, and nothing this page can do
+                works around that. AWS Open Data buckets normally do —{' '}
+                <code>geoglows-v2</code> and <code>noaa-nwm-pds</code> both send{' '}
+                <code>*</code>. Buckets in a private account normally do not, unless someone has
+                added a CORS rule.
+              </li>
+              <li>
+                <strong>If the object is private, use a presigned URL.</strong> Generate one with{' '}
+                <code>aws s3 presign</code> or the console and paste it whole — the signature
+                travels in the URL, so no keys are entered here.{' '}
+                <em>
+                  A presigned URL does not remove the first requirement: signing satisfies S3,
+                  while CORS is enforced by the browser, so a private bucket needs both.
+                </em>
+              </li>
+            </ol>
+            <div style={noticeFoot}>
+              A blocked request looks identical to the host being down — the browser hides the
+              reason — so if the fetch fails and the URL is definitely right, CORS is the likely
+              cause. Downloading the file and switching to <strong>Local file</strong> always
+              works.
+            </div>
+          </div>
         </>
       )}
 
@@ -155,10 +174,26 @@ const btn: React.CSSProperties = {
   fontSize: '0.9rem',
   cursor: 'pointer',
 };
-const hint: React.CSSProperties = {
-  fontSize: '0.8rem',
-  color: '#666',
-  margin: '0.35rem 0 0',
-  lineHeight: 1.55,
-  maxWidth: '68ch',
+const notice: React.CSSProperties = {
+  marginTop: '0.5rem',
+  padding: '0.7rem 0.9rem',
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+  borderRadius: 6,
+  fontSize: '0.85rem',
+  lineHeight: 1.6,
+  color: '#1e3a5f',
+  maxWidth: '78ch',
+};
+const noticeHead: React.CSSProperties = { fontWeight: 600, marginBottom: '0.35rem' };
+const noticeList: React.CSSProperties = {
+  margin: '0 0 0.4rem',
+  paddingLeft: '1.3rem',
+  display: 'grid',
+  gap: '0.4rem',
+};
+const noticeFoot: React.CSSProperties = {
+  borderTop: '1px solid #bfdbfe',
+  paddingTop: '0.45rem',
+  color: '#33507a',
 };
