@@ -4,20 +4,16 @@ import { OverviewTab } from './components/OverviewTab';
 import { SetupTab } from './components/SetupTab';
 import { ForecastTab } from './components/ForecastTab';
 import { MetricsTab } from './components/MetricsTab';
-import { RetrospectiveTab } from './components/RetrospectiveTab';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './App.css';
 
-type TabId = 'overview' | 'setup' | 'forecast' | 'metrics' | 'retrospective';
+type TabId = 'overview' | 'setup' | 'forecast' | 'metrics';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'setup', label: 'Setup' },
   { id: 'forecast', label: 'Forecast' },
   { id: 'metrics', label: 'Metrics' },
-  // Last, and named for the record rather than the event: it answers a different
-  // question from the three tabs before it, on a sample thousands of times larger.
-  { id: 'retrospective', label: 'Retrospective evaluation' },
 ];
 
 function App() {
@@ -28,7 +24,7 @@ function App() {
         <header style={{ marginBottom: '1rem' }}>
           <h1 style={{ margin: 0, fontSize: '1.4rem' }}>GEOGLOWS Evaluation App</h1>
           <p style={{ color: '#666', margin: '0.25rem 0 0' }}>
-            Verify RFS forecasts for a single river and event, and the model's long-record skill at that reach.
+            Verify RFS forecasts for a single river and event.
           </p>
         </header>
 
@@ -63,11 +59,6 @@ function App() {
         {tab === 'metrics' && (
           <ErrorBoundary label="Metrics">
             <MetricsTab />
-          </ErrorBoundary>
-        )}
-        {tab === 'retrospective' && (
-          <ErrorBoundary label="Retrospective evaluation">
-            <RetrospectiveTab />
           </ErrorBoundary>
         )}
       </main>
