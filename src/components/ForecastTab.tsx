@@ -111,6 +111,9 @@ export function ForecastTab() {
 
   // --- Event vs lead time ---
   const [leadStat, setLeadStat] = useState<StatKey>('median');
+  // null = the original per-lead colour ramp; a number emphasises that lead and
+  // drops the rest to context grey.
+  const [emphasiseLead, setEmphasiseLead] = useState<number | null>(null);
 
   // Reuse the buckets the Metrics tab already built when they are current;
   // downloading forecasts clears them, so fall back to building our own.
@@ -270,13 +273,33 @@ export function ForecastTab() {
                 </select>
               </label>
 
+              <label style={{ marginLeft: '1rem' }}>
+                Highlight:&nbsp;
+                <select
+                  value={emphasiseLead ?? ''}
+                  onChange={(e) =>
+                    setEmphasiseLead(e.target.value === '' ? null : Number(e.target.value))
+                  }
+                >
+                  <option value="">All leads by colour</option>
+                  {leadSeries.map(({ lead }) => (
+                    <option key={lead} value={lead}>
+                      Lead {lead} d only
+                    </option>
+                  ))}
+                </select>
+              </label>
+
               <Plot
                 {...eventVsLeadFigure(app.eventData, leadSeries, {
                   statLabel: STAT_OPTIONS.find((s) => s.key === leadStat)!.label,
                   maxLead: MAX_LEAD,
                   obsRp: app.obsRp,
                   simRp: app.simRp,
-                  visibleLeads: DEFAULT_VISIBLE_LEADS,
+                  // With one lead emphasised every lead is drawn, since the others
+                  // are the context that makes the accent readable.
+                  visibleLeads: emphasiseLead == null ? DEFAULT_VISIBLE_LEADS : undefined,
+                  emphasiseLead,
                 })}
               />
               <PlotNote>
@@ -286,6 +309,12 @@ export function ForecastTab() {
                 bunched together mean lead time barely mattered for this event. A line that sits
                 consistently above or below black is a bias at that lead, not a timing problem —
                 a line with the right shape shifted sideways is the reverse.
+                <br />
+                <br />
+                <strong>Highlight</strong> switches from sixteen coloured lines to one accent line
+                against grey context. Use it when the question is about a particular lead: the
+                accent is found instantly instead of traced through the others, and identity stops
+                depending on hue, so the chart still works in greyscale or with colour-blindness.
               </PlotNote>
             </>
           )}

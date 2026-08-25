@@ -2,6 +2,10 @@ import type { Data, Layout } from 'plotly.js-dist-min';
 import type { RpThresholds, TimeSeries } from '../lib/types';
 import { leadColor, rpBandTraces, type RpBandGroup } from './helpers';
 
+/** Accent and de-emphasis colours for the single-lead emphasis treatment. */
+const EMPHASIS_ACCENT = '#eb6834';
+const EMPHASIS_CONTEXT = '#d5d4cd';
+
 /** One constant-lead-time forecast series, pooled across all start dates. */
 export interface LeadSeries {
   lead: number;
@@ -30,6 +34,20 @@ export interface EventVsLeadOptions {
    * not arrive at once.
    */
   visibleLeads?: readonly number[];
+  /**
+   * Lead to draw in the accent colour, with every other lead dropped to a
+   * recessive grey.
+   *
+   * The default treatment spends a distinct hue on all sixteen leads, which
+   * forces the reader to carry a colour key while tracing one line through the
+   * others. When the question is about ONE lead — and it usually is — emphasis
+   * answers it faster: the accent line is found instantly and the rest read as
+   * context rather than as competing series. It also takes identity off hue
+   * entirely, so the chart survives colour-blindness and greyscale printing.
+   *
+   * Null keeps the original per-lead ramp.
+   */
+  emphasiseLead?: number | null;
 }
 
 /**
@@ -83,19 +101,38 @@ export function eventVsLeadFigure(
     hovertemplate: '%{x|%Y-%m-%d %H:%M}<br>Observed %{y:.2f} m³/s<extra></extra>',
   });
 
-  for (const { lead, series } of leadSeries) {
+  const emphasis = opts.emphasiseLead ?? null;
+  // Context traces first so the accent line is drawn over them, never under.
+  const ordered =
+    emphasis == null
+      ? leadSeries
+      : [...leadSeries].sort(
+          (a, b) => Number(a.lead === emphasis) - Number(b.lead === emphasis),
+        );
+
+  for (const { lead, series } of ordered) {
     const sorted = sortByTime(series);
     const shown = !opts.visibleLeads || opts.visibleLeads.includes(lead);
+    const isAccent = emphasis != null && lead === emphasis;
     data.push({
       type: 'scatter',
       mode: 'lines',
       name: `Lead ${lead} d`,
       x: sorted.time,
       y: sorted.values,
-      line: { color: leadColor(lead, opts.maxLead), width: 1.6 },
+      line:
+        emphasis == null
+          ? { color: leadColor(lead, opts.maxLead), width: 1.6 }
+          : isAccent
+            ? { color: EMPHASIS_ACCENT, width: 2.6 }
+            : { color: EMPHASIS_CONTEXT, width: 1 },
+      opacity: emphasis == null || isAccent ? 1 : 0.85,
       visible: shown ? true : 'legendonly',
+      // Only the accent line advertises itself in the hover; the context lines
+      // still respond, so nothing becomes unreachable.
       hovertemplate:
-        `<b>Lead ${lead} d</b><br>%{x|%Y-%m-%d %H:%M}<br>%{y:.2f} m³/s<extra></extra>`,
+        `<b>Lead ${lead} d${isAccent ? ' — emphasised' : ''}</b>` +
+        `<br>%{x|%Y-%m-%d %H:%M}<br>%{y:.2f} m³/s<extra></extra>`,
     });
   }
 
@@ -104,7 +141,10 @@ export function eventVsLeadFigure(
       text:
         'Event vs Forecast Lead Time' +
         `<br><sup>${opts.statLabel}, pooled across start dates by lead day` +
-        ' — click the legend to show or hide leads</sup>',
+        (opts.emphasiseLead != null
+          ? ` — lead ${opts.emphasiseLead} highlighted, other leads shown as context`
+          : ' — click the legend to show or hide leads') +
+        '</sup>',
       x: 0.5,
     },
     margin: { l: 60, r: 20, t: 60, b: 40 },

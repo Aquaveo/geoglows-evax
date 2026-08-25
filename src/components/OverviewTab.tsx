@@ -196,6 +196,18 @@ export function OverviewTab() {
 
         <h3 style={h3}>The method</h3>
         <p style={p}>
+          The GEOGLOWS training material covers both halves of this directly:{' '}
+          <a href="https://training.geoglows.org/rfs/bias-correction/bias-correction/" style={link} target="_blank" rel="noreferrer">
+            bias correction
+          </a>{' '}
+          for the general approach, and{' '}
+          <a href="https://training.geoglows.org/rfs/bias-correction/forecasted-bias-correction/" style={link} target="_blank" rel="noreferrer">
+            forecasted bias correction
+          </a>{' '}
+          for applying it to forecasts specifically. Read those first if the summary below moves
+          too fast.
+        </p>
+        <p style={p}>
           This is a TypeScript port of <code>geoglows.bias.correct_forecast</code> (the Python
           package keeps the programme name), verified
           bit-for-bit against the Python package. It is monthly empirical quantile mapping:
@@ -569,6 +581,7 @@ const sectionStyle: React.CSSProperties = {
   background: '#fff',
 };
 const h2: React.CSSProperties = { marginTop: 0, fontSize: '1.15rem' };
+const link: React.CSSProperties = { color: '#1d4ed8', textDecoration: 'underline' };
 const h3: React.CSSProperties = { marginTop: '1.25rem', marginBottom: '0.4rem', fontSize: '1rem' };
 const p: React.CSSProperties = { margin: '0.5rem 0', lineHeight: 1.55, color: '#222' };
 const pMono: React.CSSProperties = {

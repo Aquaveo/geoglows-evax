@@ -30,6 +30,8 @@ import { getPolyfits } from '../lib/bias/polyfits';
 import type { RiverPolyfits } from '../lib/bias/polyfitTypes';
 import { correctionEffectByLead } from '../lib/bias/correctionEffect';
 import { biasCdfsFigure, biasTransferFigure } from '../plots/biasTransfer';
+import { dumbbellFigure, type DumbbellRow } from '../plots/dumbbell';
+import { divergingBarsFigure, type DivergingRow } from '../plots/divergingBars';
 import { biasHydrographFigure } from '../plots/biasHydrograph';
 import type { BiasCorrection } from '../lib/bias/correctForecasts';
 import { PlotNote } from './PlotNote';
@@ -953,6 +955,30 @@ export function MetricsTab() {
     return rows;
   }, [app.eventData, globalCorrection, grid]);
 
+  /**
+   * Raw vs corrected KGE' per lead, for the dumbbell in the bias section.
+   *
+   * Reads the already-computed skill rows rather than recomputing, so the
+   * dumbbell can never disagree with the bar charts above it.
+   */
+  const dumbbellRows = useMemo(() => {
+    const build = (after: typeof skillLead | null): DumbbellRow[] | null => {
+      if (!skillLead || !after) return null;
+      const byLabel = new Map(after.map((r) => [r.label, r]));
+      return skillLead.map((raw) => {
+        const cor = byLabel.get(raw.label);
+        return {
+          label: raw.label,
+          before: raw.kge,
+          after: cor ? cor.kge : Number.NaN,
+          pairs: cor?.pairs ?? raw.pairs,
+        };
+      });
+    };
+    return { local: build(skillLeadCorrected), global: build(skillLeadGlobal) };
+  }, [skillLead, skillLeadCorrected, skillLeadGlobal]);
+
+
   const skillDisplay = useMemo(
     () =>
       skillVariant === 'global' && skillLeadGlobal
@@ -1025,6 +1051,29 @@ export function MetricsTab() {
     if (!app.eventData || app.forecasts.size === 0) return null;
     return computePeakTimingByRun(app.forecasts, app.eventData);
   }, [app.forecasts, app.eventData]);
+
+  /** Median signed peak-timing error per initialization, for the diverging bars. */
+  const peakTimingRows = useMemo<DivergingRow[] | null>(() => {
+    if (!peakByRun || peakByRun.initDates.length === 0) return null;
+    return peakByRun.initDates.map((date, i) => {
+      const vals = (peakByRun.values[i] ?? []).filter(Number.isFinite);
+      if (vals.length === 0) {
+        return { label: date, value: Number.NaN, n: 0, detail: 'no member timed a peak' };
+      }
+      const sorted = [...vals].sort((a, b) => a - b);
+      const mid = sorted.length / 2;
+      const median =
+        sorted.length % 2 === 1
+          ? sorted[Math.floor(mid)]
+          : (sorted[mid - 1] + sorted[mid]) / 2;
+      return {
+        label: date,
+        value: median,
+        n: vals.length,
+        detail: `, spread ${sorted[0].toFixed(0)} to ${sorted[sorted.length - 1].toFixed(0)} h`,
+      };
+    });
+  }, [peakByRun]);
 
   // Recompute the contingency matrix on lead/series selection change.
   const contingency = useMemo<ContingencyResult | null>(() => {
@@ -1322,6 +1371,32 @@ export function MetricsTab() {
               wide box centred on it, because it means the members agree on the wrong answer.
             </PlotNote>
           </div>
+        )}
+
+        {peakTimingRows && peakTimingRows.length > 0 && (
+          <>
+            <h3 style={h3}>Median timing error, signed</h3>
+            <Plot
+              {...divergingBarsFigure(peakTimingRows, {
+                title: `Peak Timing Error by Forecast Initialization${riverIdSuffix}`,
+                subtitle: peakByRun?.obsPeak
+                  ? `observed peak ${peakByRun.obsPeak.toISOString().slice(0, 16).replace('T', ' ')} UTC`
+                  : undefined,
+                valueLabel: 'Δt_peak (hours) — median across members',
+                negativeLabel: 'early',
+                positiveLabel: 'late',
+                unit: 'h',
+                categoryLabel: 'Initialized (UTC)',
+              })}
+            />
+            <PlotNote>
+              the same numbers as the box plot below, reduced to one median per run so the{' '}
+              <em>sign</em> reads first: bars left of the line predicted the peak early, bars right
+              of it late. Colour is redundant with side here on purpose — the axis already answers
+              the question, so nothing is lost in greyscale or to colour-blindness. Use the box
+              plot below when you need the spread across the 51 members rather than the centre.
+            </PlotNote>
+          </>
         )}
 
         {peakByRun && peakByRun.daysBefore.length > 0 && (
@@ -1671,6 +1746,41 @@ export function MetricsTab() {
               forecast error grows with lead, but the correction cannot know that.
             </PlotNote>
           </div>
+        )}
+
+        {(dumbbellRows.local || dumbbellRows.global) && (
+          <>
+            <h3 style={h3}>What correction changed, per lead</h3>
+            {dumbbellRows.global && (
+              <Plot
+                {...dumbbellFigure(dumbbellRows.global, {
+                  title: `KGE′ before and after the global transform${riverIdSuffix}`,
+                  metricLabel: "KGE′",
+                  beforeLabel: 'Raw',
+                  afterLabel: 'Global transform',
+                  higherIsBetter: true,
+                })}
+              />
+            )}
+            {dumbbellRows.local && (
+              <Plot
+                {...dumbbellFigure(dumbbellRows.local, {
+                  title: `KGE′ before and after the local CDF correction${riverIdSuffix}`,
+                  metricLabel: "KGE′",
+                  beforeLabel: 'Raw',
+                  afterLabel: 'Local CDF',
+                  higherIsBetter: true,
+                })}
+              />
+            )}
+            <PlotNote>
+              one row per lead day, showing the same KGE′ the bar charts report — grey dot is the
+              raw forecast, orange is corrected, and the connector's length is the size of the
+              change. Green means correction helped at that lead, red that it hurt. This answers
+              "did it work" without asking you to match two overlapping lines across sixteen
+              crossings, and the count in the subtitle says how many leads improved.
+            </PlotNote>
+          </>
         )}
 
         {activeBiasRun && app.eventData && correction && (
