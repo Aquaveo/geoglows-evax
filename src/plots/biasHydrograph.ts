@@ -8,6 +8,14 @@ export interface BiasHydrographOptions {
   label: string
   /** Ensemble statistic name shown in the subtitle. */
   statLabel?: string
+  /**
+   * Which correction produced the corrected line, e.g. "local CDF" or "SABER".
+   *
+   * Named rather than assumed: two different corrections are offered and a plot
+   * that just says "bias-corrected" leaves the reader unable to tell which one
+   * they are looking at.
+   */
+  correctedLabel?: string
   riverId?: number
   /**
    * Observed-side thresholds. These are the ones that apply to the observed
@@ -151,7 +159,7 @@ export function biasHydrographFigure(
       mode: 'lines',
       x: corrected.time,
       y: corMed,
-      name: 'Forecast — bias-corrected',
+      name: `Forecast — ${opts.correctedLabel ?? 'bias-corrected'}`,
       line: { color: '#1f77b4', width: 2.5 },
       hovertemplate: '%{x|%Y-%m-%d %H:%M}<br>corrected %{y:.2f} m³/s<extra></extra>',
     },
@@ -175,7 +183,7 @@ export function biasHydrographFigure(
   const layout: Partial<Layout> = {
     title: {
       text:
-        `Raw vs bias-corrected — run ${opts.label}` +
+        `Raw vs ${opts.correctedLabel ?? 'bias-corrected'} — run ${opts.label}` +
         `${opts.riverId != null ? `  |  River ${opts.riverId}` : ''}` +
         `<br><sup>${opts.statLabel ?? 'ensemble median'}${rpNote}${unchangedNote}</sup>`,
       x: 0.5,

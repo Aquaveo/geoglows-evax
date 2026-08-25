@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../state/AppContext';
 import { reorganizeByLead, memberSeries, statSeries, type StatKey } from '../lib/leadBuckets';
-import type { LeadBucket, TimeSeries } from '../lib/types';
+import type { LeadBucket, RpThresholds, TimeSeries } from '../lib/types';
 import {
   buildContingencyMatrix,
   determineEventReturnPeriod,
@@ -37,6 +37,7 @@ import { correctionEffectByLead } from '../lib/bias/correctionEffect';
 import { biasCdfsFigure, biasTransferFigure } from '../plots/biasTransfer';
 import { dumbbellFigure, type DumbbellRow } from '../plots/dumbbell';
 import { divergingBarsFigure, type DivergingRow } from '../plots/divergingBars';
+import { maxOf } from '../lib/arrayStats';
 import { biasHydrographFigure } from '../plots/biasHydrograph';
 import type { BiasCorrection } from '../lib/bias/correctForecasts';
 import { PlotNote } from './PlotNote';
@@ -196,24 +197,109 @@ function VariantSelect({
   disabledReason: string | null;
   globalDisabledReason: string | null;
 }) {
+  // A disabled <option> only shows its reason while the menu is OPEN, so a
+  // closed select reading "Raw" looked like the app was refusing the choice for
+  // no reason. The reasons are repeated on the page, where they are readable
+  // without opening anything, and each one names the step that unblocks it.
+  const blocked: [string, string][] = [];
+  if (disabledReason) blocked.push(['Local CDF', disabledReason]);
+  if (globalDisabledReason) blocked.push(['SABER', globalDisabledReason]);
+
   return (
-    <label style={lbl}>
-      Forecasts:&nbsp;
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value as MetricVariant)}
-        style={sel}
-      >
-        <option value="raw">Raw</option>
-        <option value="corrected" disabled={!!disabledReason}>
-          Bias-corrected — local CDF{disabledReason ? ` — ${disabledReason}` : ''}
-        </option>
-        <option value="global" disabled={!!globalDisabledReason}>
-          Bias-corrected — SABER
-          {globalDisabledReason ? ` — ${globalDisabledReason}` : ''}
-        </option>
-      </select>
-    </label>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+      <label style={lbl}>
+        Forecasts:&nbsp;
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value as MetricVariant)}
+          style={sel}
+        >
+          <option value="raw">Raw</option>
+          <option value="corrected" disabled={!!disabledReason}>
+            Bias-corrected — local CDF
+          </option>
+          <option value="global" disabled={!!globalDisabledReason}>
+            Bias-corrected — SABER
+          </option>
+        </select>
+      </label>
+      {blocked.length > 0 && (
+        <div style={variantNote}>
+          {blocked.map(([name, why]) => (
+            <div key={name}>
+              <strong>{name}</strong> unavailable — {why}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Shown when the observed peak never reached the 2-year threshold.
+ *
+ * That single fact silently removes every categorical score: `validCategories`
+ * returns one category, the contingency matrix collapses to 1x1, and
+ * `thresholdScores` yields no rows at all — so the whole table, POD, FAR, CSI
+ * and frequency bias included, simply stops rendering. Without a notice that
+ * reads as the app being broken rather than the data saying nothing crossed a
+ * flood threshold.
+ *
+ * Note the cause is the OBSERVATIONS, not the forecast. A model that missed the
+ * event entirely still scores — CSI is 0, which is a finding. Nothing to score
+ * only happens when the gauge itself stayed below the 2-year flood.
+ */
+function NoCategoriesAlert({ peak, obsRp }: { peak: number; obsRp: RpThresholds | null }) {
+  const t2 = obsRp?.[2];
+  const haveBoth = Number.isFinite(peak) && Number.isFinite(t2);
+  const ratio = haveBoth ? (t2 as number) / peak : Number.NaN;
+  // 1 m3/s = 35.31 ft3/s. A gauge record left in the wrong unit lands the peak
+  // almost exactly this far below the thresholds, which is worth naming outright
+  // rather than making the reader spot it.
+  const unitSuspect = Number.isFinite(ratio) && ratio > 20 && ratio < 60;
+
+  return (
+    <div style={noCategoriesAlert}>
+      <strong>No categorical scores — the observed flow never reached the 2-year threshold.</strong>
+      {haveBoth && (
+        <p style={{ margin: '0.45rem 0' }}>
+          Observed peak in this window <strong>{peak.toFixed(1)} m³/s</strong> against a 2-year
+          threshold of <strong>{(t2 as number).toFixed(1)} m³/s</strong> — short by a factor of{' '}
+          <strong>{ratio.toFixed(1)}×</strong>.
+        </p>
+      )}
+      <p style={{ margin: '0.45rem 0' }}>
+        Return-period categories are built from the observations, so with nothing above the lowest
+        threshold there is only one category and nothing to classify. That hides the{' '}
+        <strong>contingency matrix</strong>, the <strong>per-threshold table</strong> (POD, FAR, CSI,
+        frequency bias) and <strong>RPS/RPSS</strong>. It is not caused by the forecast — a model
+        that missed the flood completely still scores, as CSI&nbsp;=&nbsp;0.
+      </p>
+      <p style={{ margin: '0.45rem 0 0.2rem' }}>Worth checking, in order:</p>
+      <ul style={{ margin: 0, paddingLeft: '1.2rem', lineHeight: 1.6 }}>
+        {unitSuspect && (
+          <li>
+            <strong>Units.</strong> That {ratio.toFixed(1)}× gap is close to the 35.31 ft³/s per m³/s
+            conversion. Check the gauge record is in m³/s, and that it was not converted twice.
+          </li>
+        )}
+        <li>
+          <strong>The window misses the peak.</strong> Widen the event dates so the crest is inside
+          them — the peak sets the category, so trimming it out removes every category with it.
+        </li>
+        <li>
+          <strong>Gauge and reach disagree.</strong> If the thresholds come from a much larger reach
+          than the gauge drains, observed flow can never reach them. Compare drainage areas on the
+          Setup tab.
+        </li>
+        <li>
+          <strong>The event genuinely was not a flood.</strong> Below a 2-year return period there is
+          no flood category to score. The continuous metrics — KGE, CRPS, timing — still apply and
+          are the right ones to read here.
+        </li>
+      </ul>
+    </div>
   );
 }
 
@@ -1107,11 +1193,36 @@ export function MetricsTab() {
     [rawBuckets, correctedBuckets],
   );
 
-  /** Runs available to compare raw against corrected. */
-  const biasRunDates = useMemo(
-    () => (correction ? [...correction.forecasts.keys()].sort() : []),
-    [correction],
+  /**
+   * The same shift-per-lead diagnostic for SABER.
+   *
+   * Built separately rather than switched, because the two corrections are not
+   * alternatives to compare one at a time here — the section's job is to show
+   * what each one DOES, and they do different things: the local map is fitted to
+   * the uploaded gauge, SABER to centrally published per-river coefficients.
+   */
+  const globalCorrectionEffect = useMemo(
+    () =>
+      rawBuckets && globalBuckets
+        ? correctionEffectByLead(rawBuckets, globalBuckets, MAX_LEAD)
+        : null,
+    [rawBuckets, globalBuckets],
   );
+
+  /**
+   * Runs available to compare raw against corrected, across BOTH corrections.
+   *
+   * The two lists differ: the local map excludes runs whose mapping ran to
+   * infinity, while SABER excludes none. Keying the selector off the local list
+   * alone hid every run SABER could still show.
+   */
+  const biasRunDates = useMemo(() => {
+    const d = new Set<string>();
+    if (correction) for (const k of correction.forecasts.keys()) d.add(k);
+    if (globalCorrection && !globalCorrection.unusable)
+      for (const k of globalCorrection.forecasts.keys()) d.add(k);
+    return [...d].sort();
+  }, [correction, globalCorrection]);
   const activeBiasRun =
     biasRunDate && biasRunDates.includes(biasRunDate) ? biasRunDate : (biasRunDates[0] ?? null);
 
@@ -1213,6 +1324,12 @@ export function MetricsTab() {
     matrixSeriesKey,
   ]);
 
+  /** Highest observed flow in the event window — the number that sets eventRp. */
+  const observedPeak = useMemo(() => {
+    if (!app.eventData) return Number.NaN;
+    return maxOf(app.eventData.values, Number.NaN);
+  }, [app.eventData]);
+
   const eventRpLabel =
     app.eventReturnPeriod == null
       ? '—'
@@ -1271,14 +1388,12 @@ export function MetricsTab() {
           </button>
         )}
         {error && <p style={{ color: '#b91c1c' }}>{error}</p>}
-        {app.eventReturnPeriod != null && (
+        {app.eventReturnPeriod != null && app.eventReturnPeriod > 0 && (
           <p style={{ color: '#444', marginTop: '0.6rem' }}>
             Observed event return period: <strong>{eventRpLabel}</strong>
-            {app.eventReturnPeriod === 0 && (
-              <> — categorical metrics will be degenerate (single category).</>
-            )}
           </p>
         )}
+        {app.eventReturnPeriod === 0 && <NoCategoriesAlert peak={observedPeak} obsRp={app.obsRp} />}
 
         {app.leadBuckets && app.eventReturnPeriod != null && (
           <div style={subBlock}>
@@ -1600,6 +1715,10 @@ export function MetricsTab() {
               median across members. The heavy whisker is the middle half of them and the light one
               behind it is the full range, so the two together answer different questions: whether
               the bulk of members agreed on the sign, and whether <em>any</em> member got it right.
+              The axis is scaled to the bars and the middle half, not to the full range — a single
+              straggling member can sit hundreds of hours out, and letting that set the scale left
+              every bar too short to read. A <strong>›</strong> marks each row whose range carries on
+              past the edge; hover for its exact extent.
               <br />
               <br />
               Grouped by how far ahead the forecast was looking rather than by when it was issued,
@@ -1636,7 +1755,8 @@ export function MetricsTab() {
             <PlotNote>
               one row per initialization, so the <em>sign</em> reads first: bars left of the line
               predicted the peak early, bars right of it late. The bar is the median across members,
-              the heavy whisker the middle half and the light one the full range. Colour is
+              the heavy whisker the middle half and the light one the full range,
+              clipped at the axis with a <strong>›</strong> where it continues. Colour is
               redundant with side on purpose — the
               axis already answers the question, so nothing is lost in greyscale or to
               colour-blindness.
@@ -1824,12 +1944,27 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Bias correction"
-        description="What the correction actually does to your forecasts: the transfer curve it applies, the two monthly distributions it matches, how much it shifts each lead day, and one run before and after. Diagnostics only — no metric here."
+        description="What each correction actually does to your forecasts. Both are covered: the local CDF map fitted to your uploaded gauge record, and SABER, fitted centrally per river and month. Shift per lead day, KGE′ before and after, and one run before and after are shown for both; the transfer curve and the CDF pair are local-only, because SABER matches no empirical distributions. Diagnostics only — no metric here."
       >
+        {/*
+          Each correction is gated on its OWN availability. The section used to
+          be gated on the local map alone, so a user who had not uploaded a
+          historical record was told to go and upload one — and never saw that
+          SABER, which needs no observations at all, was sitting there ready.
+        */}
         {!correction && (
-          <p style={{ color: '#555' }}>
-            {correctedUnavailableReason ?? 'Bias correction is not available yet.'}
+          <p style={{ color: '#555', margin: '0 0 0.45rem' }}>
+            <strong>Local CDF correction unavailable</strong> —{' '}
+            {correctedUnavailableReason ?? 'not available yet.'}
           </p>
+        )}
+        {(!globalCorrection || globalCorrection.unusable) && (
+          <p style={{ color: '#555', margin: '0 0 0.45rem' }}>
+            <strong>SABER unavailable</strong> — {globalUnavailableReason ?? 'not available yet.'}
+          </p>
+        )}
+        {globalCorrection && !globalCorrection.unusable && (
+          <GlobalCorrectionBanner c={globalCorrection} />
         )}
 
         {correction && <CorrectionBanner c={correction} />}
@@ -1854,7 +1989,7 @@ export function MetricsTab() {
             )}
 
             <div style={subBlock}>
-              <h3 style={h3}>Transfer curve</h3>
+              <h3 style={h3}>Transfer curve — local CDF</h3>
               <Plot
                 {...biasTransferFigure(activeMapping, {
                   forecastValues: biasRugValues,
@@ -1874,11 +2009,19 @@ export function MetricsTab() {
                 returns infinity and the run is excluded. The black tick marks along the bottom
                 are your actual forecast values, so you can see which part of this curve your
                 event really uses.
+                <br />
+                <br />
+                This curve and the CDF pair below exist for the <strong>local</strong> correction
+                only, and not because SABER was left out: SABER has no curve of this kind to draw.
+                It applies published per-river, per-month polynomial coefficients rather than
+                matching your uploaded record against the retrospective, so there is no pair of
+                empirical distributions to put side by side. What it does to your numbers is shown
+                in the shift and before/after plots below, which do cover both.
               </PlotNote>
             </div>
 
             <div style={subBlock}>
-              <h3 style={h3}>The two distributions being matched</h3>
+              <h3 style={h3}>The two distributions being matched — local CDF</h3>
               <Plot
                 {...biasCdfsFigure(activeMapping, { riverId: app.reach?.riverId ?? undefined })}
               />
@@ -1894,32 +2037,55 @@ export function MetricsTab() {
           </>
         )}
 
-        {correctionEffect && (
+        {(correctionEffect || globalCorrectionEffect) && (
           <div style={subBlock}>
-            <h3 style={h3}>How much it shifts each lead day</h3>
-            <Plot
-              {...distributionVsLeadFigure(correctionEffect, {
-                metricLabel: 'Δ',
-                title: `Correction Shift per Lead Day${riverIdSuffix}`,
-                subtitle: 'corrected − raw, m³/s, across ensemble members  |  above zero = inflated',
-                yAxisLabel: 'corrected − raw (m³/s)',
-                valueFormat: '+.2f',
-                zeroLine: true,
-                membersLabel: 'members',
-              })}
-            />
+            <h3 style={h3}>How much each correction shifts every lead day</h3>
+            {correctionEffect && (
+              <Plot
+                {...distributionVsLeadFigure(correctionEffect, {
+                  metricLabel: 'Δ',
+                  title: `Local CDF — Shift per Lead Day${riverIdSuffix}`,
+                  subtitle:
+                    'corrected − raw, m³/s, across ensemble members  |  above zero = inflated',
+                  yAxisLabel: 'corrected − raw (m³/s)',
+                  valueFormat: '+.2f',
+                  zeroLine: true,
+                  membersLabel: 'members',
+                })}
+              />
+            )}
+            {globalCorrectionEffect && (
+              <Plot
+                {...distributionVsLeadFigure(globalCorrectionEffect, {
+                  metricLabel: 'Δ',
+                  title: `SABER — Shift per Lead Day${riverIdSuffix}`,
+                  subtitle:
+                    'corrected − raw, m³/s, across ensemble members  |  above zero = inflated',
+                  yAxisLabel: 'corrected − raw (m³/s)',
+                  valueFormat: '+.2f',
+                  zeroLine: true,
+                  membersLabel: 'members',
+                })}
+              />
+            )}
             <PlotNote>
               how far the correction moves the forecast at each lead day. Above the dashed zero
               line it inflated the values, below it deflated them, and a box sitting on zero means
               the mapping was a no-op for that lead.
               <br />
               <br />
-              One caution about reading a trend here: the transfer curve is the{' '}
-              <strong>same at every lead</strong>, because the simulated distribution comes from
-              the retrospective, which has no lead dimension. So any lead-dependence you see is
-              not the correction treating long leads differently — it is those leads occupying a
-              different part of one fixed curve. That is also the method's main structural limit:
-              forecast error grows with lead, but the correction cannot know that.
+              One caution about reading a trend here, and it applies to both: the mapping is the{' '}
+              <strong>same at every lead</strong>. The local map comes from the retrospective, which
+              has no lead dimension, and SABER's coefficients are fitted per river and calendar
+              month, not per lead. So any lead-dependence you see is not either correction treating
+              long leads differently — it is those leads occupying a different part of one fixed
+              curve. That is also the shared structural limit of both: forecast error grows with
+              lead, and neither correction can know that.
+              <br />
+              <br />
+              Comparing the two panels is the point. Where they disagree in sign, one is inflating
+              the forecast while the other deflates it, and the metric tabs will disagree about
+              which helped — worth knowing before you read them.
             </PlotNote>
           </div>
         )}
@@ -1959,7 +2125,7 @@ export function MetricsTab() {
           </>
         )}
 
-        {activeBiasRun && app.eventData && correction && (
+        {activeBiasRun && app.eventData && (correction || globalCorrection) && (
           <div style={subBlock}>
             <h3 style={h3}>One run, before and after</h3>
             <label style={lbl}>
@@ -1976,7 +2142,12 @@ export function MetricsTab() {
                 ))}
               </select>
             </label>
-            {app.forecasts.get(activeBiasRun) && (
+            {/*
+              One panel per correction, each naming itself. Previously only the
+              local map was drawn and the legend just said "bias-corrected", so
+              there was no way to tell which of the two you were looking at.
+            */}
+            {app.forecasts.get(activeBiasRun) && correction?.forecasts.get(activeBiasRun) && (
               <Plot
                 {...biasHydrographFigure(
                   app.forecasts.get(activeBiasRun)!,
@@ -1984,6 +2155,7 @@ export function MetricsTab() {
                   app.eventData,
                   {
                     label: `${activeBiasRun.slice(0, 4)}-${activeBiasRun.slice(4, 6)}-${activeBiasRun.slice(6, 8)}`,
+                    correctedLabel: 'local CDF',
                     riverId: app.reach?.riverId ?? undefined,
                     // Observed thresholds apply to the observed line and to the
                     // corrected forecast; simulated ones to the raw forecast.
@@ -1993,6 +2165,31 @@ export function MetricsTab() {
                 )}
               />
             )}
+            {correction && !correction.forecasts.get(activeBiasRun) && (
+              <p style={{ color: '#8a6d1f', margin: '0.4rem 0' }}>
+                This run was excluded from the <strong>local CDF</strong> correction — the banner
+                above says why. SABER excludes nothing, so it still appears below.
+              </p>
+            )}
+            {app.forecasts.get(activeBiasRun) &&
+              globalCorrection &&
+              !globalCorrection.unusable &&
+              globalCorrection.forecasts.get(activeBiasRun) && (
+                <Plot
+                  {...biasHydrographFigure(
+                    app.forecasts.get(activeBiasRun)!,
+                    globalCorrection.forecasts.get(activeBiasRun)!,
+                    app.eventData,
+                    {
+                      label: `${activeBiasRun.slice(0, 4)}-${activeBiasRun.slice(4, 6)}-${activeBiasRun.slice(6, 8)}`,
+                      correctedLabel: 'SABER',
+                      riverId: app.reach?.riverId ?? undefined,
+                      obsRp: app.obsRp,
+                      simRp: app.simRp,
+                    },
+                  )}
+                />
+              )}
             <PlotNote>
               the plainest test of whether the correction helped: if the blue corrected line moves
               toward the black observations relative to the grey raw line, it did. If it overshoots
@@ -2010,8 +2207,9 @@ export function MetricsTab() {
               entry to bring the zones in when they are in range.
               <br />
               <br />
-              Only runs that survived correction appear in this list, so a date missing here was
-              excluded — the banner above says why.
+              One panel per available correction, each naming itself in the title and legend. The
+              run list is the union of both: the local map drops runs whose mapping ran to
+              infinity, while SABER drops none, so a run can appear for one and not the other.
             </PlotNote>
           </div>
         )}
@@ -2477,6 +2675,28 @@ const correctionBanner: React.CSSProperties = {
   color: '#4a3a12',
 };
 const lbl: React.CSSProperties = { display: 'inline-flex', alignItems: 'center' };
+const noCategoriesAlert: React.CSSProperties = {
+  marginTop: '0.7rem',
+  padding: '0.7rem 0.85rem',
+  border: '1px solid #e0b88a',
+  borderLeft: '4px solid #d97706',
+  borderRadius: 4,
+  background: '#fff8ef',
+  color: '#5c3d16',
+  fontSize: '0.9rem',
+  lineHeight: 1.55,
+  maxWidth: '52rem',
+};
+const variantNote: React.CSSProperties = {
+  fontSize: '0.85rem',
+  color: '#8a6d1f',
+  background: '#fdf6e3',
+  border: '1px solid #e6d9ae',
+  borderRadius: 4,
+  padding: '0.4rem 0.55rem',
+  lineHeight: 1.5,
+  maxWidth: '46rem',
+};
 const sel: React.CSSProperties = { padding: '0.3rem 0.5rem', fontSize: '0.95rem' };
 const cmth: React.CSSProperties = {
   border: '1px solid #ccc',
