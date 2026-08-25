@@ -1139,16 +1139,21 @@ export function MetricsTab() {
         };
       }
       const sorted = [...vals].sort((a, b) => a - b);
-      const mid = sorted.length / 2;
-      const median =
-        sorted.length % 2 === 1
-          ? sorted[Math.floor(mid)]
-          : (sorted[mid - 1] + sorted[mid]) / 2;
+      const q = (p: number) => {
+        const h = (sorted.length - 1) * p;
+        const lo = Math.floor(h);
+        const hi = Math.ceil(h);
+        return lo === hi ? sorted[lo] : sorted[lo] + (h - lo) * (sorted[hi] - sorted[lo]);
+      };
       return {
         label: `Lead ${lead}`,
-        value: median,
+        value: q(0.5),
+        q1: q(0.25),
+        q3: q(0.75),
+        lo: sorted[0],
+        hi: sorted[sorted.length - 1],
         n: vals.length,
-        detail: `, spread ${sorted[0].toFixed(0)} to ${sorted[sorted.length - 1].toFixed(0)} h, ${pairs} pairs`,
+        detail: `, ${pairs} pairs`,
       };
     });
   }, [app.peakTimingDistribution]);
@@ -1162,16 +1167,21 @@ export function MetricsTab() {
         return { label: date, value: Number.NaN, n: 0, detail: 'no member timed a peak' };
       }
       const sorted = [...vals].sort((a, b) => a - b);
-      const mid = sorted.length / 2;
-      const median =
-        sorted.length % 2 === 1
-          ? sorted[Math.floor(mid)]
-          : (sorted[mid - 1] + sorted[mid]) / 2;
+      const q = (p: number) => {
+        const h = (sorted.length - 1) * p;
+        const lo = Math.floor(h);
+        const hi = Math.ceil(h);
+        return lo === hi ? sorted[lo] : sorted[lo] + (h - lo) * (sorted[hi] - sorted[lo]);
+      };
       return {
         label: date,
-        value: median,
+        value: q(0.5),
+        q1: q(0.25),
+        q3: q(0.75),
+        lo: sorted[0],
+        hi: sorted[sorted.length - 1],
         n: vals.length,
-        detail: `, spread ${sorted[0].toFixed(0)} to ${sorted[sorted.length - 1].toFixed(0)} h`,
+        detail: '',
       };
     });
   }, [peakByRun]);
@@ -1586,10 +1596,15 @@ export function MetricsTab() {
               })}
             />
             <PlotNote>
-              the same reading as the per-initialization version, but grouped by how far ahead the
-              forecast was looking rather than by when it was issued — which makes it the more
-              interpretable of the two. Bars left of the line predicted the peak early, right of it
-              late.
+              bars left of the line predicted the peak early, right of it late. The bar is the
+              median across members and the whisker is the middle half of them, so whisker length
+              is member disagreement — hover for the full range, which is deliberately not drawn
+              because one outlying member would stretch it across zero and make a decisive result
+              look ambiguous.
+              <br />
+              <br />
+              Grouped by how far ahead the forecast was looking rather than by when it was issued,
+              which makes it the more interpretable of the two.
               <br />
               <br />
               <strong>Why this version is cleaner:</strong> in the per-initialization chart, a run
@@ -1602,29 +1617,6 @@ export function MetricsTab() {
           </>
         )}
 
-        {app.peakTimingDistribution && (
-          <div style={subBlock}>
-            <h3 style={h3}>Peak timing error (Δt_peak) by lead day</h3>
-            <Plot
-              {...distributionVsLeadFigure(app.peakTimingDistribution, {
-                metricLabel: 'Δt_peak',
-                title: `Peak Timing Error per Lead Day${riverIdSuffix}`,
-                subtitle:
-                  't_peak,forecast − t_peak,observed (hours)  |  51 members (leads 0–15)  |  negative = early',
-                yAxisLabel: 'Δt_peak (hours)',
-                valueFormat: '+.1f',
-                zeroLine: true,
-              })}
-            />
-            <PlotNote>
-              hours between the forecast peak and the observed peak, per member. A box centred on
-              the dashed zero line means the members timed the peak correctly; below zero they
-              peaked early, above zero late. Box height is disagreement between members, and it
-              normally widens with lead time — a narrow box far from zero is worse news than a
-              wide box centred on it, because it means the members agree on the wrong answer.
-            </PlotNote>
-          </div>
-        )}
 
         {peakTimingRows && peakTimingRows.length > 0 && (
           <>
@@ -1643,84 +1635,15 @@ export function MetricsTab() {
               })}
             />
             <PlotNote>
-              the same numbers as the box plot below, reduced to one median per run so the{' '}
-              <em>sign</em> reads first: bars left of the line predicted the peak early, bars right
-              of it late. Colour is redundant with side here on purpose — the axis already answers
-              the question, so nothing is lost in greyscale or to colour-blindness. Use the box
-              plot below when you need the spread across the 51 members rather than the centre.
+              one row per initialization, so the <em>sign</em> reads first: bars left of the line
+              predicted the peak early, bars right of it late. The bar is the median across members
+              and the whisker is the middle half. Colour is redundant with side on purpose — the
+              axis already answers the question, so nothing is lost in greyscale or to
+              colour-blindness.
             </PlotNote>
           </>
         )}
 
-        {peakByRun && peakByRun.daysBefore.length > 0 && (
-          <div style={subBlock}>
-            <h3 style={h3}>Peak timing error by forecast age (per run)</h3>
-            <Plot
-              {...distributionVsLeadFigure(
-                {
-                  // Index positions keep the runs evenly spaced and in date
-                  // order; the dates themselves become the tick labels.
-                  leads: peakByRun.initDates.map((_, i) => i),
-                  values: peakByRun.values,
-                },
-                {
-                  metricLabel: 'Δt_peak',
-                  // <br>, not \n: plotly tick labels are mini-HTML and render a
-                  // literal backslash-n, which truncated every label to
-                  // "2026-06-05 (" and left it colliding with the axis title.
-                  xTickText: peakByRun.initDates.map((d, i) => {
-                    const n = peakByRun.daysBefore[i];
-                    const age = n > 0 ? `−${n} d` : n < 0 ? `+${-n} d` : 'peak day';
-                    return `${d.slice(5)}<br>${age}`;
-                  }),
-                  title: `Peak Timing Error by Forecast Initialization${riverIdSuffix}`,
-                  subtitle:
-                    `Observed peak ${peakByRun.obsPeak?.toISOString().slice(0, 16).replace('T', ' ')} UTC` +
-                    `  |  peak sought within ±${peakByRun.searchWindowHours} h of it  |  negative = early` +
-                    (peakByRun.noPeakMembers > 0
-                      ? `  |  ${peakByRun.noPeakMembers} member forecasts had no peak to time`
-                      : '') +
-                    (peakByRun.censoredMembers > 0
-                      ? `  |  ${peakByRun.censoredMembers} censored at the window edge`
-                      : '') +
-                    (peakByRun.emptyRuns > 0
-                      ? `  |  ${peakByRun.emptyRuns} run${peakByRun.emptyRuns === 1 ? '' : 's'} predicted no peak at all`
-                      : ''),
-                  xAxisLabel: 'Forecast initialization date (UTC)',
-                  yAxisLabel: 'Δt_peak (hours)',
-                  valueFormat: '+.1f',
-                  zeroLine: true,
-                  membersLabel: '51 members of one run',
-                },
-              )}
-            />
-            <PlotNote>
-              this asks your question directly: if you had looked at the forecast{' '}
-              <em>n</em> days before the peak actually arrived, when would it have told you the
-              peak was coming? Each box is one forecast run, labelled by the date it was
-              initialized with its age relative to the peak underneath — so read left to right to
-              replay the event as it approached. Zero means that run timed the peak exactly; below
-              zero it predicted the peak too early, above zero too late.
-              <br />
-              <br />
-              Box height here <em>is</em> genuine ensemble spread, unlike the per-lead plot above:
-              every value in a box comes from the same model run, where the 51 members really are
-              one ensemble. Member identity does not carry across runs, so the plot above mixes
-              unrelated members together and its box heights should not be read as uncertainty.
-              This one can be.
-              <br />
-              <br />
-              <strong>Where the boxes start is itself the answer.</strong> A member only counts if
-              it actually forecast a peak — a rise of at least 10% within ±
-              {peakByRun.searchWindowHours} h of the observed peak. A run whose hydrograph is flat
-              never predicted the event, so there is no timing to score and it is dropped rather
-              than assigned a meaningless error. The leftmost box is therefore the earliest
-              forecast that saw this peak coming; the subtitle counts what was dropped.
-              Searching further afield would only manufacture large errors out of flat forecasts,
-              which is why Δt cannot exceed ±{peakByRun.searchWindowHours} h here.
-            </PlotNote>
-          </div>
-        )}
 
         {app.crossingDistributions && app.crossingDetections && (
           <div style={subBlock}>

@@ -8,6 +8,20 @@ export interface DivergingRow {
   value: number;
   /** Sample size behind the value, for the hover. */
   n?: number;
+  /**
+   * Interquartile range across members, drawn as an error bar.
+   *
+   * Carrying the spread here is what lets one chart replace a bar chart plus a
+   * box plot of the same numbers: the bar gives the median and its sign, the
+   * error bar gives member disagreement. The full min–max range is deliberately
+   * not drawn — on a signed axis a single outlying member stretches the whisker
+   * across zero and makes an otherwise decisive result look ambiguous.
+   */
+  q1?: number;
+  q3?: number;
+  /** Full range, reported in the hover only. */
+  lo?: number;
+  hi?: number;
   /** Extra hover context, e.g. the spread across members. */
   detail?: string;
 }
@@ -63,9 +77,38 @@ export function divergingBarsFigure(
         line: { color: '#fcfcfb', width: 1 },
       },
       showlegend: false,
-      customdata: scored.map((r) => [r.n ?? Number.NaN, r.detail ?? ''] as [number, string]),
+      // Asymmetric error bars: the IQR is not centred on the median in general,
+      // so a symmetric bar would misreport it.
+      error_x: scored.some((r) => Number.isFinite(r.q1) && Number.isFinite(r.q3))
+        ? {
+            type: 'data' as const,
+            symmetric: false,
+            array: scored.map((r) =>
+              Number.isFinite(r.q3) ? Math.max(0, (r.q3 as number) - r.value) : 0,
+            ),
+            arrayminus: scored.map((r) =>
+              Number.isFinite(r.q1) ? Math.max(0, r.value - (r.q1 as number)) : 0,
+            ),
+            color: '#52514e',
+            thickness: 1.4,
+            width: 4,
+          }
+        : undefined,
+      customdata: scored.map(
+        (r) =>
+          [
+            r.n ?? Number.NaN,
+            r.detail ?? '',
+            Number.isFinite(r.q1) ? (r.q1 as number) : Number.NaN,
+            Number.isFinite(r.q3) ? (r.q3 as number) : Number.NaN,
+            Number.isFinite(r.lo) ? (r.lo as number) : Number.NaN,
+            Number.isFinite(r.hi) ? (r.hi as number) : Number.NaN,
+          ] as [number, string, number, number, number, number],
+      ),
       hovertemplate:
-        `<b>%{y}</b><br>%{x:+.1f} ${unit}` +
+        `<b>%{y}</b><br>median %{x:+.1f} ${unit}` +
+        `<br>middle half %{customdata[2]:+.1f} to %{customdata[3]:+.1f}` +
+        `<br>full range %{customdata[4]:+.1f} to %{customdata[5]:+.1f}` +
         `<br>%{customdata[0]} members%{customdata[1]}<extra></extra>`,
       text: scored.map((r) => `${r.value > 0 ? '+' : ''}${r.value.toFixed(1)}`),
       textposition: 'outside',
@@ -103,7 +146,14 @@ export function divergingBarsFigure(
     font: { size: 10, color: '#b45309' },
   }));
 
-  const span = maxOf(scored.map((r) => Math.abs(r.value)), 1);
+  const span = maxOf(
+    scored.flatMap((r) => [
+      Math.abs(r.value),
+      Number.isFinite(r.q1) ? Math.abs(r.q1 as number) : 0,
+      Number.isFinite(r.q3) ? Math.abs(r.q3 as number) : 0,
+    ]),
+    1,
+  );
   // Symmetric about zero so bar lengths are comparable across sides — an
   // asymmetric range would make a late bar look bigger than an equal early one.
   const limit = span * 1.28;

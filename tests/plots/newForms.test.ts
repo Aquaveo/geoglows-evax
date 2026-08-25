@@ -93,3 +93,59 @@ describe('divergingBarsFigure', () => {
     expect(texts.some((t) => t.includes('no member timed a peak'))).toBe(true);
   });
 });
+
+describe('divergingBarsFigure with spread', () => {
+  const rows = [
+    { label: 'Lead 1', value: -12, q1: -20, q3: -4, lo: -50, hi: 8, n: 51 },
+    { label: 'Lead 2', value: 6, q1: 1, q3: 14, lo: -9, hi: 40, n: 51 },
+  ];
+  const fig = divergingBarsFigure(rows, {
+    valueLabel: 'Δt (h)',
+    negativeLabel: 'early',
+    positiveLabel: 'late',
+  });
+  const bar = fig.data[0] as {
+    error_x?: { array: number[]; arrayminus: number[]; symmetric: boolean };
+    x: number[];
+  };
+
+  it('draws the IQR as an ASYMMETRIC error bar', () => {
+    // The median is not centred in the IQR in general, so a symmetric bar would
+    // misreport the spread.
+    expect(bar.error_x).toBeDefined();
+    expect(bar.error_x!.symmetric).toBe(false);
+    // Reversed for display order, so match by position of each value.
+    const idx = bar.x.indexOf(-12);
+    expect(bar.error_x!.array[idx]).toBeCloseTo(8, 10); // -4 − (−12)
+    expect(bar.error_x!.arrayminus[idx]).toBeCloseTo(8, 10); // −12 − (−20)
+  });
+
+  it('never emits a negative error-bar length', () => {
+    // A q1 above the median, possible with degenerate samples, would otherwise
+    // produce a negative length and plotly would render it inverted.
+    const odd = divergingBarsFigure([{ label: 'a', value: 5, q1: 9, q3: 2 }], {
+      valueLabel: 'x',
+      negativeLabel: 'lo',
+      positiveLabel: 'hi',
+    });
+    const e = (odd.data[0] as { error_x: { array: number[]; arrayminus: number[] } }).error_x;
+    expect(e.array.every((v) => v >= 0)).toBe(true);
+    expect(e.arrayminus.every((v) => v >= 0)).toBe(true);
+  });
+
+  it('widens the axis to fit the whiskers, not just the medians', () => {
+    const [lo, hi] = fig.layout.xaxis!.range as [number, number];
+    // q3 of 14 is the widest quartile; the range must clear it.
+    expect(hi).toBeGreaterThan(14);
+    expect(lo).toBeCloseTo(-hi, 10);
+  });
+
+  it('omits error bars entirely when no row carries a spread', () => {
+    const plain = divergingBarsFigure([{ label: 'a', value: 3 }], {
+      valueLabel: 'x',
+      negativeLabel: 'lo',
+      positiveLabel: 'hi',
+    });
+    expect((plain.data[0] as { error_x?: unknown }).error_x).toBeUndefined();
+  });
+});
