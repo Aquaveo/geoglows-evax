@@ -10,6 +10,9 @@ import {
 import { computeMcc } from '../lib/metrics/mcc';
 import { computeHss } from '../lib/metrics/hss';
 import { computeCsi } from '../lib/metrics/csi';
+import { climatologyFromRecord, orderedThresholds, rpsByLead, type RpsResult } from '../lib/metrics/rps';
+import { thresholdScores, type ThresholdScores } from '../lib/metrics/thresholdScores';
+import { rpsPerLeadFigure } from '../plots/rpsPerLead';
 import { categoricalCombinedFigure } from '../plots/categoricalCombined';
 import { computePeakTimingError } from '../lib/metrics/peakTiming';
 import { computePeakTimingByRun } from '../lib/metrics/peakTimingByRun';
@@ -356,6 +359,8 @@ export function MetricsTab() {
   // Local rather than in AppContext: only this tab reads it, and the context's
   // dependency array is maintained by hand and already long.
   const [csiDistribution, setCsiDistribution] = useState<PerLeadDistribution | null>(null);
+  const [rpsResult, setRpsResult] = useState<RpsResult | null>(null);
+  const [thresholdRows, setThresholdRows] = useState<ThresholdScores[] | null>(null);
   const [accuracyVariant, setAccuracyVariant] = useState<MetricVariant>('raw');
   const [skillVariant, setSkillVariant] = useState<MetricVariant>('raw');
   const [crpsVariant, setCrpsVariant] = useState<MetricVariant>('raw');
@@ -645,6 +650,58 @@ export function MetricsTab() {
         app.setMccDistribution(mccDist);
         app.setHssDistribution(hssDist);
         setCsiDistribution(csiDist);
+
+        // RPS uses the ensemble as a distribution over categories rather than
+        // scoring each member separately, so it is computed from the buckets
+        // directly rather than from per-member contingency matrices.
+        const obsThr = orderedThresholds(app.obsRp!, eventRp);
+        const simThr = orderedThresholds(app.simRp!, eventRp);
+        if (obsThr.length > 0 && simThr.length > 0) {
+          const clim = climatologyFromRecord(
+            app.historicalData ?? eventData,
+            obsThr,
+          );
+          setRpsResult(
+            rpsByLead(buckets, eventData, obsThr, simThr, clim, {
+              maxLead: MAX_LEAD,
+              minPairs: MIN_PAIRS_CORRELATION,
+            }),
+          );
+        } else {
+          setRpsResult(null);
+        }
+
+        // Pooled contingency matrix across every member and lead, for the
+        // per-threshold table. One table for the event, not one per lead: these
+        // scores are about how often each severity was called, and splitting by
+        // lead would leave too few exceedances per cell to read.
+        const pooled = buildContingencyMatrix(
+          { time: eventData.time, values: eventData.values },
+          eventData,
+          app.obsRp!,
+          app.simRp!,
+          eventRp,
+        );
+        const labels = pooled.labels;
+        const agg = pooled.matrix.map((row) => row.map(() => 0));
+        for (let lead = 0; lead <= MAX_LEAD; lead++) {
+          const b = buckets[lead];
+          if (!b || b.time.length === 0) continue;
+          for (let m = 0; m < MEMBER_COUNT; m++) {
+            const cm = buildContingencyMatrix(
+              memberSeries(b, m),
+              eventData,
+              app.obsRp!,
+              app.simRp!,
+              eventRp,
+            );
+            if (cm.n === 0) continue;
+            for (let i = 0; i < agg.length; i++) {
+              for (let j = 0; j < agg.length; j++) agg[i][j] += cm.matrix[i][j];
+            }
+          }
+        }
+        setThresholdRows(thresholdScores(agg, labels));
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -1319,9 +1376,108 @@ export function MetricsTab() {
           </div>
         )}
 
+        {rpsResult && (
+          <div style={subBlock}>
+            <h3 style={h3}>Ranked probability score</h3>
+            <Plot
+              {...rpsPerLeadFigure(rpsResult, {
+                title: `Ranked Probability Score by Lead Day${riverIdSuffix}`,
+                subtitle: 'ensemble as a distribution over return-period categories',
+              })}
+            />
+            <PlotNote>
+              the only categorical score here that knows the categories are <em>ordered</em>. MCC
+              and HSS score "one return period low" exactly like "four return periods low"; RPS
+              penalises by how far off the forecast was, which is the whole point of a severity
+              ladder. It also reads the 51 members as a probability distribution rather than
+              scoring each one separately and taking a median.
+              <br />
+              <br />
+              <strong>Top panel:</strong> forecast RPS against the climatological RPS it is scored
+              against — same units, so the shaded gap between them is the skill. A high
+              climatology curve means the period was genuinely hard to forecast.{' '}
+              <strong>Bottom panel:</strong> that gap as a fraction. Green is better than
+              climatology, red worse.
+              <br />
+              <br />
+              Compare <strong>RPSS</strong> across events, not RPS. Raw RPS is a mean over
+              timesteps, so a longer window full of quiet days drags it toward zero whatever the
+              skill — but the climatology reference absorbs the same easy steps, so the ratio
+              barely moves. Measured drift is about 0.01 across an 800-fold increase in window
+              length, against 0.37 for MCC.
+            </PlotNote>
+          </div>
+        )}
+
+        {thresholdRows && thresholdRows.length > 0 && (
+          <div style={subBlock}>
+            <h3 style={h3}>Scores per exceedance threshold</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={scoreTable}>
+                <thead>
+                  <tr>
+                    <th style={scoreTh}>At or above</th>
+                    <th style={scoreTh}>Hits</th>
+                    <th style={scoreTh}>False alarms</th>
+                    <th style={scoreTh}>Misses</th>
+                    <th style={scoreTh}>POD</th>
+                    <th style={scoreTh}>FAR</th>
+                    <th style={scoreTh}>CSI</th>
+                    <th style={scoreTh}>Frequency bias</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {thresholdRows.map((r) => (
+                    <tr key={r.category}>
+                      <td style={scoreTd}>{r.label}</td>
+                      <td style={scoreTdNum}>{r.hits.toLocaleString()}</td>
+                      <td style={scoreTdNum}>{r.falseAlarms.toLocaleString()}</td>
+                      <td style={scoreTdNum}>{r.misses.toLocaleString()}</td>
+                      <td style={scoreTdNum}>{fmt(r.pod)}</td>
+                      <td style={scoreTdNum}>{fmt(r.far)}</td>
+                      <td style={scoreTdNum}>{fmt(r.csi)}</td>
+                      <td
+                        style={{
+                          ...scoreTdNum,
+                          color: !Number.isFinite(r.frequencyBias)
+                            ? '#898781'
+                            : Math.abs(r.frequencyBias - 1) < 0.15
+                              ? '#1baf7a'
+                              : r.frequencyBias < 1
+                                ? '#2a78d6'
+                                : '#eb6834',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {fmt(r.frequencyBias)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <PlotNote>
+              every score here <strong>excludes correct negatives</strong>, which makes all four
+              exactly unaffected by how long a window you uploaded — unlike MCC and HSS. Pooled
+              across all members and leads, because splitting by lead leaves too few exceedances
+              per cell to read.
+              <br />
+              <br />
+              Read <em>down</em> the columns: POD falling and FAR rising as the threshold climbs is
+              skill decaying with severity, which a single collapsed number hides.{' '}
+              <strong>Frequency bias</strong> is the one to check first, and it is not a skill
+              score — it is how many exceedances were forecast divided by how many occurred, so
+              1.0 means the right <em>number</em> of warnings whether or not they fell on the right
+              days. Below 1 at every threshold, decaying toward 0 at the top, is the direct
+              fingerprint of systematic under-prediction. It is also what the gap between MCC and
+              HSS has been measuring indirectly all along.
+            </PlotNote>
+          </div>
+        )}
+
         {app.mccDistribution && app.hssDistribution && (
           <div style={subBlock}>
-            <h3 style={h3}>Categorical scores together</h3>
+            <h3 style={h3}>Categorical scores by lead day</h3>
             <Plot
               {...categoricalCombinedFigure(
                 [
@@ -1356,8 +1512,10 @@ export function MetricsTab() {
               )}
             />
             <PlotNote>
-              the same numbers as the panels below, on one axis so they can be compared directly.
-              Each line is the median across members and the band is the interquartile range.
+              each line is the median across the 51 members at that lead and the band is the
+              interquartile range, so band height is member disagreement. This is a summary: the
+              full member distribution is not shown, because sixteen leads of overlaid box plots
+              is unreadable.
               <br />
               <br />
               <strong>MCC and HSS will track each other closely, and that is expected</strong> —
@@ -1376,52 +1534,7 @@ export function MetricsTab() {
           </div>
         )}
 
-        {app.mccDistribution && (
-          <div style={subBlock}>
-            <h3 style={h3}>MCC distribution by lead day</h3>
-            <Plot
-              {...distributionVsLeadFigure(app.mccDistribution, {
-                metricLabel: 'MCC',
-                title: `MCC Distribution per Lead Day${riverIdSuffix}`,
-                subtitle: 'Gorodkin (2004) / Jurman et al. (2012)  |  51 members (leads 0–15)',
-                yAxisLabel: 'MCC (multi-category)',
-                zeroLine: true,
-              })}
-            />
-            <PlotNote>
-              each box is the spread of MCC across the 51 ensemble members at that lead day, so
-              box height is member disagreement and the black line is the typical member. MCC
-              near 1 means the member put nearly every timestep in the right return-period
-              category; 0 means no better than chance; below 0 is worse than chance. The lead day
-              where the median line falls to 0 is where categorical skill runs out. MCC stays
-              honest on rare categories, which is why it is preferred here over plain accuracy.
-            </PlotNote>
-          </div>
-        )}
 
-        {app.hssDistribution && (
-          <div style={subBlock}>
-            <h3 style={h3}>HSS distribution by lead day</h3>
-            <Plot
-              {...distributionVsLeadFigure(app.hssDistribution, {
-                metricLabel: 'HSS',
-                title: `HSS Distribution per Lead Day${riverIdSuffix}`,
-                subtitle:
-                  'Multi-category Heidke Skill Score  |  51 members (leads 0–15)',
-                yAxisLabel: 'HSS (multi-category)',
-                zeroLine: true,
-              })}
-            />
-            <PlotNote>
-              the same per-member spread, but scored against random chance instead of
-              correlation. HSS = 1 is perfect, 0 means the member did no better than a random
-              forecast with the same category frequencies, and negative means it did worse. Read
-              it alongside MCC: agreement between the two is a sign the categorical result is
-              robust, while HSS looking much healthier than MCC usually means one common category
-              is carrying the score.
-            </PlotNote>
-          </div>
-        )}
       </CollapsibleBlock>
 
       <CollapsibleBlock
@@ -2381,6 +2494,25 @@ const blockIntro: React.CSSProperties = {
   margin: '0 0 1rem',
   fontSize: '0.95rem',
 };
+const fmt = (v: number) => (Number.isFinite(v) ? v.toFixed(3) : 'n/a');
+const scoreTable: React.CSSProperties = {
+  borderCollapse: 'collapse',
+  fontSize: '0.88rem',
+  fontVariantNumeric: 'tabular-nums',
+  minWidth: 620,
+};
+const scoreTh: React.CSSProperties = {
+  textAlign: 'left',
+  borderBottom: '2px solid #0b0b0b',
+  padding: '6px 12px',
+  fontSize: '0.7rem',
+  letterSpacing: '0.07em',
+  textTransform: 'uppercase',
+  color: '#898781',
+  fontWeight: 500,
+};
+const scoreTd: React.CSSProperties = { borderBottom: '1px solid #e1e0d9', padding: '7px 12px' };
+const scoreTdNum: React.CSSProperties = { ...scoreTd, textAlign: 'right' };
 const subBlock: React.CSSProperties = {
   marginTop: '1.5rem',
   paddingTop: '1rem',
