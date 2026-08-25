@@ -17,7 +17,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'metrics', label: 'Metrics' },
   // Last, and named for the record rather than the event: it answers a different
   // question from the three tabs before it, on a sample thousands of times larger.
-  { id: 'retrospective', label: 'Long record' },
+  { id: 'retrospective', label: 'Retrospective evaluation' },
 ];
 
 function App() {
@@ -66,7 +66,7 @@ function App() {
           </ErrorBoundary>
         )}
         {tab === 'retrospective' && (
-          <ErrorBoundary label="Long record">
+          <ErrorBoundary label="Retrospective evaluation">
             <RetrospectiveTab />
           </ErrorBoundary>
         )}

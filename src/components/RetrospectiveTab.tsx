@@ -17,7 +17,7 @@ import {
 const BIN_CHOICES = [10, 20, 50, 100];
 
 /**
- * Long-record evaluation: the retrospective simulation against the uploaded
+ * Retrospective evaluation: the retrospective simulation against the uploaded
  * observed record, with no reference to any event.
  *
  * A separate tab rather than a section of Metrics, because it answers a
@@ -85,7 +85,7 @@ export function RetrospectiveTab() {
   return (
     <div>
       <section style={section}>
-        <h2 style={h2}>Long-record model evaluation</h2>
+        <h2 style={h2}>Retrospective evaluation</h2>
         <p style={note}>
           The retrospective simulation against your uploaded observed record, over every day the
           two overlap. <strong>No forecasts are involved</strong>, so there is no lead time here:
@@ -249,7 +249,7 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
 function Empty({ children }: { children: React.ReactNode }) {
   return (
     <section style={section}>
-      <h2 style={h2}>Long-record model evaluation</h2>
+      <h2 style={h2}>Retrospective evaluation</h2>
       <p style={note}>{children}</p>
     </section>
   );
