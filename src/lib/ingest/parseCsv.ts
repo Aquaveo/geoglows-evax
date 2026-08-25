@@ -18,9 +18,14 @@ export interface CsvParseResult {
  *
  * Negative values are clipped to 0 (notebook does this everywhere).
  */
-export async function parseDischargeCsv(file: File): Promise<CsvParseResult> {
+/**
+ * Accepts a File or raw CSV text, so an uploaded file and a fetched URL share
+ * one parser and therefore one set of column-detection rules. Papa handles both
+ * input types; only the type signature needed widening.
+ */
+export async function parseDischargeCsv(input: File | string): Promise<CsvParseResult> {
   return new Promise((resolve, reject) => {
-    Papa.parse<Record<string, string>>(file, {
+    Papa.parse<Record<string, string>>(input as never, {
       header: true,
       skipEmptyLines: true,
       dynamicTyping: false,
