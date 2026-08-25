@@ -209,6 +209,20 @@ export function OverviewTab() {
           Each of those three blocks offers a <strong>Raw</strong> option and two corrected ones,
           because the two methods fail in opposite ways and neither is reliably better.
         </p>
+        <p style={p}>
+          One assumption underpins both, and it is worth stating before either is described.{' '}
+          <strong>
+            Each fits its transform by comparing the retrospective simulation against observations,
+            then applies that transform to forecasts — which assumes the error in the retrospective
+            is the same as the error in the forecast.
+          </strong>{' '}
+          That is not guaranteed. A retrospective is driven by observed meteorology while a
+          forecast is driven by forecast meteorology, so a forecast carries error the retrospective
+          never had, and the two need not be biased alike — particularly at long lead times, or
+          during an event unlike anything in the fitting period. Neither method can detect this,
+          and no diagnostic in the app measures it; a correction can be applied faithfully and
+          still be the wrong correction.
+        </p>
         <ul style={ul}>
           <li>
             <strong>Local Bias Correction</strong> — this method is the classic GEOGLOWS bias correction
@@ -225,9 +239,7 @@ export function OverviewTab() {
             <em>your uploaded</em> record, so it is fitted to the reach you care about — but it
             inherits that record's sparsity. Where the observed curve is flat the inverse is
             undefined, and a forecast above the simulated monthly maximum can map to infinity;
-            runs that happens to are excluded whole. This method assumes that the error in the retrospective simulation 
-            is the same as the error in the forecast, which is not guaranteed.
-
+            runs that happens to are excluded whole.
           </li>
           <li>
             <strong>SABER</strong> — Stream Analysis for Bias Estimation and Reduction, the RFS
