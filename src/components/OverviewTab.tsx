@@ -504,7 +504,9 @@ export function OverviewTab() {
           The multi-category MCC (Gorodkin, 2004; Jurman et al., 2012) generalizes the binary MCC.
           From the contingency matrix: N total count, c diagonal sum (hits), tₖ row sum for category
           k (observed marginals), pₖ column sum (forecast marginals). The numerator is excess hits
-          over a random forecast with the same marginals; the denominator normalizes to [−1, 1].
+          over a random forecast with the same marginals; the denominator normalizes it. The binary
+          form spans [−1, 1]; the multi-category form reaches 1 but its lower bound depends on the
+          category count and the marginals, so a negative value has no fixed reference.
         </p>
         <p style={p}>
           MCC = 1 is perfect agreement, 0 no better than random. A model always predicting{' '}
@@ -546,11 +548,29 @@ export function OverviewTab() {
           <sub>ref</sub>), PC the proportion correct, PC<sub>ref</sub> that expected by chance.
         </p>
         <p style={p}>
-          Its denominator credits correctly classifying the most frequent category (normal flow);
-          MCC is more demanding, rewarding rare extreme categories. Report both: agreement means a
-          robust conclusion, MCC ≪ HSS apparent skill on normal flow rather than the extreme
-          event.
+          Its denominator is the largest the shared numerator could be given the marginals, so HSS
+          is the fraction of the gap between chance and perfection that the forecast closes. MCC
+          divides instead by the geometric mean of the two marginal spreads, making it the
+          correlation between forecast and observed category.
         </p>
+        <div style={caution}>
+          <p style={{ margin: 0 }}>
+            <strong>Their order is fixed by the sign, not by where the skill came from.</strong>{' '}
+            MCC's denominator is never larger than HSS's, so any forecast better than chance has
+            MCC ≥ HSS necessarily, and any forecast worse than chance has MCC ≤ HSS. Across 60,000
+            contingency matrices this held without exception, and MCC fell below HSS while both
+            were positive in zero cases. So "MCC much lower than HSS" cannot indicate skill earned
+            on normal flow rather than the extreme — it cannot happen at all unless the forecast is
+            already worse than chance, where MCC simply reports the failure more sharply.
+          </p>
+          <p style={{ margin: '0.5rem 0 0' }}>
+            What the gap between them does measure is <strong>frequency bias</strong>: how far the
+            forecast's category frequencies sit from the observed ones. Matched marginals make the
+            two denominators equal and the scores identical; skewed marginals separate them. That
+            is a property of how often each category was issued, not of which flows the skill came
+            from.
+          </p>
+        </div>
 
         <h3 style={h3}>Timing — Peak timing error (Δt<sub>peak</sub>)</h3>
         <p style={pMono}>Δt_peak = t_peak,forecast − t_peak,observed  [hours]</p>
