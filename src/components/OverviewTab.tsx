@@ -31,8 +31,6 @@ export function OverviewTab() {
           delivered through GEOGLOWS. RFS is forced by ECMWF numerical weather prediction output.
           The framework evaluates forecasts issued during a specific flood event against observed
           gauge data, across multiple lead times (0–15 days) and all 51 ensemble members.
-          Throughout, "RFS" means the model and "GEOGLOWS" the programme and data service it is
-          published through.
         </p>
 
         <h3 style={h3}>Why ensemble verification is different</h3>
@@ -68,10 +66,9 @@ export function OverviewTab() {
           all. RFS is a global model, and at any single reach it can run systematically high or
           low; a reach where it runs 40% low will score badly on magnitude however well it caught
           the event's shape and timing. <strong>Bias correction</strong> separates the two, and the
-          Accuracy, Probabilistic and Skill-summary blocks each offer a raw view alongside two
+          Accuracy, Probabilistic and Skill-summary blocks in the metrics section each offer a raw view alongside two
           corrected ones — one fitted to your uploaded record, one using centrally published
-          per-river coefficients. Both have failure modes worth understanding before trusting
-          them, which the <em>Bias correction</em> section below covers. The Categorical and Timing
+          per-river coefficients. The <em>Bias correction</em> section below covers both of them. The Categorical and Timing
           families need no correction: their dual-threshold design already absorbs magnitude bias
           by construction, for reasons set out in its own section below.
         </p>
@@ -197,8 +194,8 @@ export function OverviewTab() {
           captured the event's shape and timing.
         </p>
         <p style={p}>
-          The categorical family is already insulated. Its <strong>dual-threshold design</strong>{' '}
-          — set out in full under <em>The dual-threshold design</em> further down — classifies
+          The categorical metrics are already insulated. Their <strong>dual-threshold design</strong>{' '}
+          — explained in more detail below — classifies
           observations against observed return periods and forecasts against simulated ones,
           which absorbs magnitude bias by construction. Correcting the forecasts <em>and</em>{' '}
           classifying them against simulated thresholds would apply the adjustment twice, so the
@@ -214,26 +211,40 @@ export function OverviewTab() {
         </p>
         <ul style={ul}>
           <li>
-            <strong>Local FDC mapping</strong> — the method the GEOGLOWS training material
+            <strong>Local Bias Correction</strong> — this method is the classic GEOGLOWS bias correction
+            method, monthly flow duration curve quantile mapping (MFDC-QM), evaluated for this
+            model in{' '}
+            <a href="https://doi.org/10.1016/j.envsoft.2024.106235" style={link} target="_blank" rel="noreferrer">
+              Sanchez Lozano et al. (2025), <em>Historical simulation performance evaluation and
+              monthly flow duration curve quantile-mapping (MFDC-QM) of the GEOGLOWS ECMWF
+              streamflow hydrologic model</em>, Environmental Modelling &amp; Software 183 106235
+            </a>. The historical data uploaded by the user is used as input for this. The GEOGLOWS training material
             describes: take each forecast value, find its non-exceedance probability on the{' '}
             <em>simulated</em> flow duration curve for that calendar month, then read the value at
             that same probability off the <em>observed</em> curve. The observed curve is built from{' '}
             <em>your uploaded</em> record, so it is fitted to the reach you care about — but it
             inherits that record's sparsity. Where the observed curve is flat the inverse is
             undefined, and a forecast above the simulated monthly maximum can map to infinity;
-            runs that happens to are excluded whole.
+            runs that happens to are excluded whole. This method assumes that the error in the retrospective simulation 
+            is the same as the error in the forecast, which is not guaranteed.
+
           </li>
           <li>
             <strong>SABER</strong> — Stream Analysis for Bias Estimation and Reduction, the RFS
-            team's own correction, applied here through{' '}
+            "Global Bias Correction", applied here through{' '}
             <code>geoglows.bias.discharge_transform</code>. It is the same flow-duration-curve
             premise, but fitted centrally: SABER compares simulated against observed curves at
             gauged reaches, clusters watersheds with similar flow behaviour so that{' '}
             <em>ungauged</em> reaches can borrow from gauged ones, and publishes the result as a
             scalar for every combination of calendar month and exceedance probability. The app
             reads the polynomial form of those transformation weights, so it needs no observations
-            from you. Because the curves are smooth fits rather than empirical steps there is no
-            flat inverse to invert, so it cannot produce an infinity and no run is ever excluded.
+            from you. The method is described in{' '}
+            <a href="https://doi.org/10.3390/hydrology9070113" style={link} target="_blank" rel="noreferrer">
+              Hales et al. (2022), <em>SABER: A Model-Agnostic Postprocessor for Bias Correcting
+              Discharge from Large Hydrologic Models</em>, Hydrology 9(7) 113
+            </a>. Because the curves are smooth fits rather than empirical steps there is no
+            flat inverse to invert, so it cannot produce an infinity and no run is ever excluded. This method
+            is new and still experimental. We recomend reading about it before using it:
           </li>
         </ul>
         <p style={p}>
