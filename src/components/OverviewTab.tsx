@@ -210,87 +210,59 @@ export function OverviewTab() {
           because the two methods fail in opposite ways and neither is reliably better.
         </p>
         <p style={p}>
-          One assumption underpins both, and it is worth stating before either is described.{' '}
           <strong>
-            Each fits its transform by comparing the retrospective simulation against observations,
-            then applies that transform to forecasts — which assumes the error in the retrospective
-            is the same as the error in the forecast.
+            Both fit their transform on the retrospective against observations, then apply it to
+            forecasts — assuming the two share the same error.
           </strong>{' '}
-          That is not guaranteed. A retrospective is driven by observed meteorology while a
-          forecast is driven by forecast meteorology, so a forecast carries error the retrospective
-          never had, and the two need not be biased alike — particularly at long lead times, or
-          during an event unlike anything in the fitting period. Neither method can detect this,
-          and no diagnostic in the app measures it; a correction can be applied faithfully and
-          still be the wrong correction.
+          They need not: a retrospective is driven by observed meteorology, a forecast by forecast
+          meteorology. Nothing in the app measures this, so a correction can be applied faithfully
+          and still be wrong.
         </p>
         <ul style={ul}>
           <li>
-            <strong>Local Bias Correction</strong> — this method is the classic GEOGLOWS bias correction
-            method, monthly flow duration curve quantile mapping (MFDC-QM), evaluated for this
-            model in{' '}
+            <strong>Local Bias Correction</strong> — the classic GEOGLOWS method, monthly flow
+            duration curve quantile mapping (MFDC-QM), evaluated in{' '}
             <a href="https://doi.org/10.1016/j.envsoft.2024.106235" style={link} target="_blank" rel="noreferrer">
-              Sanchez Lozano et al. (2025), <em>Historical simulation performance evaluation and
-              monthly flow duration curve quantile-mapping (MFDC-QM) of the GEOGLOWS ECMWF
-              streamflow hydrologic model</em>, Environmental Modelling &amp; Software 183 106235
-            </a>. The historical data uploaded by the user is used as input for this. The GEOGLOWS training material
-            describes: take each forecast value, find its non-exceedance probability on the{' '}
-            <em>simulated</em> flow duration curve for that calendar month, then read the value at
-            that same probability off the <em>observed</em> curve. The observed curve is built from{' '}
-            <em>your uploaded</em> record, so it is fitted to the reach you care about — but it
-            inherits that record's sparsity. Where the observed curve is flat the inverse is
-            undefined, and a forecast above the simulated monthly maximum can map to infinity;
-            runs that happens to are excluded whole.
+              Sanchez Lozano et al. (2025)
+            </a>. For each forecast value, find its non-exceedance probability on the{' '}
+            <em>simulated</em> flow duration curve for that month, then read the value at the same
+            probability off the <em>observed</em> curve — built from the record you upload. Fitted
+            to your reach, but it inherits that record's sparsity: where the observed curve is flat
+            the inverse is undefined, and a forecast above the simulated monthly maximum can map to
+            infinity. Any run that does is excluded whole.
           </li>
           <li>
             <strong>SABER</strong> — Stream Analysis for Bias Estimation and Reduction, the RFS
-            "Global Bias Correction", applied here through{' '}
-            <code>geoglows.bias.discharge_transform</code>. It is the same flow-duration-curve
-            premise, but fitted centrally: SABER compares simulated against observed curves at
-            gauged reaches, clusters watersheds with similar flow behaviour so that{' '}
-            <em>ungauged</em> reaches can borrow from gauged ones, and publishes the result as a
-            scalar for every combination of calendar month and exceedance probability. The app
-            reads the polynomial form of those transformation weights, so it needs no observations
-            from you. The method is described in{' '}
+            "Global Bias Correction", applied through{' '}
+            <code>geoglows.bias.discharge_transform</code> and described in{' '}
             <a href="https://doi.org/10.3390/hydrology9070113" style={link} target="_blank" rel="noreferrer">
-              Hales et al. (2022), <em>SABER: A Model-Agnostic Postprocessor for Bias Correcting
-              Discharge from Large Hydrologic Models</em>, Hydrology 9(7) 113
-            </a>. Because the curves are smooth fits rather than empirical steps there is no
-            flat inverse to invert, so it cannot produce an infinity and no run is ever excluded. This method
-            is new and still experimental. We recomend reading about it before using it:
+              Hales et al. (2022)
+            </a>. Same premise, fitted centrally: it compares simulated against observed curves at
+            gauged reaches, clusters watersheds by flow behaviour so <em>ungauged</em> reaches can
+            borrow from gauged ones, and publishes a scalar per month and exceedance probability.
+            The app reads the polynomial form of those weights, so it needs nothing from you. Being
+            smooth fits rather than empirical steps, there is no flat inverse — no infinities, no
+            excluded runs. Still experimental, and the training material notes it is{' '}
+            <strong>not applied to the forecast data end users receive</strong>: the forecasts this
+            app downloads are uncorrected, and choosing this variant is what applies it.
           </li>
         </ul>
         <p style={p}>
-          The trade is that the global transform <strong>saturates</strong> instead. Once the
-          percentile clamps, every larger discharge maps to the same corrected value, so the
-          series stops distinguishing one flood magnitude from another — and being polynomial
-          fits, the transforms are not guaranteed monotonic either. Both behaviours are counted
-          and reported in the banner above the corrected metrics, and the variant is withheld
-          entirely when essentially every value clamps.
+          The real trade is not observations against none — <strong>both use gauge data</strong>.
+          It is <em>whose</em>. Local Bias Correction uses the record you uploaded: directly
+          relevant, and as sparse as that record happens to be. SABER uses gauge data chosen
+          centrally, possibly from a <em>different, clustered</em> reach — better sampled, but not
+          necessarily describing this river. That is why a SABER ceiling can sit well below your
+          own record's maximum: it belongs to the reference curve, not your gauge.
         </p>
         <p style={p}>
-          So the real trade is not observations against no observations — <strong>both methods use
-          gauge data</strong>. It is <em>whose</em>. The local mapping uses the record you
-          uploaded for this reach: directly relevant, and as sparse as that record happens to be.
-          SABER uses gauge data chosen centrally, which may come from a{' '}
-          <em>different, clustered</em> reach when this one is ungauged or its gauge was not used
-          — better sampled, but not necessarily describing this river. That is why a SABER
-          correction can have a ceiling well below your own record's maximum: the ceiling belongs
-          to whatever reference curve was fitted, not to your gauge.
-        </p>
-        <p style={p}>
-          Two consequences worth checking before trusting it. Where SABER has no usable assignment
-          for a reach, <strong>its scalars are exactly 1.0 and the correction is an identity</strong>{' '}
-          — any movement you then see is polynomial fitting error around a no-op, not a
-          correction. And where it does correct, encoding the curves as polynomials introduces
-          artefacts the underlying scalars do not have: the transform can saturate, so every
-          discharge above some value maps to one number, and it is not guaranteed monotonic. Both
-          are counted in the banner above the corrected metrics.
-        </p>
-        <p style={p}>
-          Note also that the training material describes SABER as still experimental and{' '}
-          <strong>not applied to the forecast data end users receive</strong> — so the raw
-          forecasts this app downloads are uncorrected, and choosing the SABER variant is what
-          applies it.
+          SABER's own failure is <strong>saturation</strong>: once the percentile clamps, every
+          larger discharge maps to one value, so the series stops telling flood magnitudes apart —
+          and the polynomial fits are not guaranteed monotonic. Both are counted in the banner
+          above the corrected metrics, and the variant is withheld when essentially everything
+          clamps. Worth checking too: where SABER has no assignment for a reach its scalars are
+          all exactly 1.0, so the correction is an identity and any movement is fitting error
+          around a no-op.
         </p>
         <p style={p}>
           Which to prefer depends on the reach, and the honest answer is visible in the
