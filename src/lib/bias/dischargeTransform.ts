@@ -83,6 +83,18 @@ export function probeMonth(fit: MonthPolyfit, steps = 4000): MonthSaturation {
   };
 }
 
+const probeCache = new WeakMap<MonthPolyfit, MonthSaturation>();
+
+/** probeMonth, memoised on the fit object. */
+function cachedProbe(fit: MonthPolyfit): MonthSaturation {
+  let v = probeCache.get(fit);
+  if (!v) {
+    v = probeMonth(fit);
+    probeCache.set(fit, v);
+  }
+  return v;
+}
+
 export interface TransformDiagnostics {
   /** Finite values transformed. */
   n: number;
@@ -160,6 +172,10 @@ export function transformSeries(
   }
 
   diagnostics.months = [...months].sort((a, b) => a - b);
-  for (const m of diagnostics.months) diagnostics.saturation[m] = probeMonth(fits[m]);
+  // Saturation is a property of the fitted polynomials, not of this series, so
+  // it is memoised per month object rather than recomputed. transformSeries runs
+  // once per ensemble member per run -- thousands of times for a full event --
+  // and each probe walks 4000 steps of two degree-7 polynomials.
+  for (const m of diagnostics.months) diagnostics.saturation[m] = cachedProbe(fits[m]);
   return { values: out, diagnostics };
 }

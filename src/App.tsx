@@ -4,6 +4,7 @@ import { OverviewTab } from './components/OverviewTab';
 import { SetupTab } from './components/SetupTab';
 import { ForecastTab } from './components/ForecastTab';
 import { MetricsTab } from './components/MetricsTab';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './App.css';
 
 type TabId = 'overview' | 'setup' | 'forecast' | 'metrics';
@@ -55,7 +56,11 @@ function App() {
         {tab === 'overview' && <OverviewTab />}
         {tab === 'setup' && <SetupTab />}
         {tab === 'forecast' && <ForecastTab />}
-        {tab === 'metrics' && <MetricsTab />}
+        {tab === 'metrics' && (
+          <ErrorBoundary label="Metrics">
+            <MetricsTab />
+          </ErrorBoundary>
+        )}
       </main>
     </AppProvider>
   );

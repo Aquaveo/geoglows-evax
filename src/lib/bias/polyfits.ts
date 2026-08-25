@@ -25,6 +25,20 @@ async function fetchChunk(path: string): Promise<Uint8Array> {
 }
 
 /**
+ * A copy whose byteOffset is zero, when the decoded bytes are a view partway
+ * into a larger buffer.
+ *
+ * Float64Array and BigInt64Array REQUIRE an 8-byte-aligned start offset and
+ * throw RangeError otherwise. A decoder is free to return a view at any offset,
+ * so reading its output directly is a latent crash that only fires on whichever
+ * chunk happens to land misaligned.
+ */
+function aligned(bytes: Uint8Array, bytesPerElement: number): Uint8Array {
+  if (bytes.byteOffset % bytesPerElement === 0) return bytes;
+  return new Uint8Array(bytes);
+}
+
+/**
  * Position of `riverId` in the store's river axis.
  *
  * The river_id coordinate is one 3.3 MB chunk covering all 6.8 million rivers,
@@ -33,7 +47,7 @@ async function fetchChunk(path: string): Promise<Uint8Array> {
  * runs at most once per river rather than once per session.
  */
 async function findRiverIndex(riverId: number): Promise<number> {
-  const bytes = await fetchChunk('river_id/0');
+  const bytes = aligned(await fetchChunk('river_id/0'), 8);
   const ids = new BigInt64Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 8);
   const target = BigInt(riverId);
   // The coordinate is sorted ascending, verified against the published store.
@@ -66,11 +80,14 @@ export async function getPolyfits(riverId: number): Promise<RiverPolyfits> {
   const chunk = Math.floor(index / RIVER_CHUNK);
   const offset = index % RIVER_CHUNK;
 
-  const [qtopBytes, ptoqBytes, qrangeBytes] = await Promise.all([
+  const [rawQtop, rawPtoq, rawQrange] = await Promise.all([
     fetchChunk(`QtoP/${chunk}.0.0`),
     fetchChunk(`PtoQ/${chunk}.0.0`),
     fetchChunk(`Qrange/${chunk}.0.0`),
   ]);
+  const qtopBytes = aligned(rawQtop, 8);
+  const ptoqBytes = aligned(rawPtoq, 8);
+  const qrangeBytes = aligned(rawQrange, 4);
 
   // C-order [river, month, degree]; Qrange is float32, the other two float64.
   const qtop = new Float64Array(qtopBytes.buffer, qtopBytes.byteOffset, qtopBytes.byteLength / 8);

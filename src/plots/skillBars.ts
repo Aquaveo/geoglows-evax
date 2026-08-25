@@ -36,6 +36,32 @@ function bandColor(v: number): string {
 }
 
 /**
+ * Colour for one bar, shading progressively darker below the axis floor.
+ *
+ * Band colour alone answers "is this usable", which is the right question until
+ * every row lands in the same band. When scores run far below the floor, every
+ * bar is drawn at the same clipped length AND the same red, so the chart carries
+ * no information at all — which is exactly what happens on a reach whose event
+ * exceeds the model's simulated range.
+ *
+ * So below the floor the red darkens with the magnitude of the true value, on a
+ * log scale because these run to -1000 and beyond. Rows still readable as "all
+ * poor", but now distinguishable within that.
+ */
+function barColor(v: number, floor: number): string {
+  if (!Number.isFinite(v)) return 'rgba(0,0,0,0.12)';
+  if (v >= floor) return bandColor(v);
+  // How many decades below the floor, capped so the ramp does not saturate on
+  // the first outlier: 1 decade -> slightly darker, 3+ -> darkest.
+  const decades = Math.min(Math.log10(Math.max(1 + (floor - v), 1)) / 3, 1);
+  // #e0483c -> a deep maroon, interpolated in sRGB.
+  const from = [224, 72, 60];
+  const to = [92, 16, 20];
+  const c = from.map((a, i) => Math.round(a + (to[i] - a) * decades));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+/**
  * Paired horizontal bar chart of NSE and KGE', one row per lead day or per
  * forecast run, coloured by performance band.
  *
@@ -57,7 +83,27 @@ export function skillBarsFigure(
   // order reads top-to-bottom.
   const display = [...ordered].reverse();
   const floor = opts.floor ?? -1;
-  const clampToFloor = (v: number) => (Number.isFinite(v) && v < floor ? floor : v);
+  /**
+   * Width of the compressed strip drawn below the floor, in axis units.
+   *
+   * Clamping every sub-floor score to exactly `floor` draws them all at the same
+   * length, so a run at -1.2 is indistinguishable from one at -1250 and the
+   * ordering is lost. Instead the sub-floor range is compressed logarithmically
+   * into this strip: bars stay visually "off the scale" but keep their order.
+   * The true value is still labelled on every one of them, so nothing is hidden.
+   */
+  const UNDERFLOW = 0.28;
+  const subFloor = display
+    .flatMap((r) => [r.nse, r.kge])
+    .filter((v) => Number.isFinite(v) && v < floor);
+  const deepest = subFloor.length > 0 ? Math.min(...subFloor) : floor;
+  const maxDepth = Math.log10(Math.max(1 + (floor - deepest), 1)) || 1;
+  const clampToFloor = (v: number) => {
+    if (!Number.isFinite(v) || v >= floor) return v;
+    const depth = Math.log10(Math.max(1 + (floor - v), 1)) / maxDepth;
+    return floor - UNDERFLOW * depth;
+  };
+  const axisFloor = subFloor.length > 0 ? floor - UNDERFLOW * 1.08 : floor;
   const labels = display.map((r) => r.label);
   const nse = display.map((r) => (Number.isFinite(r.nse) ? clampToFloor(r.nse) : null));
   const kge = display.map((r) => (Number.isFinite(r.kge) ? clampToFloor(r.kge) : null));
@@ -68,7 +114,7 @@ export function skillBarsFigure(
       orientation: 'h',
       x: nse,
       y: labels,
-      marker: { color: display.map((r) => bandColor(r.nse)) },
+      marker: { color: display.map((r) => barColor(r.nse, floor)) },
       xaxis: 'x',
       yaxis: 'y',
       showlegend: false,
@@ -81,7 +127,7 @@ export function skillBarsFigure(
       orientation: 'h',
       x: kge,
       y: labels,
-      marker: { color: display.map((r) => bandColor(r.kge)) },
+      marker: { color: display.map((r) => barColor(r.kge, floor)) },
       xaxis: 'x2',
       yaxis: 'y2',
       showlegend: false,
@@ -151,7 +197,7 @@ export function skillBarsFigure(
   for (const r of display) {
     if (Number.isFinite(r.nse) && r.nse < floor) {
       annotations.push({
-        x: floor,
+        x: clampToFloor(r.nse),
         y: r.label,
         xref: 'x' as const,
         yref: 'y' as const,
@@ -163,7 +209,7 @@ export function skillBarsFigure(
     }
     if (Number.isFinite(r.kge) && r.kge < floor) {
       annotations.push({
-        x: floor,
+        x: clampToFloor(r.kge),
         y: r.label,
         xref: 'x2' as const,
         yref: 'y2' as const,
@@ -201,7 +247,10 @@ export function skillBarsFigure(
           (r) =>
             (Number.isFinite(r.nse) && r.nse < floor) || (Number.isFinite(r.kge) && r.kge < floor),
         ).length;
-        const note = clamped > 0 ? `  |  ${clamped} row${clamped === 1 ? '' : 's'} clipped at ${floor}, true value labelled` : '';
+        const note =
+          clamped > 0
+            ? `  |  ${clamped} row${clamped === 1 ? '' : 's'} below ${floor}, drawn compressed below the axis and labelled with the true value`
+            : '';
         const skipNote = groupedReasons.length > 0 ? `<br>${groupedReasons.join('  |  ')}` : '';
         const sub = `${opts.subtitle ?? ''}${note}${skipNote}`;
         return sub ? `${opts.title ?? 'Skill summary'}<br><sup>${sub}</sup>` : (opts.title ?? 'Skill summary');
@@ -215,14 +264,14 @@ export function skillBarsFigure(
       title: { text: 'NSE' },
       zeroline: true,
       zerolinecolor: '#444',
-      range: [floor, Math.max(1, ...nseFinite)],
+      range: [axisFloor, Math.max(1, ...nseFinite)],
     },
     xaxis2: {
       domain: [0.54, 1],
       title: { text: "KGE'" },
       zeroline: true,
       zerolinecolor: '#444',
-      range: [floor, Math.max(1, ...kgeFinite)],
+      range: [axisFloor, Math.max(1, ...kgeFinite)],
     },
     yaxis: { type: 'category', automargin: true, title: { text: opts.categoryLabel } },
     yaxis2: { type: 'category', anchor: 'x2', matches: 'y', showticklabels: false },
