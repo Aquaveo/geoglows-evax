@@ -77,7 +77,7 @@ export function OverviewTab() {
           <tbody>
             <tr>
               <td style={td}>Categorical</td>
-              <td style={td}>Contingency matrix, MCC, HSS</td>
+              <td style={td}>Contingency matrix, MCC, HSS, CSI, RPSS, per-threshold scores</td>
               <td style={td}>Did the forecast correctly classify the event severity?</td>
             </tr>
             <tr>
@@ -571,6 +571,65 @@ export function OverviewTab() {
             from.
           </p>
         </div>
+
+        <h3 style={h3}>Categorical — Ranked probability score (RPS, RPSS)</h3>
+        <p style={pMono}>
+          RPS = Σₖ (CDF<sub>forecast</sub>(k) − CDF<sub>observed</sub>(k))²{'\n'}
+          RPSS = 1 − RPS / RPS<sub>climatology</sub>
+        </p>
+        <p style={p}>
+          The only categorical score here that knows the categories are <strong>ordered</strong>.
+          Differencing <em>cumulative</em> probabilities means the penalty grows with distance: on a
+          four-category ladder a confident forecast one category low scores 1, two low scores 2,
+          three low scores 3. MCC and HSS return the same value for all three, discarding the
+          severity ladder the return-period design exists to express.
+        </p>
+        <p style={p}>
+          It also reads the ensemble as an ensemble. MCC and HSS score each of the 51 members as a
+          separate deterministic forecast and take the median of those scores; RPS uses the fraction
+          of members in each category as a probability distribution, so a spread that straddles the
+          truth is rewarded over confident error.
+        </p>
+        <p style={p}>
+          Report <strong>RPSS</strong> when comparing across events. Raw RPS is a mean over
+          timesteps, so quiet days drag it toward zero whatever the skill — but the climatological
+          reference absorbs the same easy timesteps, so the ratio barely moves: measured drift is
+          about 0.01 across an 800-fold increase in window length, against 0.37 for MCC. The
+          reference is built from the uploaded observed record, not from model output, for the same
+          reason CRPSS requires it — a baseline carrying the model's own bias is too easy to beat.
+        </p>
+
+        <h3 style={h3}>Categorical — Scores per exceedance threshold</h3>
+        <p style={pMono}>
+          POD = a/(a+c)   FAR = b/(a+b)   CSI = a/(a+b+c)   bias = (a+b)/(a+c){'\n'}
+          a hits · b false alarms · c misses · d correct negatives
+        </p>
+        <p style={p}>
+          These are two-by-two scores, so the K-category matrix is dichotomised at each threshold —
+          "at or above this return period" against "below" — giving one row per level rather than a
+          single number. The trend down the rows is the point: hit rate falling and false-alarm
+          ratio rising as severity climbs is skill decaying with magnitude, which any collapsed
+          number hides.
+        </p>
+        <p style={p}>
+          <strong>None of the four uses d</strong>, the correct-negative cell, so all are exactly
+          invariant to window length — adding 100,000 quiet timesteps leaves every value unchanged
+          to twelve decimals, while MCC and HSS drift substantially. They are the antidote to the
+          window sensitivity described above.
+        </p>
+        <p style={p}>
+          <strong>Frequency bias is not a skill score</strong>, and that is what makes it useful.
+          It is how many exceedances were forecast divided by how many occurred, so 1.0 means the
+          right <em>number</em> of warnings whether or not they landed on the right days. Below 1 at
+          every threshold, decaying to 0 at the top, is the direct fingerprint of systematic
+          under-prediction — the failure a positive-looking MCC can conceal. It is also what the gap
+          between MCC and HSS measures indirectly: matched category frequencies make those two
+          scores identical, and the correlation between their gap and |log bias| is 0.72.
+        </p>
+        <p style={p}>
+          The equitable threat score is deliberately absent. ETS = HSS / (2 − HSS) exactly, so it is
+          a monotone relabelling of a score already shown, and it inherits the same window drift.
+        </p>
 
         <h3 style={h3}>Timing — Peak timing error (Δt<sub>peak</sub>)</h3>
         <p style={pMono}>Δt_peak = t_peak,forecast − t_peak,observed  [hours]</p>

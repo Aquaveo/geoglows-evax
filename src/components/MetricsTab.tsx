@@ -1563,6 +1563,14 @@ export function MetricsTab() {
         )}
         {timingError && <p style={{ color: '#b91c1c' }}>{timingError}</p>}
 
+        {!peakTimingByLeadRows && peakByRun && peakByRun.daysBefore.length > 0 && (
+          <p style={note}>
+            The by-lead-day version of this chart needs the timing metrics computed first — use the
+            button above. It is the more interpretable of the two, for the reason given under the
+            per-initialization chart below.
+          </p>
+        )}
+
         {peakTimingByLeadRows && peakTimingByLeadRows.length > 0 && (
           <>
             <h3 style={h3}>Median timing error by lead day, signed</h3>
@@ -1620,7 +1628,7 @@ export function MetricsTab() {
 
         {peakTimingRows && peakTimingRows.length > 0 && (
           <>
-            <h3 style={h3}>Median timing error, signed</h3>
+            <h3 style={h3}>Median timing error by forecast initialization, signed</h3>
             <Plot
               {...divergingBarsFigure(peakTimingRows, {
                 title: `Peak Timing Error by Forecast Initialization${riverIdSuffix}`,
@@ -2513,6 +2521,13 @@ const scoreTh: React.CSSProperties = {
 };
 const scoreTd: React.CSSProperties = { borderBottom: '1px solid #e1e0d9', padding: '7px 12px' };
 const scoreTdNum: React.CSSProperties = { ...scoreTd, textAlign: 'right' };
+const note: React.CSSProperties = {
+  color: '#555',
+  fontSize: '0.9rem',
+  margin: '0.5rem 0 1rem',
+  maxWidth: '72ch',
+  lineHeight: 1.6,
+};
 const subBlock: React.CSSProperties = {
   marginTop: '1.5rem',
   paddingTop: '1rem',
