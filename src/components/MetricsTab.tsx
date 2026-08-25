@@ -9,6 +9,8 @@ import {
 } from '../lib/metrics/contingency';
 import { computeMcc } from '../lib/metrics/mcc';
 import { computeHss } from '../lib/metrics/hss';
+import { computeCsi } from '../lib/metrics/csi';
+import { categoricalCombinedFigure } from '../plots/categoricalCombined';
 import { computePeakTimingError } from '../lib/metrics/peakTiming';
 import { computePeakTimingByRun } from '../lib/metrics/peakTimingByRun';
 import { computeThresholdCrossing } from '../lib/metrics/thresholdCrossing';
@@ -351,6 +353,9 @@ export function MetricsTab() {
   const [correctedCrps, setCorrectedCrps] = useState<CrpsPerLead | null>(null);
   const [globalAccuracy, setGlobalAccuracy] = useState<AccuracyDistributions | null>(null);
   const [globalCrps, setGlobalCrps] = useState<CrpsPerLead | null>(null);
+  // Local rather than in AppContext: only this tab reads it, and the context's
+  // dependency array is maintained by hand and already long.
+  const [csiDistribution, setCsiDistribution] = useState<PerLeadDistribution | null>(null);
   const [accuracyVariant, setAccuracyVariant] = useState<MetricVariant>('raw');
   const [skillVariant, setSkillVariant] = useState<MetricVariant>('raw');
   const [crpsVariant, setCrpsVariant] = useState<MetricVariant>('raw');
@@ -587,18 +592,22 @@ export function MetricsTab() {
         app.setEventReturnPeriod(eventRp);
 
         const mccDist: PerLeadDistribution = { leads: [], values: [], pairs: [], skipped: [] };
+        const csiDist: PerLeadDistribution = { leads: [], values: [], pairs: [], skipped: [] };
         const hssDist: PerLeadDistribution = { leads: [], values: [], pairs: [], skipped: [] };
 
         for (let lead = 0; lead <= MAX_LEAD; lead++) {
           const bucket = buckets[lead];
           mccDist.leads.push(lead);
+          csiDist.leads.push(lead);
           hssDist.leads.push(lead);
 
           const pairs = countPairs(bucket, eventData);
           mccDist.pairs!.push(pairs);
+          csiDist.pairs!.push(pairs);
           hssDist.pairs!.push(pairs);
 
           const mccVals: number[] = [];
+          const csiVals: number[] = [];
           const hssVals: number[] = [];
 
           // Chance-corrected scores over a handful of timesteps are noise; leave
@@ -606,6 +615,7 @@ export function MetricsTab() {
           const tooFew = pairs < MIN_PAIRS_CORRELATION;
           mccDist.skipped!.push(tooFew ? FEW_PAIRS_REASON : null);
           hssDist.skipped!.push(tooFew ? FEW_PAIRS_REASON : null);
+          csiDist.skipped!.push(tooFew ? FEW_PAIRS_REASON : null);
 
           if (!tooFew && bucket && bucket.time.length > 0) {
             for (let m = 0; m < MEMBER_COUNT; m++) {
@@ -622,15 +632,19 @@ export function MetricsTab() {
                 if (Number.isFinite(mcc)) mccVals.push(mcc);
                 const hss = computeHss(cm.matrix);
                 if (Number.isFinite(hss)) hssVals.push(hss);
+                const csi = computeCsi(cm.matrix);
+                if (Number.isFinite(csi)) csiVals.push(csi);
               }
             }
           }
           mccDist.values.push(mccVals);
           hssDist.values.push(hssVals);
+          csiDist.values.push(csiVals);
         }
 
         app.setMccDistribution(mccDist);
         app.setHssDistribution(hssDist);
+        setCsiDistribution(csiDist);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -1302,6 +1316,63 @@ export function MetricsTab() {
                 </PlotNote>
               </>
             )}
+          </div>
+        )}
+
+        {app.mccDistribution && app.hssDistribution && (
+          <div style={subBlock}>
+            <h3 style={h3}>Categorical scores together</h3>
+            <Plot
+              {...categoricalCombinedFigure(
+                [
+                  {
+                    name: 'MCC',
+                    color: '#2a78d6',
+                    dist: app.mccDistribution,
+                    note: '0 = chance',
+                  },
+                  {
+                    name: "HSS",
+                    color: '#eb6834',
+                    dist: app.hssDistribution,
+                    note: '0 = chance',
+                  },
+                  ...(csiDistribution
+                    ? [
+                        {
+                          name: 'CSI',
+                          color: '#1baf7a',
+                          dist: csiDistribution,
+                          note: '0 = no hits, not chance',
+                        },
+                      ]
+                    : []),
+                ],
+                {
+                  title: `Categorical Scores by Lead Day${riverIdSuffix}`,
+                  subtitle: 'median across 51 members, shaded interquartile range',
+                  yAxisLabel: 'Score',
+                },
+              )}
+            />
+            <PlotNote>
+              the same numbers as the panels below, on one axis so they can be compared directly.
+              Each line is the median across members and the band is the interquartile range.
+              <br />
+              <br />
+              <strong>MCC and HSS will track each other closely, and that is expected</strong> —
+              they are built from the same numerator and differ only in their denominator, so
+              across thousands of contingency matrices they correlate at 0.99 and never disagree
+              on sign. Treat their agreement as arithmetic, not as two methods confirming each
+              other.
+              <br />
+              <br />
+              <strong>CSI is the independent one.</strong> It is hits / (hits + false alarms +
+              misses), so correct negatives never enter it — which makes it the only one of the
+              three that does not move when you lengthen the uploaded window. If MCC and HSS look
+              healthier than CSI, suspect that quiet timesteps are inflating them. Note it is not
+              a skill score: 0 means no hits were scored, not "no better than chance".
+            </PlotNote>
           </div>
         )}
 
