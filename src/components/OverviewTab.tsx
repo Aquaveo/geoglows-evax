@@ -190,11 +190,49 @@ export function OverviewTab() {
           which absorbs magnitude bias by construction. Correcting the forecasts <em>and</em>{' '}
           classifying them against simulated thresholds would apply the adjustment twice, so the
           contingency matrix, MCC, HSS and the timing metrics are deliberately left uncorrected.
-          A bias-corrected variant is offered only for <strong>Accuracy</strong>,{' '}
+          Bias-corrected variants are offered only for <strong>Accuracy</strong>,{' '}
           <strong>Probabilistic</strong> and <strong>Skill summary</strong>.
         </p>
 
-        <h3 style={h3}>The method</h3>
+        <h3 style={h3}>Two methods, offered side by side</h3>
+        <p style={p}>
+          Each of those three blocks offers a <strong>Raw</strong> option and two corrected ones,
+          because the two methods fail in opposite ways and neither is reliably better.
+        </p>
+        <ul style={ul}>
+          <li>
+            <strong>Local CDF</strong> — monthly empirical quantile mapping against{' '}
+            <em>your uploaded</em> observed record, described below. Fitted to the reach you care
+            about, but it inherits that record's sparsity: where the observed distribution is thin
+            the inverse mapping is undefined, and a forecast above the simulated monthly maximum
+            can map to infinity. Runs that happens to are excluded whole.
+          </li>
+          <li>
+            <strong>Global transform</strong> — a port of{' '}
+            <code>geoglows.bias.discharge_transform</code>, which uses no observations at all.
+            Coefficients are fitted centrally per river and per month and published as two
+            degree-7 polynomials, one mapping discharge to an exceedance percentile and one back,
+            with the percentile clamped to [0, 100]. There is no division anywhere, so it cannot
+            produce an infinity and no run is ever excluded.
+          </li>
+        </ul>
+        <p style={p}>
+          The trade is that the global transform <strong>saturates</strong> instead. Once the
+          percentile clamps, every larger discharge maps to the same corrected value, so the
+          series stops distinguishing one flood magnitude from another — and being polynomial
+          fits, the transforms are not guaranteed monotonic either. Both behaviours are counted
+          and reported in the banner above the corrected metrics, and the variant is withheld
+          entirely when essentially every value clamps.
+        </p>
+        <p style={p}>
+          Which to prefer depends on the reach, and the honest answer is visible in the
+          diagnostics rather than decidable in advance. Where the event exceeds the model's
+          simulated range the local method will be withheld and the global one is what you have;
+          where the observed record is long and well spread, the local method is the better fitted
+          of the two.
+        </p>
+
+        <h3 style={h3}>The local CDF method</h3>
         <p style={p}>
           The GEOGLOWS training material covers both halves of this directly:{' '}
           <a href="https://training.geoglows.org/rfs/bias-correction/bias-correction/" style={link} target="_blank" rel="noreferrer">
@@ -401,6 +439,17 @@ export function OverviewTab() {
           points, so the peak of the interpolated series equals the peak of the native output.
         </p>
 
+        <h3 style={h3}>Event window limit</h3>
+        <p style={p}>
+          The event start and end you set on the Forecast tab are capped at{' '}
+          <strong>31 days</strong> apart, and the app then fetches every initialization from 15
+          days before the start through the end — so a 31-day event pulls 46 forecast runs. The cap
+          exists because the download and every subsequent metric scale with that count, and
+          because an event window much longer than the flood dilutes the categorical scores: quiet
+          timesteps accumulate in the lowest category and inflate MCC and HSS, as described under
+          those metrics.
+        </p>
+
         <h3 style={h3}>Initialization window</h3>
         <p style={p}>
           For each event, the forecast download covers a window of <strong>15 days before the
@@ -458,10 +507,38 @@ export function OverviewTab() {
           the same marginals would achieve; the denominator normalizes the result to [−1, 1].
         </p>
         <p style={p}>
-          MCC = 1 is perfect agreement, MCC = 0 is no better than random, MCC &lt; 0 is systematic
-          disagreement. A model that always predicts "&lt; 2 yr" during a flood event will have
-          many hits but an MCC near zero — desirable behavior for a flood-skill metric.
+          MCC = 1 is perfect agreement and MCC = 0 is no better than random. A model that always
+          predicts "&lt; 2 yr" during a flood event will have many hits but an MCC of exactly zero,
+          because its forecast marginal collapses into one column and the denominator degenerates —
+          desirable behavior for a flood-skill metric.
         </p>
+        <div style={caution}>
+          <p style={{ margin: 0 }}>
+            <strong>Both scores move with the length of the uploaded window.</strong> Quiet
+            timesteps accumulate in the "both below the lowest threshold" cell and dominate the
+            marginals. Holding forecast performance fixed and only adding quiet days, a forecast
+            that captures the event rises from MCC 0.45 to 0.82; worse, one that is{' '}
+            <em>systematically one category low</em> throughout goes from −0.50 to +0.35 — from
+            correctly damning to apparently skilful. This matters most for slow-rising events,
+            where the long limbs sit below threshold while the river is plainly doing something.
+            Read these scores alongside the pair count and the base rate, never as headline numbers,
+            and do not compare them between events with different window lengths.
+          </p>
+          <p style={{ margin: '0.5rem 0 0' }}>
+            <strong>They are also not independent checks.</strong> Compare the two formulae above:
+            the numerator is identical, N·c − Σ tₖpₖ. Only the denominator differs, so the two can
+            never disagree about the sign and agreement between them is arithmetic rather than
+            corroboration. Note also that the multi-category MCC does not have a floor of −1 — the
+            lower bound depends on the number of categories and on the marginals — so a negative
+            value has no fixed reference point.
+          </p>
+          <p style={{ margin: '0.5rem 0 0' }}>
+            Only scores that exclude correct negatives entirely — the critical success index,
+            a/(a+b+c), and F1 — are exactly invariant to window length. Scores designed for rare
+            events, including EDI and SEDI, are <em>not</em>: padding drives their false-alarm rate
+            to zero and they climb toward 1 regardless of skill.
+          </p>
+        </div>
 
         <h3 style={h3}>Categorical — Heidke Skill Score (HSS)</h3>
         <p style={pMono}>HSS = (N·c − Σ tₖpₖ) / (N² − Σ tₖpₖ)</p>
@@ -581,6 +658,16 @@ const sectionStyle: React.CSSProperties = {
   background: '#fff',
 };
 const h2: React.CSSProperties = { marginTop: 0, fontSize: '1.15rem' };
+const caution: React.CSSProperties = {
+  margin: '0.75rem 0',
+  padding: '0.8rem 1rem',
+  border: '1px solid #fcd34d',
+  background: '#fffbeb',
+  borderRadius: 6,
+  fontSize: '0.9rem',
+  lineHeight: 1.6,
+  color: '#713f12',
+};
 const link: React.CSSProperties = { color: '#1d4ed8', textDecoration: 'underline' };
 const h3: React.CSSProperties = { marginTop: '1.25rem', marginBottom: '0.4rem', fontSize: '1rem' };
 const p: React.CSSProperties = { margin: '0.5rem 0', lineHeight: 1.55, color: '#222' };
