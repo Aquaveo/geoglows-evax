@@ -1052,6 +1052,36 @@ export function MetricsTab() {
     return computePeakTimingByRun(app.forecasts, app.eventData);
   }, [app.forecasts, app.eventData]);
 
+  /** Median signed peak-timing error per LEAD DAY, for the diverging bars. */
+  const peakTimingByLeadRows = useMemo<DivergingRow[] | null>(() => {
+    const d = app.peakTimingDistribution;
+    if (!d || d.leads.length === 0) return null;
+    return d.leads.map((lead, i) => {
+      const vals = (d.values[i] ?? []).filter(Number.isFinite);
+      const pairs = d.pairs?.[i] ?? 0;
+      if (vals.length === 0) {
+        return {
+          label: `Lead ${lead}`,
+          value: Number.NaN,
+          n: 0,
+          detail: pairs === 0 ? 'no overlapping timesteps' : 'no member timed a peak',
+        };
+      }
+      const sorted = [...vals].sort((a, b) => a - b);
+      const mid = sorted.length / 2;
+      const median =
+        sorted.length % 2 === 1
+          ? sorted[Math.floor(mid)]
+          : (sorted[mid - 1] + sorted[mid]) / 2;
+      return {
+        label: `Lead ${lead}`,
+        value: median,
+        n: vals.length,
+        detail: `, spread ${sorted[0].toFixed(0)} to ${sorted[sorted.length - 1].toFixed(0)} h, ${pairs} pairs`,
+      };
+    });
+  }, [app.peakTimingDistribution]);
+
   /** Median signed peak-timing error per initialization, for the diverging bars. */
   const peakTimingRows = useMemo<DivergingRow[] | null>(() => {
     if (!peakByRun || peakByRun.initDates.length === 0) return null;
@@ -1348,6 +1378,37 @@ export function MetricsTab() {
           </p>
         )}
         {timingError && <p style={{ color: '#b91c1c' }}>{timingError}</p>}
+
+        {peakTimingByLeadRows && peakTimingByLeadRows.length > 0 && (
+          <>
+            <h3 style={h3}>Median timing error by lead day, signed</h3>
+            <Plot
+              {...divergingBarsFigure(peakTimingByLeadRows, {
+                title: `Peak Timing Error by Lead Day${riverIdSuffix}`,
+                subtitle: 'median across members at each lead',
+                valueLabel: 'Δt_peak (hours) — median across members',
+                negativeLabel: 'early',
+                positiveLabel: 'late',
+                unit: 'h',
+                categoryLabel: 'Lead day',
+              })}
+            />
+            <PlotNote>
+              the same reading as the per-initialization version, but grouped by how far ahead the
+              forecast was looking rather than by when it was issued — which makes it the more
+              interpretable of the two. Bars left of the line predicted the peak early, right of it
+              late.
+              <br />
+              <br />
+              <strong>Why this version is cleaner:</strong> in the per-initialization chart, a run
+              started long before the peak can only place that peak inside its own 15-day horizon,
+              so it is forced early; a run started on the peak day can only place it at or after,
+              so it is forced late. Much of the sign pattern there is that geometry rather than
+              skill. Grouping by lead compares forecasts at a consistent horizon, so a systematic
+              lag shows up as a real lag.
+            </PlotNote>
+          </>
+        )}
 
         {app.peakTimingDistribution && (
           <div style={subBlock}>
