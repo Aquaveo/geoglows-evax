@@ -1,6 +1,7 @@
 import type { Data, Layout } from 'plotly.js-dist-min'
 import type { MonthlyMapping } from '../lib/bias/correctForecast'
 import { mapValue } from '../lib/bias/correctForecast'
+import { maxOf } from '../lib/arrayStats'
 
 export interface BiasTransferOptions {
   /** Actual forecast values, drawn as a rug so you can see which part is used. */
@@ -27,9 +28,12 @@ export function biasTransferFigure(
 ): { data: Data[]; layout: Partial<Layout> } {
   const samples = opts.samples ?? 400
   const simEdges = mapping.simulated.binEdges
+  // NOT Math.max(...forecastValues): that is every ensemble member at every
+  // timestep -- 281,520 numbers for a 46-run event -- and spreading it throws
+  // RangeError: Maximum call stack size exceeded.
   const xMax = Math.max(
     simEdges[simEdges.length - 1],
-    ...(opts.forecastValues?.filter(Number.isFinite) ?? [0]),
+    maxOf(opts.forecastValues ?? [], 0),
   )
 
   const xs: number[] = []

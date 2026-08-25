@@ -1337,9 +1337,14 @@ export function MetricsTab() {
                 },
                 {
                   metricLabel: 'Δt_peak',
-                  xTickText: peakByRun.initDates.map(
-                    (d, i) => `${d}\n(${peakByRun.daysBefore[i]}d before)`,
-                  ),
+                  // <br>, not \n: plotly tick labels are mini-HTML and render a
+                  // literal backslash-n, which truncated every label to
+                  // "2026-06-05 (" and left it colliding with the axis title.
+                  xTickText: peakByRun.initDates.map((d, i) => {
+                    const n = peakByRun.daysBefore[i];
+                    const age = n > 0 ? `−${n} d` : n < 0 ? `+${-n} d` : 'peak day';
+                    return `${d.slice(5)}<br>${age}`;
+                  }),
                   title: `Peak Timing Error by Forecast Initialization${riverIdSuffix}`,
                   subtitle:
                     `Observed peak ${peakByRun.obsPeak?.toISOString().slice(0, 16).replace('T', ' ')} UTC` +

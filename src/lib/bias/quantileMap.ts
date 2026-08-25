@@ -1,3 +1,4 @@
+import { maxOf, minOf } from '../arrayStats'
 /**
  * Port of `geoglows.bias._flow_and_probability_mapper` and the scipy linear
  * interpolation it returns, from geoglows 2.2.0.
@@ -92,8 +93,8 @@ export function buildMonthlyCdf(values: readonly number[]): MonthlyCdf {
     throw new BiasCorrectionError('no finite values in the month; the reference raises here');
   }
 
-  let maxVal = Math.ceil(Math.max(...finite));
-  const minVal = Math.floor(Math.min(...finite));
+  let maxVal = Math.ceil(maxOf(finite));
+  const minVal = Math.floor(minOf(finite));
   const degenerateRange = maxVal === minVal;
   if (degenerateRange) maxVal += 0.1;
 

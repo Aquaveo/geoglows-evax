@@ -1,3 +1,4 @@
+import { maxOf } from '../arrayStats'
 import type { ForecastRun, TimeSeries } from '../types'
 import { detectCadence } from '../ingest/cadence'
 import { aggregateSeries } from '../ingest/grid'
@@ -171,8 +172,8 @@ export function correctForecasts(
       try {
         const m = buildMonthlyMapping(month, simDaily, obsDaily)
         mappings.set(month, m)
-        const simShare = Math.max(...m.simulated.counts)
-        const obsShare = Math.max(...m.observed.counts)
+        const simShare = maxOf(m.simulated.counts)
+        const obsShare = maxOf(m.observed.counts)
         monthDiags.set(month, {
           month,
           nSimulated: m.simulated.n,

@@ -278,9 +278,12 @@ export function distributionVsLeadFigure(
 
   const layout: Partial<Layout> = {
     title: { text: titleText, x: 0.5 },
-    margin: { l: 60, r: 20, t: 60, b: 50 },
+    margin: { l: 60, r: 20, t: 60, b: 70 },
     xaxis: {
       title: { text: opts.xAxisLabel ?? 'Lead Day' },
+      // Two-line date labels need room, and without automargin plotly draws the
+      // axis title straight through them.
+      automargin: true,
       // Positions stay numeric so ranges and reference lines work; only the
       // labels change when xTickText is supplied.
       ...(opts.xTickText

@@ -1,3 +1,4 @@
+import { maxOf, minOf } from './arrayStats';
 import type { ForecastRun, LeadBucket, LeadBuckets, TimeSeries } from './types';
 
 const HOUR_MS = 3600 * 1000;
@@ -113,9 +114,9 @@ function statOf(row: number[], stat: StatKey): number {
   if (valid.length === 0) return Number.NaN;
   switch (stat) {
     case 'min':
-      return Math.min(...valid);
+      return minOf(valid);
     case 'max':
-      return Math.max(...valid);
+      return maxOf(valid);
     case 'mean':
       return valid.reduce((a, b) => a + b, 0) / valid.length;
     case 'median':

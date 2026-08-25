@@ -1,5 +1,6 @@
 import type { Data, Layout } from 'plotly.js-dist-min';
 import type { SkillRow } from '../lib/metrics/skillSummary';
+import { maxOf, minOf } from '../lib/arrayStats';
 
 /** Performance bands. Green is the pass mark, red is below usable. */
 const GOOD = 0.5;
@@ -96,7 +97,7 @@ export function skillBarsFigure(
   const subFloor = display
     .flatMap((r) => [r.nse, r.kge])
     .filter((v) => Number.isFinite(v) && v < floor);
-  const deepest = subFloor.length > 0 ? Math.min(...subFloor) : floor;
+  const deepest = subFloor.length > 0 ? minOf(subFloor, floor) : floor;
   const maxDepth = Math.log10(Math.max(1 + (floor - deepest), 1)) || 1;
   const clampToFloor = (v: number) => {
     if (!Number.isFinite(v) || v >= floor) return v;
@@ -264,14 +265,14 @@ export function skillBarsFigure(
       title: { text: 'NSE' },
       zeroline: true,
       zerolinecolor: '#444',
-      range: [axisFloor, Math.max(1, ...nseFinite)],
+      range: [axisFloor, Math.max(1, maxOf(nseFinite, 1))],
     },
     xaxis2: {
       domain: [0.54, 1],
       title: { text: "KGE'" },
       zeroline: true,
       zerolinecolor: '#444',
-      range: [axisFloor, Math.max(1, ...kgeFinite)],
+      range: [axisFloor, Math.max(1, maxOf(kgeFinite, 1))],
     },
     yaxis: { type: 'category', automargin: true, title: { text: opts.categoryLabel } },
     yaxis2: { type: 'category', anchor: 'x2', matches: 'y', showticklabels: false },
