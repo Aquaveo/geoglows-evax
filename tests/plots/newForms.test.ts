@@ -104,10 +104,12 @@ describe('divergingBarsFigure with spread', () => {
     negativeLabel: 'early',
     positiveLabel: 'late',
   });
-  const bar = fig.data[0] as {
-    error_x?: { array: number[]; arrayminus: number[]; symmetric: boolean };
-    x: number[];
-  };
+  const barOf = (f: { data: unknown[] }) =>
+    f.data.find((d) => (d as { type?: string }).type === 'bar') as {
+      error_x?: { array: number[]; arrayminus: number[]; symmetric: boolean };
+      x: number[];
+    };
+  const bar = barOf(fig);
 
   it('draws the IQR as an ASYMMETRIC error bar', () => {
     // The median is not centred in the IQR in general, so a symmetric bar would
@@ -128,16 +130,30 @@ describe('divergingBarsFigure with spread', () => {
       negativeLabel: 'lo',
       positiveLabel: 'hi',
     });
-    const e = (odd.data[0] as { error_x: { array: number[]; arrayminus: number[] } }).error_x;
+    const e = barOf(odd)!.error_x!;
     expect(e.array.every((v) => v >= 0)).toBe(true);
     expect(e.arrayminus.every((v) => v >= 0)).toBe(true);
   });
 
-  it('widens the axis to fit the whiskers, not just the medians', () => {
+  it('widens the axis to clear the FULL range, not just the quartiles', () => {
     const [lo, hi] = fig.layout.xaxis!.range as [number, number];
-    // q3 of 14 is the widest quartile; the range must clear it.
-    expect(hi).toBeGreaterThan(14);
+    // hi of 40 is the widest thing drawn; the axis must clear it.
+    expect(hi).toBeGreaterThan(40);
     expect(lo).toBeCloseTo(-hi, 10);
+  });
+
+  it('draws the full range behind the bars so an outlier cannot dominate', () => {
+    const rangeTrace = fig.data.findIndex(
+      (d) => (d as { error_x?: { color?: string } }).error_x?.color === '#b8b6ae',
+    );
+    const barIdx = fig.data.findIndex((d) => (d as { type?: string }).type === 'bar');
+    expect(rangeTrace).toBeGreaterThanOrEqual(0);
+    expect(rangeTrace).toBeLessThan(barIdx);
+    const e = (fig.data[rangeTrace] as { error_x: { array: number[]; arrayminus: number[] } })
+      .error_x;
+    const idx = (fig.data[rangeTrace] as { x: number[] }).x.indexOf(6);
+    expect(e.array[idx]).toBeCloseTo(34, 10); // 40 − 6
+    expect(e.arrayminus[idx]).toBeCloseTo(15, 10); // 6 − (−9)
   });
 
   it('omits error bars entirely when no row carries a spread', () => {
@@ -146,6 +162,6 @@ describe('divergingBarsFigure with spread', () => {
       negativeLabel: 'lo',
       positiveLabel: 'hi',
     });
-    expect((plain.data[0] as { error_x?: unknown }).error_x).toBeUndefined();
+    expect(barOf(plain)!.error_x).toBeUndefined();
   });
 });

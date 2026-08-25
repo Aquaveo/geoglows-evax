@@ -1597,10 +1597,9 @@ export function MetricsTab() {
             />
             <PlotNote>
               bars left of the line predicted the peak early, right of it late. The bar is the
-              median across members and the whisker is the middle half of them, so whisker length
-              is member disagreement — hover for the full range, which is deliberately not drawn
-              because one outlying member would stretch it across zero and make a decisive result
-              look ambiguous.
+              median across members. The heavy whisker is the middle half of them and the light one
+              behind it is the full range, so the two together answer different questions: whether
+              the bulk of members agreed on the sign, and whether <em>any</em> member got it right.
               <br />
               <br />
               Grouped by how far ahead the forecast was looking rather than by when it was issued,
@@ -1636,8 +1635,9 @@ export function MetricsTab() {
             />
             <PlotNote>
               one row per initialization, so the <em>sign</em> reads first: bars left of the line
-              predicted the peak early, bars right of it late. The bar is the median across members
-              and the whisker is the middle half. Colour is redundant with side on purpose — the
+              predicted the peak early, bars right of it late. The bar is the median across members,
+              the heavy whisker the middle half and the light one the full range. Colour is
+              redundant with side on purpose — the
               axis already answers the question, so nothing is lost in greyscale or to
               colour-blindness.
             </PlotNote>

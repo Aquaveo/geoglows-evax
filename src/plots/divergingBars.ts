@@ -13,13 +13,21 @@ export interface DivergingRow {
    *
    * Carrying the spread here is what lets one chart replace a bar chart plus a
    * box plot of the same numbers: the bar gives the median and its sign, the
-   * error bar gives member disagreement. The full min–max range is deliberately
-   * not drawn — on a signed axis a single outlying member stretches the whisker
-   * across zero and makes an otherwise decisive result look ambiguous.
+   * error bars give member disagreement.
    */
   q1?: number;
   q3?: number;
-  /** Full range, reported in the hover only. */
+  /**
+   * Full min–max across members, drawn as a lighter, thinner whisker behind the
+   * interquartile bar.
+   *
+   * Two levels rather than one because they answer different questions and a
+   * single whisker cannot do both: the outer range shows whether ANY member got
+   * the sign right, while the inner quartiles show where the bulk sat. Drawn
+   * lighter so one outlying member cannot dominate the row — the failure the
+   * separate box plot had, where a lone straggler crossing zero made an
+   * otherwise decisive result look ambiguous.
+   */
   lo?: number;
   hi?: number;
   /** Extra hover context, e.g. the spread across members. */
@@ -66,7 +74,36 @@ export function divergingBarsFigure(
   const scored = display.filter((r) => Number.isFinite(r.value));
   const unit = opts.unit ?? '';
 
+  const hasRange = scored.some((r) => Number.isFinite(r.lo) && Number.isFinite(r.hi));
+
   const data: Data[] = [
+    // Full range first, so the bars and the heavier IQR whiskers draw over it.
+    ...(hasRange
+      ? [
+          {
+            type: 'scatter' as const,
+            mode: 'markers' as const,
+            x: scored.map((r) => r.value),
+            y: scored.map((r) => r.label),
+            marker: { size: 0.1, color: 'rgba(0,0,0,0)' },
+            error_x: {
+              type: 'data' as const,
+              symmetric: false,
+              array: scored.map((r) =>
+                Number.isFinite(r.hi) ? Math.max(0, (r.hi as number) - r.value) : 0,
+              ),
+              arrayminus: scored.map((r) =>
+                Number.isFinite(r.lo) ? Math.max(0, r.value - (r.lo as number)) : 0,
+              ),
+              color: '#b8b6ae',
+              thickness: 1,
+              width: 3,
+            },
+            showlegend: false,
+            hoverinfo: 'skip' as const,
+          },
+        ]
+      : []),
     {
       type: 'bar',
       orientation: 'h',
@@ -89,9 +126,9 @@ export function divergingBarsFigure(
             arrayminus: scored.map((r) =>
               Number.isFinite(r.q1) ? Math.max(0, r.value - (r.q1 as number)) : 0,
             ),
-            color: '#52514e',
-            thickness: 1.4,
-            width: 4,
+            color: '#33322f',
+            thickness: 2.2,
+            width: 5,
           }
         : undefined,
       customdata: scored.map(
@@ -134,6 +171,24 @@ export function divergingBarsFigure(
     });
   }
 
+  if (hasRange) {
+    for (const [name, color, w] of [
+      ['middle half of members', '#33322f', 4],
+      ['full range', '#b8b6ae', 2],
+    ] as const) {
+      data.push({
+        type: 'scatter',
+        mode: 'lines',
+        x: [null],
+        y: [scored[0]?.label ?? ''],
+        line: { color, width: w },
+        name,
+        showlegend: true,
+        hoverinfo: 'skip',
+      });
+    }
+  }
+
   const unscored = display.filter((r) => !Number.isFinite(r.value));
   const annotations: NonNullable<Layout['annotations']> = unscored.map((r) => ({
     x: 0,
@@ -146,12 +201,13 @@ export function divergingBarsFigure(
     font: { size: 10, color: '#b45309' },
   }));
 
+  // The axis must clear the widest thing drawn, which is now the full range.
   const span = maxOf(
-    scored.flatMap((r) => [
-      Math.abs(r.value),
-      Number.isFinite(r.q1) ? Math.abs(r.q1 as number) : 0,
-      Number.isFinite(r.q3) ? Math.abs(r.q3 as number) : 0,
-    ]),
+    scored.flatMap((r) =>
+      [r.value, r.q1, r.q3, r.lo, r.hi]
+        .filter((v): v is number => Number.isFinite(v))
+        .map(Math.abs),
+    ),
     1,
   );
   // Symmetric about zero so bar lengths are comparable across sides — an
