@@ -204,7 +204,7 @@ function VariantSelect({
           Bias-corrected — local CDF{disabledReason ? ` — ${disabledReason}` : ''}
         </option>
         <option value="global" disabled={!!globalDisabledReason}>
-          Bias-corrected — global transform
+          Bias-corrected — SABER
           {globalDisabledReason ? ` — ${globalDisabledReason}` : ''}
         </option>
       </select>
@@ -219,8 +219,8 @@ function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
   const nonMonotonic = c.months.filter((m) => !c.saturation[m]?.monotonic);
   return (
     <div style={correctionBanner}>
-      <strong>Global transform.</strong> Per-river coefficients fitted centrally and published by
-      the GEOGLOWS programme, applied per calendar month. It uses no uploaded observations at all,
+      <strong>SABER.</strong> The RFS team's own correction, fitted centrally per river and per
+      calendar month and applied through discharge_transform. It uses no uploaded observations at all,
       so it cannot inherit a short gauge record's gaps — and because nothing can fail, all{' '}
       {c.forecasts.size} runs are kept. Nothing is excluded, so the surviving set is not a biased
       subset.
@@ -880,7 +880,7 @@ export function MetricsTab() {
 
   /** Appended to plot titles so a screenshot always says which variant it is. */
   const variantSuffix = (v: MetricVariant) =>
-    v === 'corrected' ? ' (bias-corrected, local CDF)' : v === 'global' ? ' (bias-corrected, global)' : '';
+    v === 'corrected' ? ' (bias-corrected, local CDF)' : v === 'global' ? ' (bias-corrected, SABER)' : '';
 
   const skillLeadCorrected = useMemo(
     () =>
@@ -1815,10 +1815,10 @@ export function MetricsTab() {
             {dumbbellRows.global && (
               <Plot
                 {...dumbbellFigure(dumbbellRows.global, {
-                  title: `KGE′ before and after the global transform${riverIdSuffix}`,
+                  title: `KGE′ before and after SABER${riverIdSuffix}`,
                   metricLabel: "KGE′",
                   beforeLabel: 'Raw',
-                  afterLabel: 'Global transform',
+                  afterLabel: 'SABER',
                   higherIsBetter: true,
                 })}
               />

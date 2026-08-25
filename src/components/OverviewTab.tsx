@@ -214,19 +214,26 @@ export function OverviewTab() {
         </p>
         <ul style={ul}>
           <li>
-            <strong>Local CDF</strong> — monthly empirical quantile mapping against{' '}
-            <em>your uploaded</em> observed record, described below. Fitted to the reach you care
-            about, but it inherits that record's sparsity: where the observed distribution is thin
-            the inverse mapping is undefined, and a forecast above the simulated monthly maximum
-            can map to infinity. Runs that happens to are excluded whole.
+            <strong>Local FDC mapping</strong> — the method the GEOGLOWS training material
+            describes: take each forecast value, find its non-exceedance probability on the{' '}
+            <em>simulated</em> flow duration curve for that calendar month, then read the value at
+            that same probability off the <em>observed</em> curve. The observed curve is built from{' '}
+            <em>your uploaded</em> record, so it is fitted to the reach you care about — but it
+            inherits that record's sparsity. Where the observed curve is flat the inverse is
+            undefined, and a forecast above the simulated monthly maximum can map to infinity;
+            runs that happens to are excluded whole.
           </li>
           <li>
-            <strong>Global transform</strong> — a port of{' '}
-            <code>geoglows.bias.discharge_transform</code>, which uses no observations at all.
-            Coefficients are fitted centrally per river and per month and published as two
-            degree-7 polynomials, one mapping discharge to an exceedance percentile and one back,
-            with the percentile clamped to [0, 100]. There is no division anywhere, so it cannot
-            produce an infinity and no run is ever excluded.
+            <strong>SABER</strong> — Stream Analysis for Bias Estimation and Reduction, the RFS
+            team's own correction, applied here through{' '}
+            <code>geoglows.bias.discharge_transform</code>. It is the same flow-duration-curve
+            premise, but fitted centrally: SABER compares simulated against observed curves at
+            gauged reaches, clusters watersheds with similar flow behaviour so that{' '}
+            <em>ungauged</em> reaches can borrow from gauged ones, and publishes the result as a
+            scalar for every combination of calendar month and exceedance probability. The app
+            reads the polynomial form of those transformation weights, so it needs no observations
+            from you. Because the curves are smooth fits rather than empirical steps there is no
+            flat inverse to invert, so it cannot produce an infinity and no run is ever excluded.
           </li>
         </ul>
         <p style={p}>
@@ -238,6 +245,31 @@ export function OverviewTab() {
           entirely when essentially every value clamps.
         </p>
         <p style={p}>
+          So the real trade is not observations against no observations — <strong>both methods use
+          gauge data</strong>. It is <em>whose</em>. The local mapping uses the record you
+          uploaded for this reach: directly relevant, and as sparse as that record happens to be.
+          SABER uses gauge data chosen centrally, which may come from a{' '}
+          <em>different, clustered</em> reach when this one is ungauged or its gauge was not used
+          — better sampled, but not necessarily describing this river. That is why a SABER
+          correction can have a ceiling well below your own record's maximum: the ceiling belongs
+          to whatever reference curve was fitted, not to your gauge.
+        </p>
+        <p style={p}>
+          Two consequences worth checking before trusting it. Where SABER has no usable assignment
+          for a reach, <strong>its scalars are exactly 1.0 and the correction is an identity</strong>{' '}
+          — any movement you then see is polynomial fitting error around a no-op, not a
+          correction. And where it does correct, encoding the curves as polynomials introduces
+          artefacts the underlying scalars do not have: the transform can saturate, so every
+          discharge above some value maps to one number, and it is not guaranteed monotonic. Both
+          are counted in the banner above the corrected metrics.
+        </p>
+        <p style={p}>
+          Note also that the training material describes SABER as still experimental and{' '}
+          <strong>not applied to the forecast data end users receive</strong> — so the raw
+          forecasts this app downloads are uncorrected, and choosing the SABER variant is what
+          applies it.
+        </p>
+        <p style={p}>
           Which to prefer depends on the reach, and the honest answer is visible in the
           diagnostics rather than decidable in advance. Where the event exceeds the model's
           simulated range the local method will be withheld and the global one is what you have;
@@ -245,7 +277,7 @@ export function OverviewTab() {
           of the two.
         </p>
 
-        <h3 style={h3}>The local CDF method</h3>
+        <h3 style={h3}>The local FDC mapping, in detail</h3>
         <p style={p}>
           The GEOGLOWS training material covers both halves of this directly:{' '}
           <a href="https://training.geoglows.org/rfs/bias-correction/bias-correction/" style={link} target="_blank" rel="noreferrer">
