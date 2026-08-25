@@ -63,6 +63,18 @@ export function OverviewTab() {
           categorical skill but poor probabilistic calibration. Reading these together provides a
           diagnostic portrait of model behavior.
         </p>
+        <p style={p}>
+          Two of those families are also affected by something that is not a forecast error at
+          all. RFS is a global model, and at any single reach it can run systematically high or
+          low; a reach where it runs 40% low will score badly on magnitude however well it caught
+          the event's shape and timing. <strong>Bias correction</strong> separates the two, and the
+          Accuracy, Probabilistic and Skill-summary blocks each offer a raw view alongside two
+          corrected ones — one fitted to your uploaded record, one using centrally published
+          per-river coefficients. Both have failure modes worth understanding before trusting
+          them, which the <em>Bias correction</em> section below covers. The Categorical and Timing
+          families need no correction: their dual-threshold design already absorbs magnitude bias
+          by construction.
+        </p>
         <table style={table}>
           <thead>
             <tr>
