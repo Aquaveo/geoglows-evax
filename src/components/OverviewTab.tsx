@@ -73,7 +73,7 @@ export function OverviewTab() {
           per-river coefficients. Both have failure modes worth understanding before trusting
           them, which the <em>Bias correction</em> section below covers. The Categorical and Timing
           families need no correction: their dual-threshold design already absorbs magnitude bias
-          by construction.
+          by construction, for reasons set out in its own section below.
         </p>
         <table style={table}>
           <thead>
@@ -197,7 +197,8 @@ export function OverviewTab() {
           captured the event's shape and timing.
         </p>
         <p style={p}>
-          The categorical family is already insulated. Its dual-threshold design classifies
+          The categorical family is already insulated. Its <strong>dual-threshold design</strong>{' '}
+          — set out in full under <em>The dual-threshold design</em> further down — classifies
           observations against observed return periods and forecasts against simulated ones,
           which absorbs magnitude bias by construction. Correcting the forecasts <em>and</em>{' '}
           classifying them against simulated thresholds would apply the adjustment twice, so the
