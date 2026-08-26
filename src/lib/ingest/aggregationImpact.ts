@@ -1,6 +1,6 @@
 import { determineEventReturnPeriod } from '../metrics/contingency';
-import type { RpThresholds, TimeSeries } from '../types';
-import { aggregateSeries, type Aggregation } from './grid';
+import type { LeadBuckets, RpThresholds, TimeSeries } from '../types';
+import { aggregateBucket, aggregateSeries, type Aggregation } from './grid';
 
 export interface AggregationImpact {
   /** The summary in use. */
@@ -13,6 +13,25 @@ export interface AggregationImpact {
   changesEventRp: boolean;
   /** Bins classified above the lowest threshold, per summary. */
   exceedances: Record<Aggregation, number>;
+  /**
+   * Which side the summary is actually applied to.
+   *
+   * Comparison happens at the coarser cadence, so the FINER side is the one
+   * summarised. With a daily gauge and 3-hourly forecasts — the common case —
+   * that is the forecast, and the observed peak cannot move at all. A diagnostic
+   * that only inspected the observed side would therefore stay silent exactly
+   * when the choice was doing the most work.
+   */
+  summarising: 'observations' | 'forecasts' | 'both' | 'neither';
+  /**
+   * Member-timesteps crossing the lowest simulated threshold, per summary.
+   *
+   * The forecast-side consequence, and the one that feeds hits and false alarms
+   * directly. Reported as counts rather than as a warning: the max is almost
+   * always at least the median here, so a threshold on the difference would need
+   * a constant, and the numbers say it better than a constant would.
+   */
+  forecastExceedances: Record<Aggregation, number> | null;
 }
 
 /**
@@ -44,6 +63,12 @@ export function aggregationImpact(
   obsRp: RpThresholds,
   stepMs: number,
   chosen: Aggregation,
+  opts: {
+    buckets?: LeadBuckets | null;
+    simRp?: RpThresholds | null;
+    obsStepMs?: number;
+    fcstStepMs?: number;
+  } = {},
 ): AggregationImpact | null {
   if (observed.time.length === 0) return null;
 
@@ -67,6 +92,31 @@ export function aggregationImpact(
     eventRp[how] = determineEventReturnPeriod(g, obsRp);
   }
 
+  // The forecast side, which is the one being summarised whenever the gauge is
+  // the coarser input.
+  let forecastExceedances: Record<Aggregation, number> | null = null;
+  const simLow = opts.simRp ? lowestThreshold(opts.simRp) : null;
+  if (opts.buckets && simLow != null) {
+    forecastExceedances = {} as Record<Aggregation, number>;
+    for (const how of ways) {
+      let over = 0;
+      for (const key of Object.keys(opts.buckets)) {
+        const b = opts.buckets[Number(key)];
+        if (!b || b.time.length === 0) continue;
+        const g = aggregateBucket(b, stepMs, how);
+        for (const row of g.members) {
+          for (const v of row) if (Number.isFinite(v) && v >= simLow) over += 1;
+        }
+      }
+      forecastExceedances[how] = over;
+    }
+  }
+
+  const obsFiner = opts.obsStepMs != null && opts.obsStepMs < stepMs;
+  const fcstFiner = opts.fcstStepMs != null && opts.fcstStepMs < stepMs;
+  const summarising =
+    obsFiner && fcstFiner ? 'both' : obsFiner ? 'observations' : fcstFiner ? 'forecasts' : 'neither';
+
   const rps = ways.map((w) => eventRp[w]);
   return {
     chosen,
@@ -74,6 +124,8 @@ export function aggregationImpact(
     eventRp,
     exceedances,
     changesEventRp: new Set(rps).size > 1,
+    summarising,
+    forecastExceedances,
   };
 }
 

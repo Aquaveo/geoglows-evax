@@ -1715,9 +1715,14 @@ export function MetricsTab() {
   const aggImpact = useMemo(
     () =>
       app.eventData && app.obsRp && grid
-        ? aggregationImpact(app.eventData, app.obsRp, grid.stepMs, categoricalAgg)
+        ? aggregationImpact(app.eventData, app.obsRp, grid.stepMs, categoricalAgg, {
+            buckets: rawBuckets,
+            simRp: app.simRp,
+            obsStepMs: obsCadence?.stepMs,
+            fcstStepMs: fcstCadence?.stepMs,
+          })
         : null,
-    [app.eventData, app.obsRp, grid, categoricalAgg],
+    [app.eventData, app.obsRp, app.simRp, grid, categoricalAgg, rawBuckets, obsCadence, fcstCadence],
   );
 
   /** Highest observed flow in the event window — the number that sets eventRp. */
@@ -1809,6 +1814,37 @@ export function MetricsTab() {
                 all. A flashy event inside a coarse bin survives the maximum and is erased by the
                 median; a broad event with noisy readings has the opposite problem. Look at your
                 hydrograph and pick the summary that represents it.
+              </div>
+            )}
+            {aggImpact && (
+              <div style={aggNote}>
+                {aggImpact.summarising === 'neither' ? (
+                  <>
+                    <strong>Nothing is being summarised on this data.</strong> Both sides already sit
+                    at the comparison grid, so each bin holds one value and all three choices give
+                    the same number. This setting cannot change your results.
+                  </>
+                ) : (
+                  <>
+                    On this data the summary applies to{' '}
+                    <strong>
+                      {aggImpact.summarising === 'both'
+                        ? 'both the observations and the forecasts'
+                        : `the ${aggImpact.summarising}`}
+                    </strong>
+                    .{' '}
+                    {aggImpact.forecastExceedances && (
+                      <>
+                        Forecast member-timesteps crossing the lowest simulated threshold:{' '}
+                        {(['median', 'mean', 'max'] as const)
+                          .map((w) => `${aggImpact.forecastExceedances![w].toLocaleString()} by ${w}`)
+                          .join(', ')}
+                        . Those counts are what become hits and false alarms, so the gap between
+                        them is the size of this setting's effect on every categorical score.
+                      </>
+                    )}
+                  </>
+                )}
               </div>
             )}
             <div style={aggNote}>

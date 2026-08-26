@@ -57,3 +57,67 @@ describe('aggregationImpact', () => {
     expect(aggregationImpact({ time: [], values: [] }, obsRp, 3 * H, 'median')).toBeNull();
   });
 });
+
+describe('aggregationImpact on the forecast side', () => {
+  // The common case: a DAILY gauge with 3-hourly forecasts. The grid is daily,
+  // so the observations already sit on it and their peak cannot move — a
+  // diagnostic looking only at them would stay silent while the choice was
+  // reshaping the forecast 8 values at a time.
+  const DAY = 24 * H;
+  const dailyObs: TimeSeries = {
+    time: Array.from({ length: 15 }, (_, i) => new Date(t0 + i * DAY)),
+    values: Array.from({ length: 15 }, (_, i) => 20 + 600 * Math.exp(-((i - 7) ** 2) / 6)),
+  };
+  const simRp = { 2: 150, 5: 250, 10: 350, 25: 500, 50: 650, 100: 800 };
+  // One lead bucket of 3-hourly members with a pronounced within-day shape, so
+  // the daily max sits well above the daily median.
+  const buckets = {
+    1: {
+      time: Array.from({ length: 15 * 8 }, (_, i) => new Date(t0 + i * 3 * H)),
+      members: Array.from({ length: 15 * 8 }, (_, i) => {
+        const day = Math.floor(i / 8);
+        const base = 20 + 500 * Math.exp(-((day - 7) ** 2) / 6);
+        const shape = 1 + 0.6 * Math.sin(((i % 8) / 8) * 2 * Math.PI);
+        return [base * shape, base * shape * 0.9];
+      }),
+    },
+  };
+
+  it('reports which side is actually being summarised', () => {
+    const r = aggregationImpact(dailyObs, obsRp, DAY, 'median', {
+      buckets: buckets as never,
+      simRp,
+      obsStepMs: DAY,
+      fcstStepMs: 3 * H,
+    })!;
+    expect(r.summarising).toBe('forecasts');
+    // The observed peak genuinely cannot move here.
+    expect(r.peak.max).toBeCloseTo(r.peak.median, 9);
+    expect(r.changesEventRp).toBe(false);
+  });
+
+  it('counts forecast exceedances per summary, which is where the effect lands', () => {
+    const r = aggregationImpact(dailyObs, obsRp, DAY, 'median', {
+      buckets: buckets as never,
+      simRp,
+      obsStepMs: DAY,
+      fcstStepMs: 3 * H,
+    })!;
+    expect(r.forecastExceedances).not.toBeNull();
+    // The max cannot cross less often than the median.
+    expect(r.forecastExceedances!.max).toBeGreaterThanOrEqual(r.forecastExceedances!.median);
+    // And on a shape this pronounced it crosses strictly more.
+    expect(r.forecastExceedances!.max).toBeGreaterThan(r.forecastExceedances!.median);
+  });
+
+  it('says nothing is summarised when both sides sit at the grid', () => {
+    const r = aggregationImpact(dailyObs, obsRp, DAY, 'median', {
+      buckets: null,
+      simRp,
+      obsStepMs: DAY,
+      fcstStepMs: DAY,
+    })!;
+    expect(r.summarising).toBe('neither');
+    expect(r.forecastExceedances).toBeNull();
+  });
+});
