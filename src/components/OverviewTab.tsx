@@ -851,24 +851,48 @@ export function OverviewTab() {
         </ul>
         <p style={p}>
           <strong>−0.41 is the mean-flow benchmark</strong> — the score of a forecast equal to the
-          observed mean at every timestep. Above it a model improves on that benchmark even when its
-          score is negative, which is the trap the bands exist to avoid: a KGE′ of −0.2 is not
-          "bad", it beats doing nothing. It transfers from KGE to KGE′ because a flat forecast has
-          zero variability either way. NSE is keyed to <strong>0</strong> instead, its own mean-flow
-          benchmark, since it is already normalised by the observed variance — so the two panels are
-          coloured on different scales, with different palettes and separate legends to say so.
+          observed mean at every timestep, established by{' '}
+          <a
+            href="https://doi.org/10.5194/hess-23-4323-2019"
+            style={link}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Knoben, Freer &amp; Woods (2019)
+          </a>
+          : "KGE values greater than −0.41 indicate that a model improves upon the mean flow
+          benchmark — even if the model's KGE value is negative." That is the trap the bands exist
+          to avoid: a KGE′ of −0.2 is not "bad", it beats doing nothing. It carries over from KGE to
+          KGE′ because a flat forecast has zero variability either way, stated for KGE′ directly by{' '}
+          <a
+            href="https://doi.org/10.5194/essd-12-2043-2020"
+            style={link}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Harrigan et al. (2020)
+          </a>
+          . NSE is keyed to <strong>0</strong> instead, its own mean-flow benchmark, since it is
+          already normalised by the observed variance — so the two panels are coloured on different
+          scales, with different palettes and separate legends to say so.
         </p>
         <p style={caution}>
-          <strong>On one event, −0.41 is not the climatology line.</strong> It is the best score any
-          flat forecast can reach, and only the flat forecast equal to <em>this window's</em>{' '}
-          observed mean reaches it — a hindsight quantity. Real seasonal climatology scored over a
-          21-day flood window measured KGE′ −0.22, over ±5 days around the crest 0.00, and over ten
-          continuous years +0.42. The −0.41 line never moves and coincides with climatology at no
-          window length. So read "below the benchmark" as "worse than a flat line", which is true,
-          rather than "worse than climatology", which is not. Band names also shift with the window
-          you chose: the same synthetic forecast reads Good over ±20 days and Poor over ±5 days
-          around the crest, because the observed variability the scores normalise by is the
-          window's.
+          <strong>On one event, −0.41 is not the climatology line.</strong> It is the best score any{' '}
+          <em>flat</em> forecast can reach, and only the flat forecast equal to{' '}
+          <em>this window's own</em> observed mean reaches it — a hindsight quantity. The algebra is
+          short: a constant forecast has zero variability, so γ = 0 and r is undefined and taken as
+          0, leaving KGE′ = 1 − √[2 + (c/μ&#x2092; − 1)²], maximised at c = μ&#x2092; to give exactly
+          1 − √2.
+        </p>
+        <p style={caution}>
+          A real seasonal climatology is a different and generally better forecast, and its own score
+          climbs steeply with window length — on a constructed 30-year record it measured KGE′ −0.11
+          across ±5 days of the crest, −0.05 over 21 days, and +0.67 over the whole record. The
+          −0.41 line never moves. So read "below the benchmark" as{' '}
+          <strong>worse than a flat line</strong>, which is what it means, rather than "worse than
+          climatology", which does not follow. Band names shift with the window you chose for the
+          same reason: the observed variability these scores normalise by is the window's, not the
+          river's.
         </p>
 
         <h3 style={h3}>Probabilistic — Continuous Ranked Probability Score (CRPS)</h3>
