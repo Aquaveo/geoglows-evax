@@ -79,16 +79,13 @@ describe('correctForecasts driver', () => {
     expect(correctForecasts(fc, empty, obs).unavailable).toMatch(/no retrospective/)
   })
 
-  it('excludes an above-range run whether or not it produced an infinity', () => {
-    // This used to branch on whether the run happened to map to Infinity, and
-    // accepted either outcome — because it did depend on chance. An above-range
-    // forecast only goes infinite when its probability lands strictly above the
-    // observed CDF's top, which turns on whether two cumulative sums of several
-    // hundred floats both finished at exactly 1.0. At p = 1 the run was kept
-    // with a pinned finite value; one ulp higher it was excluded.
-    //
-    // The exclusion now tests the condition rather than that symptom, so the
-    // outcome is deterministic.
+  it('KEEPS an above-range run, because the reference keeps it', () => {
+    // This app evaluates the geoglows method, so discarding what geoglows keeps
+    // would mean evaluating a different one. The reference has no notion of a
+    // run — correct_forecast takes one frame and returns one frame — so run
+    // rejection was never its behaviour, in either the old form (any value came
+    // out +Infinity) or the corrected form (any value at or above the simulated
+    // maximum).
     const simMax = Math.max(
       ...sim.values.filter((_, i) => sim.time[i].getUTCMonth() === 5),
     )
@@ -97,27 +94,40 @@ describe('correctForecasts driver', () => {
       ['20200610', run('2020-06-10T00:00:00Z', [simMax * 5, simMax * 6])],
     ])
     const r = correctForecasts(fc, sim, obs)
-    expect(r.forecasts.has('20200610')).toBe(false)
+    expect(r.forecasts.has('20200610')).toBe(true)
     expect(r.forecasts.has('20200605')).toBe(true)
-    const ex = r.excluded.find((e) => e.date === '20200610')!
-    expect(ex.reason).toMatch(/simulated month-6 maximum/)
-    expect(ex.reason).toMatch(/every larger forecast returns the same number/)
+    expect(r.excluded).toHaveLength(0)
+    // Reported instead of removed.
+    expect(r.aboveSimRange).toBeGreaterThan(0)
   })
 
-  it('pins every above-range forecast to one value, which is why they are excluded', () => {
-    // The failure the exclusion exists to prevent: at the top of the simulated
-    // distribution the CDF is flat, so the forward map has zero slope and a
-    // thousand-fold range of forecasts collapses onto a single corrected flow.
+  it('counts above-range values whether they came back pinned or infinite', () => {
+    // Which of the two happens turns on last-bit agreement between two
+    // cumulative sums, so the count must not depend on it.
     const simMax = Math.max(
       ...sim.values.filter((_, i) => sim.time[i].getUTCMonth() === 5),
     )
-    const outs = [1.1, 2, 5, 20, 1000].map((k) => {
-      const fc = new Map([['20200610', run('2020-06-10T00:00:00Z', [simMax * k])]])
-      const r = correctForecasts(fc, sim, obs)
-      // Excluded, so read the reason rather than the values.
-      return r.excluded.length === 1
-    })
-    expect(outs.every(Boolean)).toBe(true)
+    const fc = new Map([['20200610', run('2020-06-10T00:00:00Z', [simMax * 5, simMax * 500])]])
+    const r = correctForecasts(fc, sim, obs)
+    expect(r.aboveSimRange).toBe(2)
+    expect(r.positiveInfinite).toBeLessThanOrEqual(2)
+  })
+
+  it('no longer reports a selection bias, having stopped creating one', () => {
+    // The gate guarded a bias the exclusions themselves produced: dropping
+    // above-range runs removed exactly the runs that predicted the event.
+    const simMax = Math.max(
+      ...sim.values.filter((_, i) => sim.time[i].getUTCMonth() === 5),
+    )
+    const fc = new Map(
+      Array.from({ length: 10 }, (_, i) => [
+        `2020061${i}`,
+        run(`2020-06-1${i}T00:00:00Z`, [simMax * 5, simMax * 6]),
+      ]),
+    )
+    const r = correctForecasts(fc as never, sim, obs)
+    expect(r.selectionBias).toBeNull()
+    expect(r.forecasts.size).toBe(10)
   })
 
   it('excludes runs whose month is absent from a record, and says which', () => {

@@ -516,6 +516,29 @@ function CorrectionBanner({ c, clampedNegatives }: { c: BiasCorrection; clampedN
             {c.excluded.length > 3 && ` and ${c.excluded.length - 3} more`}
           </li>
         )}
+        {c.aboveSimRange > 0 && (
+          <li style={{ color: '#8a6d1f' }}>
+            <strong>{c.aboveSimRange.toLocaleString()}</strong> member-timestep
+            {c.aboveSimRange === 1 ? '' : 's'} sat at or above the simulated month's maximum, where
+            the mapping has no inverse. The simulated distribution is flat there, so every forecast
+            above it collapses onto the same corrected flow however far above it sits — a 178 and a
+            161,950 come out the same number.
+            {c.positiveInfinite > 0 && (
+              <>
+                {' '}
+                {c.positiveInfinite.toLocaleString()} of them returned <strong>+Infinity</strong>{' '}
+                instead of that ceiling, which happens when two cumulative sums disagree in their
+                last bits; those timesteps drop out of every metric as a gap would.
+              </>
+            )}
+            <br />
+            These are kept, not removed, because this app evaluates the geoglows method and the
+            reference keeps them. But the finite ones are counted in the metrics as though the
+            correction had produced a real number there, and the runs that land here are the ones
+            that forecast the event — so read the corrected magnitude scores knowing the top of the
+            event was flattened onto a ceiling.
+          </li>
+        )}
         {c.zeroedBelowRange > 0 && (
           <li>
             <strong>{c.zeroedBelowRange.toLocaleString()}</strong> member-timestep

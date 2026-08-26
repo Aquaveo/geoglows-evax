@@ -350,11 +350,21 @@ export function OverviewTab() {
         <h3 style={h3}>Limits worth knowing</h3>
         <ul style={ul}>
           <li>
-            <strong>Extreme forecasts can map to infinity.</strong> Bins deliberately extend past
-            the data, so each CDF's top is flat and un-invertible: above the simulated monthly
-            maximum a forecast can map to infinity on a floating-point margin between the two
-            CDFs. Such runs are excluded whole with the reason shown; dropping only the offending
-            timesteps would delete exactly the peaks and flatter the rest.
+            <strong>Extreme forecasts hit a ceiling.</strong> Bins deliberately extend past the
+            data, so each CDF's top is flat and un-invertible. Above the simulated monthly maximum
+            the forward map has zero slope, and every forecast above it collapses onto the same
+            corrected flow however far above it sits — measured on a realistic June pair, forecasts
+            of 178, 324, 810, 3,239 and 161,950 m³/s all came out at 277.09. Whether the inverse
+            returns that ceiling or <em>+Infinity</em> depends on whether two cumulative sums
+            finished on the same last bits, so both outcomes occur for the same kind of input.
+            <br />
+            Nothing is discarded for it. This app exists to evaluate the geoglows method, so
+            dropping what the reference keeps would mean evaluating a different one — and the
+            reference has no notion of a run to drop, taking one forecast frame and returning one
+            frame. The banner counts these instead. Infinities fall out of every metric as a gap
+            would, since a non-finite pair is not aligned; the finite ceilings are counted as
+            though the correction had produced a real number, which is worth knowing when the runs
+            that land there are the ones that forecast the event.
           </li>
           <li>
             <strong>Low flows are handled two different ways, decided by your record.</strong>{' '}

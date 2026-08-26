@@ -53,6 +53,17 @@ export interface BiasCorrection {
   observedCadence: string
   /** Member-timesteps that kept their RAW value because the mapping was NaN. */
   nanKeptRaw: number
+  /**
+   * Values at or above the simulated month's maximum, where the CDF is flat.
+   *
+   * Reported, never excluded. Every such forecast collapses onto the same
+   * corrected flow regardless of how far above it sits, so those numbers are
+   * real output that does not carry magnitude information. The runs that land
+   * here are the ones that forecast the event.
+   */
+  aboveSimRange: number
+  /** Of those, the ones whose inverse came back +Infinity rather than a ceiling. */
+  positiveInfinite: number
   /** Positive raw values the mapping turned into exactly 0. Diagnostic only. */
   zeroedBelowRange: number
   /** Member-timesteps clipped up to zero. */
@@ -118,6 +129,8 @@ export function correctForecasts(
     simulatedCadence: simCadence?.label ?? 'unknown',
     observedCadence: obsCadence?.label ?? 'unknown',
     nanKeptRaw: 0,
+    aboveSimRange: 0,
+    positiveInfinite: 0,
     zeroedBelowRange: 0,
     negativeClipped: 0,
     unavailable: null,
@@ -154,6 +167,8 @@ export function correctForecasts(
   const corrected = new Map<string, ForecastRun>()
   const excluded: RunExclusion[] = []
   let nanKeptRaw = 0
+  let aboveSimRange = 0
+  let positiveInfinite = 0
   let zeroedBelowRange = 0
   let negativeClipped = 0
 
@@ -216,33 +231,27 @@ export function correctForecasts(
     zeroedBelowRange += res.zeroedBelowRange
     negativeClipped += res.negativeClipped
 
-    // Exclude on the CONDITION, not on the symptom.
+    // NOT excluded, whatever the mapping returned.
     //
-    // This tested `res.positiveInfinite > 0`, but an above-range forecast only
-    // maps to infinity when its probability lands strictly above the observed
-    // CDF's top — which turns on whether two cumulative sums of several hundred
-    // floats both finished at exactly 1.0. At p = 1 the run was kept with a
-    // pinned finite value; one ulp higher it was excluded. Measured on a
-    // realistic pair, forecasts of 178, 324, 810, 3239 and 161,950 m³/s all
-    // mapped to 277.09 and none was excluded, because none was infinite.
+    // This app exists to evaluate the geoglows method, so anything it discards
+    // that geoglows keeps means the metrics describe a different method. The
+    // reference has no notion of a run at all — correct_forecast takes one frame
+    // and returns one frame — so rejecting a run was never its behaviour to
+    // begin with, in either the old form (any value came out +Infinity) or the
+    // corrected form (any value at or above the simulated maximum).
     //
-    // Pinning is the real failure and infinity is one visible form of it: at the
-    // top of the simulated distribution the CDF is flat, so the forward map has
-    // zero slope and every value above it collapses onto one number. A corrected
-    // series that reports the same flow for a 178 and a 161,950 is not a
-    // correction, and it is exactly the runs that forecast the event that land
-    // there.
-    const aboveRange = res.aboveSimRange
-    if (aboveRange > 0) {
-      excluded.push({
-        date,
-        reason:
-          `${aboveRange} value${aboveRange === 1 ? '' : 's'} at or above the simulated month-${month} ` +
-          'maximum, where the mapping has no inverse and every larger forecast returns the same ' +
-          `number${res.positiveInfinite > 0 ? ` (${res.positiveInfinite} of them infinite)` : ''}`,
-      })
-      continue
-    }
+    // Above the simulated maximum the CDF is flat, so every such forecast
+    // collapses onto one probability and then one flow: 178, 324, 810, 3239 and
+    // 161,950 m³/s all map to 277.09. Whether the inverse is that ceiling or
+    // +Infinity turns on last-bit agreement between two cumulative sums. Both
+    // outcomes are what the reference produces, and both stay.
+    //
+    // Downstream they are safe: alignTimes drops a non-finite pair, so an
+    // infinity removes that one timestep exactly as a gap would. A pinned finite
+    // value is counted, which is the case worth reporting rather than removing —
+    // it is a real number that the correction did not really produce.
+    aboveSimRange += res.aboveSimRange
+    positiveInfinite += res.positiveInfinite
 
     corrected.set(date, { time: res.time, discharge: res.discharge })
   }
@@ -255,22 +264,15 @@ export function correctForecasts(
         : 'no runs could be corrected'
       : null
 
-  // Exclusions are not random. They fire when a forecast exceeds the simulated
-  // monthly maximum, i.e. on the runs that predicted the event, so more than a
-  // token number of them means the survivors are the runs that missed it.
-  // Matches the reason written just above. Keyed on the phrase rather than a
-  // structured field, which is fragile — editing that string silently disables
-  // the gate — but changing the shape of RunExclusion is a wider change than
-  // this fix should carry.
-  const infExcluded = excluded.filter((e) => /simulated month-\d+ maximum/.test(e.reason)).length
-  const total = forecasts.size
-  const selectionBias =
-    infExcluded > 0 && infExcluded / total > 0.1
-      ? `${infExcluded} of ${total} runs were excluded for mapping to infinity, and those are ` +
-        `the runs whose forecasts ran highest — the ones that predicted the event. What is left ` +
-        `is disproportionately the runs that missed it, so corrected scores would describe the ` +
-        `forecasts that failed rather than the forecast system.`
-      : null
+  // The selection-bias gate is gone with the exclusions it guarded.
+  //
+  // It existed because excluding above-range runs removed exactly the runs that
+  // predicted the event, leaving a subset biased toward the ones that missed it.
+  // Nothing is excluded for that reason now, so there is no such subset — and
+  // inventing one to warn about would be the assumption this app is meant to
+  // avoid making. What remains is `aboveSimRange`, reported in the banner: the
+  // same information, without altering the data it describes.
+  const selectionBias = null
 
   const usedMappings = new Map<number, MonthlyMapping>()
   for (const [m, v] of mappings) if (v) usedMappings.set(m, v)
@@ -282,6 +284,8 @@ export function correctForecasts(
     excluded,
     months,
     nanKeptRaw,
+    aboveSimRange,
+    positiveInfinite,
     zeroedBelowRange,
     negativeClipped,
     unavailable,
