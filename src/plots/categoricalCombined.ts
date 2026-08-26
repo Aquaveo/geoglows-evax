@@ -6,8 +6,6 @@ export interface CombinedSeries {
   name: string;
   color: string;
   dist: PerLeadDistribution;
-  /** Shown under the name in the hover, e.g. what 0 means for this metric. */
-  note?: string;
 }
 
 export interface CategoricalCombinedOptions {
@@ -117,7 +115,7 @@ export function categoricalCombinedFigure(
         marker: { size: 6, color: s.color, line: { color: '#fcfcfb', width: 1.4 } },
         customdata: leads.map((_, i) => [counts[i], q1[i] ?? Number.NaN, q3[i] ?? Number.NaN] as [number, number, number]),
         hovertemplate:
-          `<b>${s.name}</b>${s.note ? ` — ${s.note}` : ''}` +
+          `<b>${s.name}</b>` +
           '<br>lead %{x}: median %{y:.3f}' +
           '<br>IQR %{customdata[1]:.3f} to %{customdata[2]:.3f}' +
           '<br>%{customdata[0]} members<extra></extra>',
@@ -130,7 +128,26 @@ export function categoricalCombinedFigure(
   const hi = Math.max(1, maxOf(allVals, 1));
   const pad = (hi - lo) * 0.06;
 
+  // Both scores are chance-corrected, so zero means the same thing for each of
+  // them: no better than a random forecast with the same marginals. That is a
+  // fact about the axis, said once here, rather than repeated in every hover row
+  // where it read as part of the series name.
+  const annotations: NonNullable<Layout['annotations']> = [
+    {
+      xref: 'paper' as const,
+      yref: 'y' as const,
+      x: 0.004,
+      y: 0,
+      text: '0 = no better than chance',
+      showarrow: false,
+      xanchor: 'left' as const,
+      yanchor: 'bottom' as const,
+      font: { size: 9, color: '#6b6a65' },
+    },
+  ];
+
   const layout: Partial<Layout> = {
+    annotations,
     title: {
       text: `${opts.title ?? 'Categorical scores by lead day'}<br><sup>${opts.subtitle ?? ''}</sup>`,
       x: 0.5,

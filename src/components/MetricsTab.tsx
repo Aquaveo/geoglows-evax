@@ -1624,23 +1624,13 @@ export function MetricsTab() {
             <Plot
               {...categoricalCombinedFigure(
                 [
-                  {
-                    name: 'MCC',
-                    color: '#2a78d6',
-                    dist: app.mccDistribution,
-                    note: '0 = chance',
-                  },
-                  {
-                    name: "HSS",
-                    color: '#eb6834',
-                    dist: app.hssDistribution,
-                    note: '0 = chance',
-                  },
+                  { name: 'MCC', color: '#2a78d6', dist: app.mccDistribution },
+                  { name: 'HSS', color: '#eb6834', dist: app.hssDistribution },
                 ],
                 {
                   title: `Categorical Scores by Lead Day${riverIdSuffix}`,
                   subtitle: 'median across 51 members, shaded interquartile range',
-                  yAxisLabel: 'Score',
+                  yAxisLabel: 'Score — 1 is perfect, 0 is no better than chance',
                 },
               )}
             />
