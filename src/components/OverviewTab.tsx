@@ -166,9 +166,14 @@ export function OverviewTab() {
           median and 190 by the mean — erasing an exceedance that genuinely occurred.
         </p>
         <p style={p}>
-          So neither is safe in general, and the median is the default only as the least distorting
-          of the three: not dragged by a single extreme step the way the mean is, not representing a
-          whole bin by its most extreme instant the way the maximum is. Which one is right depends
+          So neither is safe in general. The median is the default for a reason about{' '}
+          <strong>comparability</strong> rather than distortion: only the finer side is summarised,
+          and a value reported at a coarser resolution — a daily gauge reading, a daily
+          retrospective value — generally already represents something typical of its period rather
+          than an instantaneous peak. Taking the median of the finer side therefore puts the same
+          kind of quantity on both sides of the comparison, which neither the mean nor the maximum
+          reliably does. That it is also the least distorting of the three is a secondary
+          advantage. Which one is right depends
           on how flashy your event is relative to the grid, which is a property of your data rather
           than of the method. The app therefore checks: if the choice would change the event's
           return-period classification, the Categorical block says so, with the peak and

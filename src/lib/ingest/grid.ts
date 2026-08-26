@@ -7,18 +7,32 @@ import { describeStep, type Cadence } from './cadence';
  * 'mean' preserves volume and is right for error and distribution metrics
  * (CRPS, KGE, β).
  *
- * 'median' is the default for threshold classification. It is the typical flow
- * in the bin, so it is the least distorting summary when the bin has to stand in
- * for the whole period: unlike the mean it is not dragged by one extreme step,
- * and unlike the max it does not represent a day by its most extreme instant.
+ * 'median' is the default for threshold classification, and the reason is about
+ * COMPARABILITY rather than about distortion. Only the finer side gets
+ * summarised; the coarser side is already at the grid. A value reported at a
+ * coarser resolution — a daily gauge reading, a daily retrospective value —
+ * generally already represents something typical of its period rather than an
+ * instantaneous peak. Taking the median of the finer side therefore produces the
+ * same KIND of quantity on both sides of the comparison, which neither the mean
+ * nor the max reliably does.
  *
- * 'max' preserves exceedance — a daily *mean* can sit below a return-period
- * threshold the day's actual flow crossed, which erases the event. But it cuts
- * the other way too, and harder at the thresholds that matter: on a bucket with
- * realistic within-day shape, the max crosses a 10-year-ish level 7.2x as often
- * as the mean. Which is right depends on what the threshold was fitted to, and
- * that is a property of the uploaded record, not of this function — hence the
- * choice being offered rather than assumed.
+ * It is also the least distorting of the three in the ordinary case: not dragged
+ * by one extreme step like the mean, not representing a whole period by its most
+ * extreme instant like the max. But that is a secondary argument — the primary
+ * one is that the two sides should measure the same thing.
+ *
+ * 'max' preserves exceedance — a bin *mean* can sit below a return-period
+ * threshold the actual flow crossed, which erases the event. Measured: a 280
+ * m3/s peak 1.2 hours wide inside a 3-hour bin survives the max intact and is
+ * reported as 204 by the median, 190 by the mean, turning a real exceedance into
+ * none. But it cuts the other way too, and harder at the thresholds that matter:
+ * on a bin with realistic within-day shape the max crosses a 10-year-ish level
+ * 7.2x as often as the mean, and on hourly readings it inflated the exceedance
+ * rate to 5.0% against a true 2.9%.
+ *
+ * So no default is safe in general — which is why the choice is offered, and why
+ * aggregationImpact reports whether it changes the answer for the data actually
+ * loaded rather than leaving the reader to guess.
  *
  * Note this is aggregation over TIME within a bin, applied to each ensemble
  * member independently. It never combines members: a 51-member ensemble stays 51
