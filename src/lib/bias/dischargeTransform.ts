@@ -95,6 +95,20 @@ function cachedProbe(fit: MonthPolyfit): MonthSaturation {
   return v;
 }
 
+/**
+ * Whether a month's published coefficients can actually be applied.
+ *
+ * Rivers exist in the store with NaN coefficients — present, but without a
+ * fitted transform. Applying one silently produces NaN for every value while
+ * every diagnostic counter stays at zero, so this has to be an explicit
+ * inspection rather than something inferred from the results.
+ */
+export function isUsableFit(fit: MonthPolyfit): boolean {
+  if (!Number.isFinite(fit.qrange?.[0]) || !Number.isFinite(fit.qrange?.[1])) return false;
+  if (!fit.qtop?.length || !fit.ptoq?.length) return false;
+  return fit.qtop.every(Number.isFinite) && fit.ptoq.every(Number.isFinite);
+}
+
 export interface TransformDiagnostics {
   /** Finite values transformed. */
   n: number;
@@ -108,6 +122,25 @@ export interface TransformDiagnostics {
   negativeClamped: number;
   /** Calendar months encountered. */
   months: number[];
+  /**
+   * Months whose published coefficients are not usable, and the values that fell
+   * in them.
+   *
+   * A river can be present in the store and still carry NaN coefficients for
+   * some months. Nothing downstream notices on its own, because every guard here
+   * is a comparison and every comparison against NaN is false: `v > qrange[1]`,
+   * `raw <= 0`, `raw >= 100` and `result < 0` all return false, so no counter
+   * fires and the caller's saturation share reads 0 out of a full `n`. The
+   * result is an all-NaN "corrected" series reported as healthy — under a banner
+   * whose whole claim is that this variant cannot fail.
+   *
+   * Recorded per month rather than per river: a forecast that never touches a
+   * bad month is unaffected, and discarding a working transform over a month
+   * outside the event would be throwing away a usable correction.
+   */
+  unusableMonths: number[];
+  /** Values that fell in a month with unusable coefficients. */
+  skippedNoFit: number;
   /** Saturation probe per month encountered. */
   saturation: Record<number, MonthSaturation>;
 }
@@ -132,6 +165,7 @@ export function transformSeries(
 ): TransformResult {
   const out = new Array<number>(values.length);
   const months = new Set<number>();
+  const badMonths = new Set<number>();
   const diagnostics: TransformDiagnostics = {
     n: 0,
     clippedToQmax: 0,
@@ -140,6 +174,8 @@ export function transformSeries(
     negativeClamped: 0,
     months: [],
     saturation: {},
+    unusableMonths: [],
+    skippedNoFit: 0,
   };
 
   for (let i = 0; i < values.length; i++) {
@@ -150,7 +186,13 @@ export function transformSeries(
     }
     const month = time[i].getUTCMonth() + 1;
     const fit = fits[month];
-    if (!fit) {
+    // A month with no fit, or one whose published coefficients are not finite,
+    // has no usable transform. Detected up front by inspection rather than left
+    // to the guards below, none of which can see a NaN: every one of them is a
+    // comparison, and a comparison against NaN is false.
+    if (!fit || !isUsableFit(fit)) {
+      if (fit) badMonths.add(month);
+      diagnostics.skippedNoFit += 1;
       out[i] = NaN;
       continue;
     }
@@ -172,6 +214,7 @@ export function transformSeries(
   }
 
   diagnostics.months = [...months].sort((a, b) => a - b);
+  diagnostics.unusableMonths = [...badMonths].sort((a, b) => a - b);
   // Saturation is a property of the fitted polynomials, not of this series, so
   // it is memoised per month object rather than recomputed. transformSeries runs
   // once per ensemble member per run -- thousands of times for a full event --

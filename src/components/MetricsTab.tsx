@@ -414,6 +414,22 @@ function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
       {c.forecasts.size} runs are kept. Nothing is excluded, so the surviving set is not a biased
       subset.
       <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.2rem', lineHeight: 1.6 }}>
+        {c.unusableMonths.length > 0 && (
+          <li style={{ color: '#8a6d1f' }}>
+            <strong>
+              No usable transform is published for month
+              {c.unusableMonths.length === 1 ? '' : 's'} {c.unusableMonths.join(', ')}.
+            </strong>{' '}
+            {c.skippedNoFit.toLocaleString()} member-timestep
+            {c.skippedNoFit === 1 ? '' : 's'} fall in {c.unusableMonths.length === 1 ? 'it' : 'them'}
+            {' '}— {(c.noFitShare * 100).toFixed(0)}% of this event — and are left blank rather than
+            transformed. Every metric on this variant is computed from the remainder, so it
+            describes only the part of the event those months do not cover. The river is present in
+            the published table but its coefficients for {c.unusableMonths.length === 1 ? 'that month' : 'those months'}
+            {' '}are not numbers, so there is nothing to apply; only the affected months are skipped
+            rather than the whole river.
+          </li>
+        )}
         {saturated > 0 && (
           <li>
             <strong>

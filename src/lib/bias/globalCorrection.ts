@@ -15,6 +15,18 @@ export interface GlobalCorrection {
   /** Percentile clamped to 100 — mapped onto the month's minimum discharge. */
   atFloor: number;
   negativeClamped: number;
+  /**
+   * Calendar months the event covers whose published coefficients are unusable.
+   *
+   * A river can be in the store and still carry NaN coefficients for some
+   * months. Those months are skipped rather than the whole river being rejected,
+   * so a forecast that never touches one is corrected normally.
+   */
+  unusableMonths: number[];
+  /** Values that fell in such a month, and so were not transformed. */
+  skippedNoFit: number;
+  /** Those values as a share of everything the event covers. */
+  noFitShare: number;
   months: number[];
   saturation: Record<number, MonthSaturation>;
   /**
@@ -49,6 +61,8 @@ export function correctForecastsGlobal(
   let atCeiling = 0;
   let atFloor = 0;
   let negativeClamped = 0;
+  let skippedNoFit = 0;
+  const unusableMonths = new Set<number>();
 
   for (const [date, run] of forecasts) {
     const discharge = run.discharge.map((series) => {
@@ -58,6 +72,8 @@ export function correctForecastsGlobal(
       atCeiling += r.diagnostics.atCeiling;
       atFloor += r.diagnostics.atFloor;
       negativeClamped += r.diagnostics.negativeClamped;
+      skippedNoFit += r.diagnostics.skippedNoFit;
+      for (const m of r.diagnostics.unusableMonths) unusableMonths.add(m);
       for (const m of r.diagnostics.months) {
         months.add(m);
         saturation[m] = r.diagnostics.saturation[m];
@@ -68,15 +84,26 @@ export function correctForecastsGlobal(
   }
 
   const monthList = [...months].sort((a, b) => a - b);
+  const badMonthList = [...unusableMonths].sort((a, b) => a - b);
 
   // Saturated everywhere means every forecast collapsed onto one number per
   // month, so the corrected series carries no information about magnitude at
   // all. Reporting a metric from that would be reporting a constant.
   const saturatedShare = n > 0 ? (atCeiling + atFloor) / n : 0;
+  // Values that fell in a month with no usable transform, as a share of every
+  // value the event covers. Kept separate from `n`, which counts only values
+  // that were actually transformed — conflating the two is what let an all-NaN
+  // series report a saturation share of zero and pass as healthy.
+  const total = n + skippedNoFit;
+  const noFitShare = total > 0 ? skippedNoFit / total : 0;
   const unusable =
-    n === 0
+    total === 0
       ? 'no forecast values to transform'
-      : saturatedShare >= 0.995
+      : n === 0
+        ? `no usable transform is published for ${
+            badMonthList.length === 1 ? 'month' : 'months'
+          } ${badMonthList.join(', ')}, which is every month this event covers`
+        : saturatedShare >= 0.995
         ? `${(saturatedShare * 100).toFixed(1)}% of forecast values hit the transform's clamp, ` +
           'so nearly every value maps onto the same number and the corrected series is effectively constant'
         : null;
@@ -89,6 +116,9 @@ export function correctForecastsGlobal(
     atFloor,
     negativeClamped,
     months: monthList,
+    unusableMonths: badMonthList,
+    skippedNoFit,
+    noFitShare,
     saturation,
     noExclusions: true,
     unusable,
