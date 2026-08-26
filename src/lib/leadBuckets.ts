@@ -67,7 +67,8 @@ function sortBucket(b: LeadBucket): LeadBucket {
   return { time: idx.map((i) => b.time[i]), members: idx.map((i) => b.members[i]) };
 }
 
-function parseStartDate(yyyymmdd: string): Date | null {
+/** YYYYMMDD → UTC midnight. Exported so the run picker parses keys the same way. */
+export function parseStartDate(yyyymmdd: string): Date | null {
   if (!/^\d{8}$/.test(yyyymmdd)) return null;
   const y = Number(yyyymmdd.slice(0, 4));
   const m = Number(yyyymmdd.slice(4, 6));

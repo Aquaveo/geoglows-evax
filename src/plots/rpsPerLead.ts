@@ -104,7 +104,22 @@ export function rpsPerLeadFigure(
     (unscored > 0 ? `  |  ${unscored} lead${unscored === 1 ? '' : 's'} unscored` : '') +
     (noRef > 0 ? `  |  RPSS undefined at ${noRef} lead${noRef === 1 ? '' : 's'}` : '');
 
-  const annotations: NonNullable<Layout['annotations']> = [];
+  const annotations: NonNullable<Layout['annotations']> = [
+    // The zero line is the entire meaning of the lower panel — above it the
+    // forecast beat climatology, below it climatology won — and unlabelled it is
+    // just a rule the bars happen to sit on.
+    {
+      xref: 'paper' as const,
+      yref: 'y2' as const,
+      x: 0.004,
+      y: 0,
+      text: '0 = no better than climatology',
+      showarrow: false,
+      xanchor: 'left' as const,
+      yanchor: 'bottom' as const,
+      font: { size: 9, color: '#6b6a65' },
+    },
+  ];
   if (noRef > 0 && refReason) {
     annotations.push({
       xref: 'paper',
@@ -152,7 +167,10 @@ export function rpsPerLeadFigure(
     yaxis2: {
       domain: [0, 0.34],
       anchor: 'x2',
-      title: { text: 'RPSS' },
+      // Spelled out because the panel immediately above says "lower is
+      // better", and two stacked panels reading in opposite directions with
+      // only one of them labelled is worse than neither being labelled.
+      title: { text: 'RPSS — higher is better (1 = perfect)' },
       range: [lo - 0.05, hi + 0.05],
       gridcolor: GRID,
       zeroline: true,

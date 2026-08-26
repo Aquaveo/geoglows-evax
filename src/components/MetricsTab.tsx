@@ -1535,8 +1535,12 @@ export function MetricsTab() {
               <strong>Top panel:</strong> forecast RPS against the climatological RPS it is scored
               against — same units, so the shaded gap between them is the skill. A high
               climatology curve means the period was genuinely hard to forecast.{' '}
-              <strong>Bottom panel:</strong> that gap as a fraction. Green is better than
-              climatology, red worse.
+              <strong>Bottom panel:</strong> that gap as a fraction. Note the two panels read in{' '}
+              <strong>opposite directions</strong>: RPS is an error, so lower is better and 0 is
+              perfect, while RPSS is a skill score, so <strong>higher is better and 1 is
+              perfect</strong>. On the lower panel 0 means the forecast matched climatology exactly,
+              green means it beat climatology and red means climatology beat it. A negative RPSS is
+              not a small number — it means you would have done better ignoring the forecast.
               <br />
               <br />
               Compare <strong>RPSS</strong> across events, not RPS. Raw RPS is a mean over

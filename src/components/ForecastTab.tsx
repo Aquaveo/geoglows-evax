@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../state/AppContext';
 import { fetchForecasts } from '../data/rfs';
 import { dailyDateRange, reorganizeByLead, statSeries, type StatKey } from '../lib/leadBuckets';
+import { pickDefaultRun } from '../lib/defaultRun';
 import { Plot } from './Plot';
 import { forecastFigure } from '../plots/forecasts';
 import { eventVsLeadFigure, type LeadSeries } from '../plots/eventVsLead';
@@ -85,23 +86,20 @@ export function ForecastTab() {
     return dailyDateRange(validation.downloadStart, validation.eventEnd);
   }, [validation]);
 
-  // Default to a MIDDLE initialization, not the most recent.
+  // Whether the shown initialization is still the app's own choice. Once the
+  // user drags the slider, nothing below may override them.
+  const runPickedByUser = useRef(false);
+
+  // Open on a run that actually forecast the event — see pickDefaultRun.
   //
-  // Runs are fetched from `eventStart − INIT_LOOKBACK_DAYS` through `eventEnd`,
-  // so the newest run is initialized on the last day of the event and its whole
-  // 15-day horizon lies AFTER it — that run cannot show the event at all, which
-  // made the landing plot look like nothing happened. The first run has the
-  // opposite problem, reaching the event only at the very end of its horizon.
-  // A middle initialization has the event squarely inside its forecast, which is
-  // what someone opening this tab is here to look at.
+  // Re-runs while the choice is still ours, so that observations arriving after
+  // the forecasts upgrade the middle-initialization fallback to a crest-aware
+  // pick rather than leaving the weaker guess in place.
   useEffect(() => {
-    if (!app.selectedDate && app.forecasts.size > 0) {
-      const keys = [...app.forecasts.keys()].sort();
-      // Lower middle: marginally earlier, so slightly more of the event falls
-      // ahead of the run rather than behind it.
-      app.setSelectedDate(keys[Math.floor((keys.length - 1) / 2)]);
-    }
-  }, [app.forecasts, app.selectedDate, app]);
+    if (runPickedByUser.current || app.forecasts.size === 0) return;
+    const pick = pickDefaultRun([...app.forecasts.keys()].sort(), app.eventData, MAX_LEAD);
+    if (pick && pick !== app.selectedDate) app.setSelectedDate(pick);
+  }, [app.forecasts, app.eventData, app.selectedDate, app]);
 
   async function downloadAll() {
     if (!app.riverId || !validation.ok) return;
@@ -233,7 +231,10 @@ export function ForecastTab() {
           <DateSlider
             sortedDates={[...app.forecasts.keys()].sort()}
             selected={app.selectedDate}
-            onChange={app.setSelectedDate}
+            onChange={(d) => {
+              runPickedByUser.current = true;
+              app.setSelectedDate(d);
+            }}
           />
           {selected && app.simRp && (
             <>
