@@ -39,11 +39,13 @@ export function OverviewTab() {
         <ul style={ul}>
           <li>
             Some metrics evaluate <strong>each member independently</strong> as a deterministic
-            forecast (MCC, HSS, KGE', peak timing error).
+            forecast, then summarise those 51 scores — MCC, HSS, CSI, NSE, KGE′, peak timing error.
           </li>
           <li>
-            Others evaluate the <strong>ensemble as a collective distribution</strong>{' '}
-            (CRPS).
+            Others evaluate the <strong>ensemble as a collective distribution</strong> — CRPS, and
+            RPS, which reads the fraction of members in each severity category as a probability. A
+            spread that straddles the truth is rewarded over confident error, which no per-member
+            score can express.
           </li>
           <li>Spread is itself informative — a wide spread at the right time is desirable.</li>
         </ul>
@@ -77,7 +79,9 @@ export function OverviewTab() {
           <tbody>
             <tr>
               <td style={td}>Categorical</td>
-              <td style={td}>Contingency matrix, MCC, HSS, CSI, RPSS, per-threshold scores</td>
+              <td style={td}>
+                Contingency matrix, MCC, HSS, CSI, RPS and RPSS, per-threshold scores
+              </td>
               <td style={td}>Did the forecast correctly classify the event severity?</td>
             </tr>
             <tr>
@@ -87,12 +91,12 @@ export function OverviewTab() {
             </tr>
             <tr>
               <td style={td}>Accuracy</td>
-              <td style={td}>KGE', r, β, γ</td>
+              <td style={td}>NSE, KGE′ and its components r, β, γ</td>
               <td style={td}>How close was the forecast in magnitude and shape?</td>
             </tr>
             <tr>
               <td style={td}>Probabilistic</td>
-              <td style={td}>CRPS</td>
+              <td style={td}>CRPS, CRPSS</td>
               <td style={td}>Did the ensemble distribution cover the observation?</td>
             </tr>
           </tbody>
@@ -211,9 +215,18 @@ export function OverviewTab() {
           <strong>dual-threshold design</strong> — explained below — compares observations against
           observed return periods and forecasts against simulated ones, so magnitude bias cancels
           out. Correcting the forecasts as well would apply the same adjustment twice. The
-          contingency matrix, MCC, HSS and the timing metrics are therefore left raw, and
-          corrected variants appear only under <strong>Accuracy</strong>,{' '}
-          <strong>Probabilistic</strong> and <strong>Skill summary</strong>.
+          contingency matrix, MCC, HSS, CSI, the per-threshold scores, RPS and the timing metrics
+          are therefore left raw, and corrected variants appear only under{' '}
+          <strong>Accuracy</strong>, <strong>Probabilistic</strong> and{' '}
+          <strong>Skill summary</strong>.
+        </p>
+        <p style={p}>
+          Where a corrected variant does exist, the Bias correction block opens with a table putting
+          raw against both corrections on every one of those metrics at once. The charts below it
+          show one correction at a time, so the table is the quickest way to see whether either
+          helped. Read its <em>Best</em> column as movement <em>toward</em> each metric's ideal
+          rather than upward: β and γ target 1 and can miss either way, so an over-correction from
+          0.9 to 1.4 is not an improvement, and CRPS wants to fall.
         </p>
 
         <h3 style={h3}>Two methods, offered side by side</h3>
@@ -422,6 +435,15 @@ export function OverviewTab() {
             </tr>
           </tbody>
         </table>
+        <p style={p}>
+          <strong>Bands here, exceedances elsewhere.</strong> A matrix cell really is a band —
+          "2–5 yr" means at or above the 2-year level and below the 5-year one. The per-threshold
+          score table and the CSI panel are different: each of their rows is a{' '}
+          <em>dichotomisation</em>, "at or above the k-th level", which lumps every band above k in
+          with it. So a row labelled ≥2yr there includes the 100-year days too. The two labellings
+          look similar and mean different things, which is why the rows are labelled ≥2yr, ≥5yr and
+          so on rather than 2–5yr, 5–10yr.
+        </p>
       </section>
 
       <section style={sectionStyle}>
@@ -681,15 +703,56 @@ export function OverviewTab() {
         <p style={p}>
           <strong>Frequency bias is not a skill score</strong>, and that is what makes it useful.
           It is how many exceedances were forecast divided by how many occurred, so 1.0 means the
-          right <em>number</em> of warnings whether or not they landed on the right days. Below 1 at
-          every threshold, decaying to 0 at the top, is the direct fingerprint of systematic
-          under-prediction — the failure a positive-looking MCC can conceal. It is also what the gap
-          between MCC and HSS measures indirectly: matched category frequencies make those two
-          scores identical, and the correlation between their gap and |log bias| is 0.72.
+          right <em>number</em> of warnings whether or not they landed on the right days. It is also
+          what the gap between MCC and HSS measures indirectly: matched category frequencies make
+          those two scores identical, and the correlation between their gap and |log bias| is 0.72.
+        </p>
+        <p style={p}>
+          <strong>Read it as a warning-count check, not a magnitude-bias detector.</strong> Under a
+          single threshold, a model running 40% low would read below 1 at every level and decay
+          toward 0 at the top — the classic fingerprint of under-prediction. The dual-threshold
+          design removes exactly that signal on purpose: the forecast is judged against its own
+          simulated return periods, which are fitted to the same biased model, so a uniformly low
+          model crosses its own thresholds about as often as the observations cross theirs and
+          frequency bias reads near 1. What survives is a mismatch in <em>shape</em> rather than
+          level — an ensemble too narrow to reach its own thresholds as often as reality reaches
+          hers. For magnitude bias, read β in the Accuracy block instead.
         </p>
         <p style={p}>
           The equitable threat score is deliberately absent. ETS = HSS / (2 − HSS) exactly, so it is
           a monotone relabelling of a score already shown, and it inherits the same window drift.
+        </p>
+
+        <h3 style={h3}>Categorical — CSI by lead day</h3>
+        <p style={p}>
+          CSI gets a panel of its own, with a threshold selector, because it is the only score here
+          that is <strong>essentially exactly invariant</strong> to how long a window you uploaded.
+          Padding an event with quiet days adds only correct negatives, and a/(a+b+c) never touches
+          that cell. Measured across an 800-fold increase in window length: CSI moves 0.003, RPSS
+          0.028, MCC 0.070, HSS 0.074. If the chance-corrected scores look healthier than this one,
+          quiet timesteps are flattering them.
+        </p>
+        <p style={p}>
+          It sits apart rather than on the MCC/HSS axis because it is a different kind of quantity.
+          CSI is <strong>only defined on a two-by-two table</strong> — there is no accepted
+          multi-category version, and the standard practice is one value per exceedance threshold,
+          which is what the selector chooses. MCC and HSS grade all K categories at once. Collapsing
+          to "at or above the 2-year level" is an easier question, and on a severe event CSI reads
+          about 0.08 to 0.12 higher for that reason alone, so sharing an axis invited a false
+          comparison. Every line in its own panel is the same kind of quantity, so that axis is fair.
+        </p>
+        <p style={p}>
+          Scored on the 51 members <strong>pooled into one table per lead</strong>, not as the median
+          of 51 separate scores. The median construction collapses at the high thresholds, where most
+          members produce the same degenerate table — its ability to rank a known-better forecast on
+          a single event measures 0.576, a coin flip. Sample size is reported as{' '}
+          <em>distinct observed exceedance timesteps</em>: 51 members scoring the same three flood
+          days is three events, not 153, and leads with fewer than three are drawn hollow.
+        </p>
+        <p style={p}>
+          It is not a skill score. 0 means no hits were scored, not "no better than chance". Where
+          nothing was observed <em>and</em> nothing forecast at a level, it reads n/a rather than 0 —
+          0 is the worst attainable value, and a lead where nothing happened has not earned it.
         </p>
 
         <h3 style={h3}>Timing — Peak timing error (Δt<sub>peak</sub>)</h3>
@@ -746,10 +809,66 @@ export function OverviewTab() {
           </li>
         </ul>
         <p style={p}>
-          The dominant error source is the component furthest from 1. Bands: &gt; 0.75 good,
-          0.50–0.75 intermediate, 0.00–0.50 poor, −0.41–0.00 very poor, ≤ −0.41 unacceptable.
-          −0.41 is the score of the observed mean flow used as the forecast at every timestep; below
-          it the model adds nothing beyond climatology.
+          The dominant error source is the component furthest from 1.
+        </p>
+
+        <h3 style={h3}>Accuracy — Nash–Sutcliffe Efficiency (NSE)</h3>
+        <p style={pMono}>NSE = 1 − Σ(f − o)² / Σ(o − ō)²</p>
+        <p style={p}>
+          Shown beside KGE′ on the skill panels. It is the mean-squared-error skill score against
+          the observed average, so it is dominated by the largest errors — which on a flood window
+          means the peak. Reading a row across the two is the diagnosis: strong on KGE′ but weak on
+          NSE usually means the shape was right and the magnitude was not, because NSE punishes
+          squared error at the peak while KGE′ spreads the penalty across three components.
+        </p>
+
+        <h3 style={h3}>Performance bands, and what they rest on</h3>
+        <p style={p}>
+          The skill panels colour each bar by band. The KGE′ ladder is the published one — Good
+          above 0.75, Intermediate 0.50–0.75, Poor 0.00–0.50 — from{' '}
+          <a
+            href="https://doi.org/10.5194/hess-19-3365-2015"
+            style={link}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Thiemig et al. (2015)
+          </a>
+          , citing Kling et al. (2012). Two honest caveats come with it.
+        </p>
+        <ul style={ul}>
+          <li>
+            <strong>The published ladder has four bands, not five.</strong> Its bottom band is Very
+            poor at ≤ 0.00. Splitting that at −0.41 into Very poor and Unacceptable is this app's
+            own extension, grafting the benchmark below onto Thiemig's scheme. No source publishes
+            0.75/0.50 together with a −0.41 floor.
+          </li>
+          <li>
+            <strong>It was calibrated on a different problem.</strong> Thiemig applied it to daily
+            multi-year continuous simulation. For the <em>forecast</em> half of the same paper the
+            authors used skill scores against explicit benchmarks and no KGE bands at all.
+          </li>
+        </ul>
+        <p style={p}>
+          <strong>−0.41 is the mean-flow benchmark</strong> — the score of a forecast equal to the
+          observed mean at every timestep. Above it a model improves on that benchmark even when its
+          score is negative, which is the trap the bands exist to avoid: a KGE′ of −0.2 is not
+          "bad", it beats doing nothing. It transfers from KGE to KGE′ because a flat forecast has
+          zero variability either way. NSE is keyed to <strong>0</strong> instead, its own mean-flow
+          benchmark, since it is already normalised by the observed variance — so the two panels are
+          coloured on different scales, with different palettes and separate legends to say so.
+        </p>
+        <p style={caution}>
+          <strong>On one event, −0.41 is not the climatology line.</strong> It is the best score any
+          flat forecast can reach, and only the flat forecast equal to <em>this window's</em>{' '}
+          observed mean reaches it — a hindsight quantity. Real seasonal climatology scored over a
+          21-day flood window measured KGE′ −0.22, over ±5 days around the crest 0.00, and over ten
+          continuous years +0.42. The −0.41 line never moves and coincides with climatology at no
+          window length. So read "below the benchmark" as "worse than a flat line", which is true,
+          rather than "worse than climatology", which is not. Band names also shift with the window
+          you chose: the same synthetic forecast reads Good over ±20 days and Poor over ±5 days
+          around the crest, because the observed variability the scores normalise by is the
+          window's.
         </p>
 
         <h3 style={h3}>Probabilistic — Continuous Ranked Probability Score (CRPS)</h3>
