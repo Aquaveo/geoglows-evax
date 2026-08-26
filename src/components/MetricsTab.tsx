@@ -10,7 +10,7 @@ import {
 } from '../lib/metrics/contingency';
 import { computeMcc } from '../lib/metrics/mcc';
 import { computeHss } from '../lib/metrics/hss';
-import { climatologyFromRecord, orderedThresholds, rpsByLead, type RpsResult } from '../lib/metrics/rps';
+import { orderedThresholds, rpsByLead, seasonalClimatology, type RpsResult } from '../lib/metrics/rps';
 import { thresholdScores, type ThresholdScores } from '../lib/metrics/thresholdScores';
 import { rpsPerLeadFigure } from '../plots/rpsPerLead';
 import { categoricalCombinedFigure } from '../plots/categoricalCombined';
@@ -905,12 +905,24 @@ export function MetricsTab() {
         const obsThr = orderedThresholds(app.obsRp!, eventRp);
         const simThr = orderedThresholds(app.simRp!, eventRp);
         if (obsThr.length > 0 && simThr.length > 0) {
-          const clim = climatologyFromRecord(
-            app.historicalData ?? eventData,
-            obsThr,
-          );
+          // No `?? eventData` fallback. Building the reference from the very
+          // event being scored is circular — the forecast is graded against a
+          // "climatology" whose only content is the flood in question. The CRPS
+          // path refuses exactly this a few hundred lines below, and there is no
+          // reason for the two references in one app to disagree about it.
+          //
+          // Season-restricted for the same reason CRPS restricts: a whole-record
+          // reference has to predict a wet-season flood from the dry season's
+          // distribution, so beating it partly rewards knowing what month it is.
+          //
+          // Null when there is no record or too little of it falls in season.
+          // RPS is a proper score and is still reported; only RPSS is withheld,
+          // with its reason.
+          const clim = app.historicalData
+            ? seasonalClimatology(app.historicalData, eventData, obsThr)
+            : null;
           setRpsResult(
-            rpsByLead(buckets, eventData, obsThr, simThr, clim, {
+            rpsByLead(buckets, eventData, obsThr, simThr, clim?.climatology ?? null, {
               maxLead: MAX_LEAD,
               minPairs: MIN_PAIRS_CORRELATION,
             }),
@@ -1741,6 +1753,16 @@ export function MetricsTab() {
               perfect</strong>. On the lower panel 0 means the forecast matched climatology exactly,
               green means it beat climatology and red means climatology beat it. A negative RPSS is
               not a small number — it means you would have done better ignoring the forecast.
+              <br />
+              <br />
+              <strong>What RPSS is measured against.</strong> The reference is the observed record
+              you uploaded, restricted to <strong>±15 days of the event's calendar days</strong> —
+              the same rule CRPSS uses. Whole-record would ask the reference to predict a wet-season
+              flood from the dry season's distribution, so beating it would partly reward the
+              forecast for knowing what month it is. With no historical upload, or too few days in
+              season, RPSS is <strong>withheld rather than estimated</strong>: it would otherwise be
+              scored against a climatology built from the very event being scored. RPS itself is a
+              proper score and is still shown.
               <br />
               <br />
               Compare <strong>RPSS</strong> across events, not RPS. Raw RPS is a mean over

@@ -1,5 +1,6 @@
 import type { LeadBucket, RpThresholds, TimeSeries } from '../types';
 import { RP_LEVELS } from '../types';
+import { seasonalValues } from './season';
 
 /**
  * Ranked probability score for ordered categories.
@@ -117,6 +118,34 @@ export function climatologyFromRecord(
   return raw.map((p) => p / sum);
 }
 
+/**
+ * Category probabilities from the record, restricted to the event's season.
+ *
+ * The reference RPS should answer "what would you have expected on days like
+ * these", and days like these means the same time of year. Built from the whole
+ * record it answers "what would you have expected on any day", which a wet-season
+ * forecast beats partly for knowing what month it is.
+ *
+ * Returns null when too few values fall in season, rather than quietly widening
+ * the window: a reference built from a handful of days is not a climatology, and
+ * saying so is better than printing a skill score against one. Same default
+ * window and minimum sample as the CRPS reference, and the same season rule.
+ */
+export function seasonalClimatology(
+  record: TimeSeries,
+  eventData: TimeSeries,
+  obsThresholds: number[],
+  windowDays = 15,
+  minSample = 30,
+): { climatology: number[]; n: number } | null {
+  const values = seasonalValues(record, eventData, windowDays);
+  if (values.length < minSample) return null;
+  return {
+    climatology: climatologyFromRecord({ time: [], values }, obsThresholds),
+    n: values.length,
+  };
+}
+
 export interface RpsOptions {
   maxLead?: number;
   minPairs?: number;
@@ -136,7 +165,7 @@ export function rpsByLead(
   observed: TimeSeries,
   obsThresholds: number[],
   simThresholds: number[],
-  climatology: number[],
+  climatology: number[] | null,
   opts: RpsOptions = {},
 ): RpsResult {
   const maxLead = opts.maxLead ?? 15;
@@ -147,7 +176,7 @@ export function rpsByLead(
     rpsClim: [],
     rpss: [],
     n: [],
-    climatology,
+    climatology: climatology ?? [],
     skipped: [],
     rpssSkipped: [],
     exceedances: [],
@@ -196,7 +225,8 @@ export function rpsByLead(
       const obsCat = categoryOf(o, obsThresholds);
       if (obsCat > 0) exceedances += 1;
       sum += rpsOne(probs, obsCat);
-      sumClim += rpsOne(climatology, obsCat);
+      // RPS stands alone; only the skill score needs a reference.
+      if (climatology) sumClim += rpsOne(climatology, obsCat);
       n += 1;
     }
 
@@ -211,7 +241,7 @@ export function rpsByLead(
       continue;
     }
     const rps = sum / n;
-    const rpsClim = sumClim / n;
+    const rpsClim = climatology ? sumClim / n : Number.NaN;
     out.rps.push(rps);
     out.rpsClim.push(rpsClim);
     out.n.push(n);
@@ -232,7 +262,9 @@ export function rpsByLead(
     // The structural test is the real guard; the floor is a backstop for any
     // other route to a near-perfect reference.
     const reason =
-      exceedances === 0
+      !climatology
+        ? 'no historical record in this season, so there is no independent reference'
+        : exceedances === 0
         ? 'no observed exceedance in this window, so the climatological reference is right by default'
         : rpsClim < MIN_REFERENCE_RPS
           ? 'climatological reference is degenerate (RPS below ' + MIN_REFERENCE_RPS + ')'

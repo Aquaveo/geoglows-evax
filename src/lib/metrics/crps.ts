@@ -1,4 +1,5 @@
 import type { LeadBucket, LeadBuckets, TimeSeries } from '../types';
+import { seasonalValues } from './season';
 
 export interface CrpsPerLead {
   leads: number[];
@@ -32,15 +33,6 @@ export interface ClimatologySample {
   windowDays: number;
 }
 
-const DAY_MS = 24 * 3600 * 1000;
-
-/** 0-based day of year (UTC), leap years included. */
-function dayOfYear(d: Date): number {
-  const yearStart = Date.UTC(d.getUTCFullYear(), 0, 1);
-  const day = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-  return Math.floor((day - yearStart) / DAY_MS);
-}
-
 /**
  * Build the climatological reference from the retrospective record, keeping
  * only values within ±`windowDays` of a day of year the event covers.
@@ -57,22 +49,7 @@ export function buildClimatology(
 ): ClimatologySample | null {
   if (retro.time.length === 0 || eventData.time.length === 0) return null;
 
-  // Mark the calendar days in season, wrapping across the year boundary.
-  const inSeason = new Array<boolean>(366).fill(false);
-  for (const t of eventData.time) {
-    const c = dayOfYear(t);
-    for (let k = -windowDays; k <= windowDays; k++) {
-      inSeason[(((c + k) % 366) + 366) % 366] = true;
-    }
-  }
-
-  const sample: number[] = [];
-  for (let i = 0; i < retro.time.length; i++) {
-    const v = retro.values[i];
-    if (!Number.isFinite(v)) continue;
-    if (!inSeason[dayOfYear(retro.time[i])]) continue;
-    sample.push(v);
-  }
+  const sample = seasonalValues(retro, eventData, windowDays);
   if (sample.length < minSample) return null;
 
   sample.sort((a, b) => a - b);

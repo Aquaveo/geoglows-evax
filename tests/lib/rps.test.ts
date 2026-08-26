@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { categoryOf, climatologyFromRecord, rpsByLead, rpsOne } from '../../src/lib/metrics/rps';
+import {
+  categoryOf,
+  climatologyFromRecord,
+  rpsByLead,
+  rpsOne,
+  seasonalClimatology,
+} from '../../src/lib/metrics/rps';
 import { thresholdScores } from '../../src/lib/metrics/thresholdScores';
 
 describe('rpsOne', () => {
@@ -187,5 +193,78 @@ describe('RPSS on a near-miss event — the degenerate-reference guard', () => {
     expect(res.rpssSkipped[0]).toBeNull();
     // In a readable range rather than the thousands.
     expect(res.rpss[0]).toBeGreaterThan(-20);
+  });
+});
+
+describe('seasonalClimatology — the reference RPSS is scored against', () => {
+  const THR = [233.1];
+  const DAY = 86400000;
+  // 40 years with a real seasonal cycle: wet Jun–Aug, dry otherwise.
+  let s = 5;
+  const R = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+  const N = 40 * 365;
+  const record = {
+    time: Array.from({ length: N }, (_, i) => new Date(Date.UTC(1985, 0, 1) + i * DAY)),
+    values: Array.from({ length: N }, (_, i) => {
+      const doy = i % 365;
+      const wet = doy > 150 && doy < 240;
+      return (wet ? 90 : 25) * (0.5 + R() * 1.4) + (wet && R() < 0.05 ? 200 : 0);
+    }),
+  };
+  const june = {
+    time: Array.from({ length: 21 }, (_, i) => new Date(Date.UTC(2024, 5, 20) + i * DAY)),
+    values: Array.from({ length: 21 }, () => 40),
+  };
+
+  it('uses only days near the event, not the whole record', () => {
+    const seasonal = seasonalClimatology(record, june, THR)!;
+    expect(seasonal.n).toBeLessThan(record.values.length / 5);
+    // A wet-season reference expects high flow, so it assigns more probability
+    // to exceedance than the whole record does. That is the point: the forecast
+    // stops being credited for knowing what month it is.
+    const whole = climatologyFromRecord(record, THR);
+    expect(seasonal.climatology[1]).toBeGreaterThan(whole[1]);
+  });
+
+  it('refuses rather than widening the window when the season is thin', () => {
+    const short = { time: record.time.slice(0, 40), values: record.values.slice(0, 40) };
+    // Those 40 days are in January; a June event shares none of them.
+    expect(seasonalClimatology(short, june, THR)).toBeNull();
+  });
+
+  it('wraps across New Year so a December–January event keeps both sides', () => {
+    const newYear = {
+      time: Array.from({ length: 14 }, (_, i) => new Date(Date.UTC(2023, 11, 26) + i * DAY)),
+      values: Array.from({ length: 14 }, () => 40),
+    };
+    const c = seasonalClimatology(record, newYear, THR)!;
+    // ±15 days either side of a 14-day window spanning the boundary.
+    expect(c.n).toBeGreaterThan(30 * 40 * 0.5);
+  });
+});
+
+describe('RPSS without a historical record', () => {
+  const THR = [233.1];
+  const observed = {
+    time: Array.from({ length: 12 }, (_, i) => new Date(Date.UTC(2025, 6, 1 + i))),
+    values: Array.from({ length: 12 }, (_, i) => (i === 6 ? THR[0] * 1.4 : 40)),
+  };
+  const buckets = {
+    1: {
+      time: observed.time,
+      members: observed.values.map((v) => Array.from({ length: 51 }, (_, m) => v * (0.6 + (m % 11) * 0.09))),
+    },
+  };
+
+  it('still reports RPS, but withholds RPSS with a reason', () => {
+    // Previously this fell back to building "climatology" from the event being
+    // scored — circular. CRPS refuses the same fallback; now RPS does too.
+    const r = rpsByLead(buckets as never, observed, THR, THR, null, { maxLead: 1, minPairs: 5 });
+    const i = r.leads.indexOf(1);
+    expect(Number.isFinite(r.rps[i])).toBe(true);
+    expect(Number.isNaN(r.rpsClim[i])).toBe(true);
+    expect(Number.isNaN(r.rpss[i])).toBe(true);
+    expect(r.rpssSkipped[i]).toMatch(/no historical record/);
+    expect(r.skipped[i]).toBeNull();
   });
 });
