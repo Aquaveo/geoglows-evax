@@ -205,7 +205,9 @@ export function skillBarsFigure(
         text: `◄ ${r.nse.toFixed(r.nse > -100 ? 1 : 0)}`,
         showarrow: false,
         xanchor: 'left' as const,
-        font: { size: 10, color: COLOR_POOR },
+        // White, not COLOR_POOR: this label sits ON the clamped bar, which is
+        // that same red, so it was illegible against its own background.
+        font: { size: 10, color: '#ffffff' },
       });
     }
     if (Number.isFinite(r.kge) && r.kge < floor) {
@@ -217,9 +219,51 @@ export function skillBarsFigure(
         text: `◄ ${r.kge.toFixed(r.kge > -100 ? 1 : 0)}`,
         showarrow: false,
         xanchor: 'left' as const,
-        font: { size: 10, color: COLOR_POOR },
+        font: { size: 10, color: '#ffffff' },
       });
     }
+  }
+
+  // Column headers, and names on the reference lines, both anchored to the top of
+  // the panel.
+  //
+  // The x-axis titles alone are not enough on this chart: it sizes itself from
+  // its row count, so with one row per forecast run the axis can sit 800px below
+  // the first row. A reader starting at the top had no way to tell which panel
+  // was which, and the two dashed verticals were unexplained.
+  for (const [axis, name] of [
+    ['x', 'NSE'],
+    ['x2', "KGE'"],
+  ] as const) {
+    annotations.push({
+      xref: `${axis} domain` as const,
+      yref: 'paper' as const,
+      x: 0.5,
+      y: 1.008,
+      text: `<b>${name}</b>`,
+      showarrow: false,
+      xanchor: 'center' as const,
+      yanchor: 'bottom' as const,
+      font: { size: 13, color: '#0b0b0b' },
+    });
+  }
+  for (const [axis, x, label] of [
+    ['x', 0, 'no better than the observed mean'],
+    ['x', GOOD, `usable (${GOOD})`],
+    ['x2', KGE_MEAN_BENCHMARK, `observed mean (${KGE_MEAN_BENCHMARK})`],
+    ['x2', GOOD, `usable (${GOOD})`],
+  ] as const) {
+    annotations.push({
+      xref: axis,
+      yref: 'paper' as const,
+      x,
+      y: 1.002,
+      text: label,
+      showarrow: false,
+      xanchor: 'left' as const,
+      yanchor: 'bottom' as const,
+      font: { size: 9, color: '#6b6a65' },
+    });
   }
 
   const refLine = (
@@ -258,7 +302,7 @@ export function skillBarsFigure(
       })(),
       x: 0.5,
     },
-    margin: { l: 130, r: 30, t: 70, b: 60 },
+    margin: { l: 130, r: 30, t: 104, b: 62 },
     // Two panels, one shared row order.
     xaxis: {
       domain: [0, 0.46],
@@ -274,7 +318,11 @@ export function skillBarsFigure(
       zerolinecolor: '#444',
       range: [axisFloor, Math.max(1, maxOf(kgeFinite, 1))],
     },
-    yaxis: { type: 'category', automargin: true, title: { text: opts.categoryLabel } },
+    yaxis: {
+      type: 'category',
+      automargin: true,
+      title: { text: opts.categoryLabel, standoff: 16 },
+    },
     yaxis2: { type: 'category', anchor: 'x2', matches: 'y', showticklabels: false },
     shapes: [
       // 0 is the mean-flow benchmark for NSE; -0.41 is its KGE' equivalent.
@@ -286,7 +334,7 @@ export function skillBarsFigure(
     annotations,
     barmode: 'overlay',
     bargap: 0.25,
-    height: Math.max(360, 40 + display.length * 26),
+    height: Math.max(360, 74 + display.length * 26),
     legend: { orientation: 'h', y: -0.16 },
     plot_bgcolor: 'white',
     paper_bgcolor: 'white',

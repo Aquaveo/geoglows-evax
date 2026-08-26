@@ -177,5 +177,13 @@ export function Plot({ data, layout, config, style }: PlotProps) {
     };
   }, []);
 
-  return <div ref={ref} style={{ width: '100%', height: 520, ...style }} />;
+  // The container must follow the figure, not the other way round.
+  //
+  // Several figures size themselves from their row count — one row per lead day,
+  // per forecast run, per threshold — and a fixed 520px box silently clipped
+  // everything below it. What gets cut is the BOTTOM of the plot, which is where
+  // the x-axis lives, so a 31-run skill chart lost both its axis titles and all
+  // its tick labels and looked simply unlabelled.
+  const height = typeof layout?.height === 'number' ? layout.height : 520;
+  return <div ref={ref} style={{ width: '100%', height, ...style }} />;
 }
