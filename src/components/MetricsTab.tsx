@@ -35,7 +35,6 @@ import { correctForecastsGlobal, type GlobalCorrection } from '../lib/bias/globa
 import { getPolyfits } from '../lib/bias/polyfits';
 import type { RiverPolyfits } from '../lib/bias/polyfitTypes';
 import { correctionEffectByLead } from '../lib/bias/correctionEffect';
-import { biasCdfsFigure } from '../plots/biasTransfer';
 import { dumbbellFigure, type DumbbellRow } from '../plots/dumbbell';
 import { divergingBarsFigure, type DivergingRow } from '../plots/divergingBars';
 import { maxOf } from '../lib/arrayStats';
@@ -454,7 +453,7 @@ export function MetricsTab() {
   const [accuracyVariant, setAccuracyVariant] = useState<MetricVariant>('raw');
   const [skillVariant, setSkillVariant] = useState<MetricVariant>('raw');
   const [crpsVariant, setCrpsVariant] = useState<MetricVariant>('raw');
-  const [biasMonth, setBiasMonth] = useState<number | null>(null);
+  const [biasVariant, setBiasVariant] = useState<'local' | 'global' | null>(null);
   // Global transform coefficients, fetched per river from the published zarr
   // store. Async because it is a network read; cached in IndexedDB after the
   // first hit, so this is effectively instant on revisit.
@@ -1163,15 +1162,26 @@ export function MetricsTab() {
         : app.crpsResults;
 
   // --- Bias-correction diagnostics ------------------------------------------
-  const biasMonths = useMemo(
-    () => (correction ? [...correction.mappings.keys()].sort((a, b) => a - b) : []),
-    [correction],
-  );
-  const activeBiasMonth =
-    biasMonth != null && biasMonths.includes(biasMonth) ? biasMonth : (biasMonths[0] ?? null);
-  const activeMapping =
-    correction && activeBiasMonth != null ? (correction.mappings.get(activeBiasMonth) ?? null) : null;
-
+  /**
+   * Which correction the diagnostics below describe.
+   *
+   * A section-level choice, not one selector per plot: every diagnostic here
+   * exists for both corrections, so rendering both of each doubled the charts to
+   * say what a switch says, and pushed the two halves far enough apart that
+   * comparing them meant scrolling.
+   */
+  const biasVariantChoices = useMemo(() => {
+    const out: ('local' | 'global')[] = [];
+    if (correction) out.push('local');
+    if (globalCorrection && !globalCorrection.unusable) out.push('global');
+    return out;
+  }, [correction, globalCorrection]);
+  // Falls back to whichever is available, so a stale selection cannot leave the
+  // section blank when the other correction disappears.
+  const activeBiasVariant =
+    biasVariant && biasVariantChoices.includes(biasVariant)
+      ? biasVariant
+      : (biasVariantChoices[0] ?? null);
   const correctionEffect = useMemo(
     () =>
       rawBuckets && correctedBuckets
@@ -1203,6 +1213,17 @@ export function MetricsTab() {
    * infinity, while SABER excludes none. Keying the selector off the local list
    * alone hid every run SABER could still show.
    */
+  /** The selected correction's inputs, resolved once for every panel below. */
+  const biasLabel = activeBiasVariant === 'global' ? 'SABER' : 'Local CDF';
+  const activeBiasEffect =
+    activeBiasVariant === 'global' ? globalCorrectionEffect : correctionEffect;
+  const activeDumbbell =
+    activeBiasVariant === 'global' ? dumbbellRows.global : dumbbellRows.local;
+  const activeCorrected =
+    activeBiasVariant === 'global'
+      ? (globalCorrection?.forecasts ?? null)
+      : (correction?.forecasts ?? null);
+
   const biasRunDates = useMemo(() => {
     const d = new Set<string>();
     if (correction) for (const k of correction.forecasts.keys()) d.add(k);
@@ -1982,7 +2003,7 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Bias correction"
-        description="What each correction actually does to your forecasts. Both are covered: the local CDF map fitted to your uploaded gauge record, and SABER, fitted centrally per river and month. Shift per lead day, KGE′ before and after, and one run before and after are shown for both; the transfer curve and the CDF pair are local-only, because SABER matches no empirical distributions. Diagnostics only — no metric here."
+        description="What a correction actually does to your forecasts: how far it shifts each lead day, whether KGE′ improved, and one run before and after. Pick which correction with the selector — the local CDF map fitted to your uploaded gauge record, or SABER, fitted centrally per river and month. Diagnostics only, no metric here."
       >
         {/*
           Each correction is gated on its OWN availability. The section used to
@@ -2007,81 +2028,45 @@ export function MetricsTab() {
 
         {correction && <CorrectionBanner c={correction} />}
 
-        {activeMapping && (
-          <>
-            {biasMonths.length > 1 && (
-              <label style={lbl}>
-                Month:&nbsp;
-                <select
-                  value={activeBiasMonth ?? ''}
-                  onChange={(e) => setBiasMonth(Number(e.target.value))}
-                  style={sel}
-                >
-                  {biasMonths.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            <div style={subBlock}>
-              <h3 style={h3}>The two distributions being matched — local CDF</h3>
-              <Plot
-                {...biasCdfsFigure(activeMapping, { riverId: app.reach?.riverId ?? undefined })}
-              />
-              <PlotNote>
-                the correction reads a probability off the blue simulated curve and the flow at
-                that same probability off the black observed one. Horizontal distance between the
-                curves at a given height is the bias being removed. Drawn as steps because they
-                are histogram CDFs, and the flat treads are exactly where the inverse mapping
-                fails — a tall flat segment on the black curve is a wide band of probabilities
-                with no distinct observed flow to map back to.
-                <br />
-                <br />
-                This panel exists for the <strong>local</strong> correction only, and not because
-                SABER was left out: SABER has nothing of this kind to draw. It applies published
-                per-river, per-month polynomial coefficients rather than matching your uploaded
-                record against the retrospective, so there is no pair of empirical distributions to
-                put side by side. What it does to your numbers is in the shift and before/after
-                plots below, which do cover both.
-              </PlotNote>
-            </div>
-          </>
+        {/*
+          One selector for the whole section rather than a pair of panels per
+          diagnostic. Every plot below exists for both corrections, so showing
+          both of each doubled the chart count to say something the reader can
+          get by switching — and made the section long enough that the
+          comparison it was meant to enable happened by scrolling.
+        */}
+        {biasVariantChoices.length > 1 && (
+          <label style={{ ...lbl, marginBottom: '0.4rem' }}>
+            Correction:&nbsp;
+            <select
+              value={activeBiasVariant ?? ''}
+              onChange={(e) => setBiasVariant(e.target.value as 'local' | 'global')}
+              style={sel}
+            >
+              {biasVariantChoices.map((v) => (
+                <option key={v} value={v}>
+                  {v === 'local' ? 'Local CDF' : 'SABER'}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
 
-        {(correctionEffect || globalCorrectionEffect) && (
+        {activeBiasEffect && (
           <div style={subBlock}>
-            <h3 style={h3}>How much each correction shifts every lead day</h3>
-            {correctionEffect && (
-              <Plot
-                {...distributionVsLeadFigure(correctionEffect, {
-                  metricLabel: 'Δ',
-                  title: `Local CDF — Shift per Lead Day${riverIdSuffix}`,
-                  subtitle:
-                    'corrected − raw, m³/s, across ensemble members  |  above zero = inflated',
-                  yAxisLabel: 'corrected − raw (m³/s)',
-                  valueFormat: '+.2f',
-                  zeroLine: true,
-                  membersLabel: 'members',
-                })}
-              />
-            )}
-            {globalCorrectionEffect && (
-              <Plot
-                {...distributionVsLeadFigure(globalCorrectionEffect, {
-                  metricLabel: 'Δ',
-                  title: `SABER — Shift per Lead Day${riverIdSuffix}`,
-                  subtitle:
-                    'corrected − raw, m³/s, across ensemble members  |  above zero = inflated',
-                  yAxisLabel: 'corrected − raw (m³/s)',
-                  valueFormat: '+.2f',
-                  zeroLine: true,
-                  membersLabel: 'members',
-                })}
-              />
-            )}
+            <h3 style={h3}>How much {biasLabel} shifts each lead day</h3>
+            <Plot
+              {...distributionVsLeadFigure(activeBiasEffect, {
+                metricLabel: 'Δ',
+                title: `${biasLabel} — Shift per Lead Day${riverIdSuffix}`,
+                subtitle:
+                  'corrected − raw, m³/s, across ensemble members  |  above zero = inflated',
+                yAxisLabel: 'corrected − raw (m³/s)',
+                valueFormat: '+.2f',
+                zeroLine: true,
+                membersLabel: 'members',
+              })}
+            />
             <PlotNote>
               how far the correction moves the forecast at each lead day. Above the dashed zero
               line it inflated the values, below it deflated them, and a box sitting on zero means
@@ -2097,38 +2082,25 @@ export function MetricsTab() {
               lead, and neither correction can know that.
               <br />
               <br />
-              Comparing the two panels is the point. Where they disagree in sign, one is inflating
-              the forecast while the other deflates it, and the metric tabs will disagree about
-              which helped — worth knowing before you read them.
+              Worth switching the selector at the top and comparing: where the two corrections
+              disagree in sign, one is inflating the forecast while the other deflates it, and the
+              metric tabs will disagree about which helped.
             </PlotNote>
           </div>
         )}
 
-        {(dumbbellRows.local || dumbbellRows.global) && (
+        {activeDumbbell && (
           <>
-            <h3 style={h3}>What correction changed, per lead</h3>
-            {dumbbellRows.global && (
-              <Plot
-                {...dumbbellFigure(dumbbellRows.global, {
-                  title: `KGE′ before and after SABER${riverIdSuffix}`,
-                  metricLabel: "KGE′",
-                  beforeLabel: 'Raw',
-                  afterLabel: 'SABER',
-                  higherIsBetter: true,
-                })}
-              />
-            )}
-            {dumbbellRows.local && (
-              <Plot
-                {...dumbbellFigure(dumbbellRows.local, {
-                  title: `KGE′ before and after the local CDF correction${riverIdSuffix}`,
-                  metricLabel: "KGE′",
-                  beforeLabel: 'Raw',
-                  afterLabel: 'Local CDF',
-                  higherIsBetter: true,
-                })}
-              />
-            )}
+            <h3 style={h3}>What {biasLabel} changed, per lead</h3>
+            <Plot
+              {...dumbbellFigure(activeDumbbell, {
+                title: `KGE′ before and after ${biasLabel}${riverIdSuffix}`,
+                metricLabel: 'KGE′',
+                beforeLabel: 'Raw',
+                afterLabel: biasLabel,
+                higherIsBetter: true,
+              })}
+            />
             <PlotNote>
               one row per lead day, showing the same KGE′ the bar charts report — grey dot is the
               raw forecast, orange is corrected, and the connector's length is the size of the
@@ -2156,20 +2128,15 @@ export function MetricsTab() {
                 ))}
               </select>
             </label>
-            {/*
-              One panel per correction, each naming itself. Previously only the
-              local map was drawn and the legend just said "bias-corrected", so
-              there was no way to tell which of the two you were looking at.
-            */}
-            {app.forecasts.get(activeBiasRun) && correction?.forecasts.get(activeBiasRun) && (
+            {app.forecasts.get(activeBiasRun) && activeCorrected?.get(activeBiasRun) && (
               <Plot
                 {...biasHydrographFigure(
                   app.forecasts.get(activeBiasRun)!,
-                  correction.forecasts.get(activeBiasRun)!,
+                  activeCorrected.get(activeBiasRun)!,
                   app.eventData,
                   {
                     label: `${activeBiasRun.slice(0, 4)}-${activeBiasRun.slice(4, 6)}-${activeBiasRun.slice(6, 8)}`,
-                    correctedLabel: 'local CDF',
+                    correctedLabel: biasLabel,
                     riverId: app.reach?.riverId ?? undefined,
                     // Observed thresholds apply to the observed line and to the
                     // corrected forecast; simulated ones to the raw forecast.
@@ -2179,31 +2146,13 @@ export function MetricsTab() {
                 )}
               />
             )}
-            {correction && !correction.forecasts.get(activeBiasRun) && (
+            {activeCorrected && !activeCorrected.get(activeBiasRun) && (
               <p style={{ color: '#8a6d1f', margin: '0.4rem 0' }}>
-                This run was excluded from the <strong>local CDF</strong> correction — the banner
-                above says why. SABER excludes nothing, so it still appears below.
+                This run was excluded from the <strong>{biasLabel}</strong> correction — the banner
+                above says why. SABER excludes nothing, so switching the correction at the top will
+                show it.
               </p>
             )}
-            {app.forecasts.get(activeBiasRun) &&
-              globalCorrection &&
-              !globalCorrection.unusable &&
-              globalCorrection.forecasts.get(activeBiasRun) && (
-                <Plot
-                  {...biasHydrographFigure(
-                    app.forecasts.get(activeBiasRun)!,
-                    globalCorrection.forecasts.get(activeBiasRun)!,
-                    app.eventData,
-                    {
-                      label: `${activeBiasRun.slice(0, 4)}-${activeBiasRun.slice(4, 6)}-${activeBiasRun.slice(6, 8)}`,
-                      correctedLabel: 'SABER',
-                      riverId: app.reach?.riverId ?? undefined,
-                      obsRp: app.obsRp,
-                      simRp: app.simRp,
-                    },
-                  )}
-                />
-              )}
             <PlotNote>
               the plainest test of whether the correction helped: if the blue corrected line moves
               toward the black observations relative to the grey raw line, it did. If it overshoots
@@ -2221,9 +2170,9 @@ export function MetricsTab() {
               entry to bring the zones in when they are in range.
               <br />
               <br />
-              One panel per available correction, each naming itself in the title and legend. The
-              run list is the union of both: the local map drops runs whose mapping ran to
-              infinity, while SABER drops none, so a run can appear for one and not the other.
+              The run list is the union of both corrections: the local map drops runs whose mapping
+              ran to infinity, while SABER drops none, so a run can be available for one and not
+              the other. The title and legend always name which correction is drawn.
             </PlotNote>
           </div>
         )}
