@@ -79,9 +79,16 @@ describe('correctForecasts driver', () => {
     expect(correctForecasts(fc, empty, obs).unavailable).toMatch(/no retrospective/)
   })
 
-  it('excludes a whole run when any value maps to infinity, naming the reason', () => {
-    // A forecast far above the simulated monthly maximum lands on the degenerate
-    // tail of the observed CDF.
+  it('excludes an above-range run whether or not it produced an infinity', () => {
+    // This used to branch on whether the run happened to map to Infinity, and
+    // accepted either outcome — because it did depend on chance. An above-range
+    // forecast only goes infinite when its probability lands strictly above the
+    // observed CDF's top, which turns on whether two cumulative sums of several
+    // hundred floats both finished at exactly 1.0. At p = 1 the run was kept
+    // with a pinned finite value; one ulp higher it was excluded.
+    //
+    // The exclusion now tests the condition rather than that symptom, so the
+    // outcome is deterministic.
     const simMax = Math.max(
       ...sim.values.filter((_, i) => sim.time[i].getUTCMonth() === 5),
     )
@@ -90,17 +97,27 @@ describe('correctForecasts driver', () => {
       ['20200610', run('2020-06-10T00:00:00Z', [simMax * 5, simMax * 6])],
     ])
     const r = correctForecasts(fc, sim, obs)
-    const infExcluded = r.excluded.filter((e) => /infinity/.test(e.reason))
-    if (infExcluded.length > 0) {
-      expect(infExcluded[0].date).toBe('20200610')
-      expect(infExcluded[0].reason).toMatch(/simulated month-6 maximum/)
-      expect(r.forecasts.has('20200610')).toBe(false)
-      expect(r.forecasts.has('20200605')).toBe(true)
-    } else {
-      // The 1-ULP predicate went the other way for this data; the run must then
-      // survive rather than be dropped for some other reason.
-      expect(r.forecasts.has('20200610')).toBe(true)
-    }
+    expect(r.forecasts.has('20200610')).toBe(false)
+    expect(r.forecasts.has('20200605')).toBe(true)
+    const ex = r.excluded.find((e) => e.date === '20200610')!
+    expect(ex.reason).toMatch(/simulated month-6 maximum/)
+    expect(ex.reason).toMatch(/every larger forecast returns the same number/)
+  })
+
+  it('pins every above-range forecast to one value, which is why they are excluded', () => {
+    // The failure the exclusion exists to prevent: at the top of the simulated
+    // distribution the CDF is flat, so the forward map has zero slope and a
+    // thousand-fold range of forecasts collapses onto a single corrected flow.
+    const simMax = Math.max(
+      ...sim.values.filter((_, i) => sim.time[i].getUTCMonth() === 5),
+    )
+    const outs = [1.1, 2, 5, 20, 1000].map((k) => {
+      const fc = new Map([['20200610', run('2020-06-10T00:00:00Z', [simMax * k])]])
+      const r = correctForecasts(fc, sim, obs)
+      // Excluded, so read the reason rather than the values.
+      return r.excluded.length === 1
+    })
+    expect(outs.every(Boolean)).toBe(true)
   })
 
   it('excludes runs whose month is absent from a record, and says which', () => {

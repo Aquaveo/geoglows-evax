@@ -216,12 +216,30 @@ export function correctForecasts(
     zeroedBelowRange += res.zeroedBelowRange
     negativeClipped += res.negativeClipped
 
-    if (res.positiveInfinite > 0) {
+    // Exclude on the CONDITION, not on the symptom.
+    //
+    // This tested `res.positiveInfinite > 0`, but an above-range forecast only
+    // maps to infinity when its probability lands strictly above the observed
+    // CDF's top — which turns on whether two cumulative sums of several hundred
+    // floats both finished at exactly 1.0. At p = 1 the run was kept with a
+    // pinned finite value; one ulp higher it was excluded. Measured on a
+    // realistic pair, forecasts of 178, 324, 810, 3239 and 161,950 m³/s all
+    // mapped to 277.09 and none was excluded, because none was infinite.
+    //
+    // Pinning is the real failure and infinity is one visible form of it: at the
+    // top of the simulated distribution the CDF is flat, so the forward map has
+    // zero slope and every value above it collapses onto one number. A corrected
+    // series that reports the same flow for a 178 and a 161,950 is not a
+    // correction, and it is exactly the runs that forecast the event that land
+    // there.
+    const aboveRange = res.aboveSimRange
+    if (aboveRange > 0) {
       excluded.push({
         date,
         reason:
-          `${res.positiveInfinite} value${res.positiveInfinite === 1 ? '' : 's'} mapped to ` +
-          `infinity (forecast above the simulated month-${month} maximum)`,
+          `${aboveRange} value${aboveRange === 1 ? '' : 's'} at or above the simulated month-${month} ` +
+          'maximum, where the mapping has no inverse and every larger forecast returns the same ' +
+          `number${res.positiveInfinite > 0 ? ` (${res.positiveInfinite} of them infinite)` : ''}`,
       })
       continue
     }
@@ -240,7 +258,11 @@ export function correctForecasts(
   // Exclusions are not random. They fire when a forecast exceeds the simulated
   // monthly maximum, i.e. on the runs that predicted the event, so more than a
   // token number of them means the survivors are the runs that missed it.
-  const infExcluded = excluded.filter((e) => /infinity/.test(e.reason)).length
+  // Matches the reason written just above. Keyed on the phrase rather than a
+  // structured field, which is fragile — editing that string silently disables
+  // the gate — but changing the shape of RunExclusion is a wider change than
+  // this fix should carry.
+  const infExcluded = excluded.filter((e) => /simulated month-\d+ maximum/.test(e.reason)).length
   const total = forecasts.size
   const selectionBias =
     infExcluded > 0 && infExcluded / total > 0.1

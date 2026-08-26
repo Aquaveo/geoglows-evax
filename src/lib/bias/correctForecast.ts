@@ -49,6 +49,24 @@ export interface CorrectedRun {
    * same way, so this is reported rather than corrected.
    */
   zeroedBelowRange: number
+  /**
+   * Finite raw values at or above the top of the simulated distribution.
+   *
+   * There the CDF is flat, so the forward map has zero slope and EVERY such
+   * forecast collapses onto the same probability, then onto the same corrected
+   * flow. Measured on a realistic June pair: forecasts of 178, 324, 810, 3239
+   * and 161,950 m³/s all mapped to 277.09. That is not a correction, it is a
+   * ceiling.
+   *
+   * Detected directly rather than inferred from an infinite result. The infinity
+   * only appears when the probability lands strictly ABOVE the observed CDF's
+   * top, which turns on whether two cumulative sums of several hundred floats
+   * both finished at exactly 1.0: at p = 1 the value is finite and the run is
+   * kept, one ulp higher it is Infinity and the run is excluded. The intent was
+   * always to exclude above-range runs, so this tests that condition instead of
+   * a rounding artefact of it.
+   */
+  aboveSimRange: number;
   /** Values clipped up to 0 (negative results, including -Infinity). */
   negativeClipped: number
   /** Raw inputs that were already non-finite before correction ran. */
@@ -124,6 +142,8 @@ export function correctForecastRun(
   let negativeClipped = 0
   let rawNonFinite = 0
   let zeroedBelowRange = 0
+  let aboveSimRange = 0
+  const simTop = mapping.simulated.cdf[mapping.simulated.cdf.length - 1]
 
   const corrected: number[][] = run.discharge.map((series) => {
     const out = new Array<number>(nT)
@@ -137,7 +157,11 @@ export function correctForecastRun(
         continue
       }
 
-      const mapped = mapValue(mapping, raw)
+      // One forward evaluation, reused for the range test and the mapping, so
+      // the arithmetic is bit-identical to mapValue.
+      const p = flowToProbability(mapping.simulated, raw)
+      if (p >= simTop) aboveSimRange += 1
+      const mapped = probabilityToFlow(mapping.observed, p)
 
       // (2) update(): NaN does not overwrite, so the raw value survives.
       let value: number
@@ -174,6 +198,7 @@ export function correctForecastRun(
     positiveInfinite,
     nanKeptRaw,
     zeroedBelowRange,
+    aboveSimRange,
     negativeClipped,
     rawNonFinite,
   }
