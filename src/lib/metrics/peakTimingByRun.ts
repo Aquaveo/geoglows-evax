@@ -139,25 +139,47 @@ export function computePeakTimingByRun(
       const series = run.discharge[m];
       if (!series) continue;
 
-      let bestIdx = -1;
+      // The member's OWN finite samples, which is what both tests below have to
+      // key off. Using the window's index bounds instead let a single missing
+      // value at the edge defeat the censoring entirely.
+      let firstFinite = -1;
+      let lastFinite = -1;
       let bestVal = -Infinity;
-      let ties = 0;
+      let plateauStart = -1;
+      let plateauEnd = -1;
+      let distinctValues = 0;
+      let prevVal = Number.NaN;
+      let prevIdx = -1;
       for (const i of inWindow) {
         const v = series[i];
         if (!Number.isFinite(v)) continue;
+        if (firstFinite < 0) firstFinite = i;
+        lastFinite = i;
+        if (v !== prevVal) {
+          distinctValues += 1;
+          prevVal = v;
+        }
         if (v > bestVal) {
           bestVal = v;
-          bestIdx = i;
-          ties = 1;
-        } else if (v === bestVal) {
-          ties += 1;
+          plateauStart = i;
+          plateauEnd = i;
+        } else if (v === bestVal && prevIdx === plateauEnd) {
+          // Extend only when this sample directly follows the plateau's current
+          // end. Without that check an equal value LATER in the window — a
+          // second crest the other side of a trough — extended the plateau
+          // across the dip, and the midpoint then timed neither crest.
+          plateauEnd = i;
         }
+        prevIdx = i;
       }
-      if (bestIdx < 0) continue;
+      if (firstFinite < 0) continue;
 
-      // No distinct maximum: a flat member's max is attained everywhere, so
-      // there is no argmax to report. The tie-break would otherwise return an
-      // arbitrary timestep and manufacture a timing error.
+      // No peak only when the member is flat THROUGHOUT. A maximum shared by a
+      // few adjacent timesteps is a crest with a plateau, which is a forecast of
+      // the event and must not be discarded — an earlier version rejected any
+      // tie at all, which threw away exactly the members a saturated bias
+      // correction produces, since saturation maps neighbouring values to
+      // exactly the same number.
       //
       // This replaces a relative-prominence gate, (max−min)/max >= 0.1, which
       // discarded broad crests: inside a window centred on the crest the minimum
@@ -166,18 +188,31 @@ export function computePeakTimingByRun(
       // 240-hour snowmelt crest — rejected — and river size had nothing to do
       // with it. A return-period gate was rejected too: it would put magnitude
       // back into a metric that is deliberately magnitude-independent.
-      if (ties > 1) {
+      if (distinctValues <= 1) {
         noPeakMembers++;
         continue;
       }
 
-      // Maximum on the window edge: the real peak is probably outside it, so Δt
-      // is a bound rather than a measurement.
-      if (bestIdx === inWindow[0] || bestIdx === inWindow[inWindow.length - 1]) {
+      // Maximum on the member's own first or last finite sample: the real peak
+      // is probably outside the window, so Δt is a bound rather than a
+      // measurement.
+      //
+      // Compared against the member's finite samples, NOT the window's index
+      // bounds. A single missing value at the edge used to slide the maximum one
+      // step inward and defeat this entirely: a strictly rising member was
+      // correctly censored when clean, and reported a confident "+66 h late"
+      // once its last in-window sample was NaN.
+      if (plateauStart === firstFinite || plateauEnd === lastFinite) {
         censoredMembers++;
         continue;
       }
-      deltas.push((run.time[bestIdx].getTime() - obsPeakMs) / HOUR_MS);
+
+      // A plateau's midpoint. The peak time is ambiguous across the plateau's
+      // width, not undefined, and the midpoint is the only choice that does not
+      // lean early or late.
+      const peakMs =
+        (run.time[plateauStart].getTime() + run.time[plateauEnd].getTime()) / 2;
+      deltas.push((peakMs - obsPeakMs) / HOUR_MS);
     }
 
     // A run with nothing left after censoring gets counted but not plotted —
