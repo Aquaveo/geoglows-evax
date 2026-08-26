@@ -497,6 +497,19 @@ function CorrectionBanner({ c }: { c: BiasCorrection }) {
             {c.excluded.length > 3 && ` and ${c.excluded.length - 3} more`}
           </li>
         )}
+        {c.zeroedBelowRange > 0 && (
+          <li>
+            <strong>{c.zeroedBelowRange.toLocaleString()}</strong> member-timestep
+            {c.zeroedBelowRange === 1 ? '' : 's'} held a positive flow that the mapping turned into{' '}
+            <strong>exactly 0</strong>. These sat below the simulated monthly minimum, where the
+            mapping extrapolates off the bottom of the observed distribution. Whether such a value
+            is kept raw or zeroed depends on whether your observed record has anything in its lowest
+            histogram bin — a single 0, which is what a clamped negative gauge reading becomes,
+            flips every one of them. This matches the reference implementation and is reported
+            rather than changed, but low flows reading 0 in the corrected output are not a real
+            forecast of no water.
+          </li>
+        )}
         {c.nanKeptRaw > 0 && (
           <li>
             {c.nanKeptRaw} member-timestep{c.nanKeptRaw === 1 ? '' : 's'} kept their{' '}

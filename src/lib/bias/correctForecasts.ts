@@ -53,6 +53,8 @@ export interface BiasCorrection {
   observedCadence: string
   /** Member-timesteps that kept their RAW value because the mapping was NaN. */
   nanKeptRaw: number
+  /** Positive raw values the mapping turned into exactly 0. Diagnostic only. */
+  zeroedBelowRange: number
   /** Member-timesteps clipped up to zero. */
   negativeClipped: number
   /** Non-null when nothing usable came out; render this instead of numbers. */
@@ -116,6 +118,7 @@ export function correctForecasts(
     simulatedCadence: simCadence?.label ?? 'unknown',
     observedCadence: obsCadence?.label ?? 'unknown',
     nanKeptRaw: 0,
+    zeroedBelowRange: 0,
     negativeClipped: 0,
     unavailable: null,
     selectionBias: null,
@@ -151,6 +154,7 @@ export function correctForecasts(
   const corrected = new Map<string, ForecastRun>()
   const excluded: RunExclusion[] = []
   let nanKeptRaw = 0
+  let zeroedBelowRange = 0
   let negativeClipped = 0
 
   for (const [date, run] of forecasts) {
@@ -209,6 +213,7 @@ export function correctForecasts(
 
     const res = correctForecastRun(run, mapping)
     nanKeptRaw += res.nanKeptRaw
+    zeroedBelowRange += res.zeroedBelowRange
     negativeClipped += res.negativeClipped
 
     if (res.positiveInfinite > 0) {
@@ -255,6 +260,7 @@ export function correctForecasts(
     excluded,
     months,
     nanKeptRaw,
+    zeroedBelowRange,
     negativeClipped,
     unavailable,
     selectionBias,

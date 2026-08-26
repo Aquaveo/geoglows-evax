@@ -27,6 +27,28 @@ export interface CorrectedRun {
    * means those cells are uncorrected and must be reported, not hidden.
    */
   nanKeptRaw: number
+  /**
+   * Finite positive raw values that came out of the mapping at exactly 0.
+   *
+   * Purely diagnostic — nothing about the arithmetic changes, which stays
+   * bit-faithful to geoglows 2.2.0. It exists because the alternative outcome
+   * for the same input is invisible otherwise.
+   *
+   * Below the simulated monthly minimum the mapping extrapolates off the bottom
+   * of the observed CDF, and which of two very different things happens is
+   * decided by whether the observed month has anything in its lowest bin:
+   *
+   *   empty  -> observed cdf[0] === cdf[1], so the inverse slope is x/0 = inf,
+   *             and inf * 0 = NaN. update() then keeps the RAW value.
+   *   filled -> the slope is finite, the value maps at or below 0, and clip(0)
+   *             makes it 0. The raw low flow is gone.
+   *
+   * So a single value in the observed record flips every sub-minimum timestep
+   * between "kept raw" and "zeroed" — and parseCsv manufactures exactly such a
+   * value by clamping negative gauge readings to 0. The reference behaves the
+   * same way, so this is reported rather than corrected.
+   */
+  zeroedBelowRange: number
   /** Values clipped up to 0 (negative results, including -Infinity). */
   negativeClipped: number
   /** Raw inputs that were already non-finite before correction ran. */
@@ -101,6 +123,7 @@ export function correctForecastRun(
   let nanKeptRaw = 0
   let negativeClipped = 0
   let rawNonFinite = 0
+  let zeroedBelowRange = 0
 
   const corrected: number[][] = run.discharge.map((series) => {
     const out = new Array<number>(nT)
@@ -131,6 +154,9 @@ export function correctForecastRun(
         value = 0
       }
       if (value === Infinity) positiveInfinite += 1
+      // Diagnostic only, after the clip so it counts the published value: a
+      // positive flow that the correction turned into nothing.
+      if (value === 0 && raw > 0) zeroedBelowRange += 1
 
       out[i] = value
     }
@@ -147,6 +173,7 @@ export function correctForecastRun(
     month: mapping.month,
     positiveInfinite,
     nanKeptRaw,
+    zeroedBelowRange,
     negativeClipped,
     rawNonFinite,
   }

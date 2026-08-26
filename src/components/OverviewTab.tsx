@@ -339,9 +339,17 @@ export function OverviewTab() {
             timesteps would delete exactly the peaks and flatter the rest.
           </li>
           <li>
-            <strong>Low flows keep their raw values:</strong> below the simulated monthly minimum
-            the mapping is likewise undefined, so the reference implementation retains the original
-            number. The banner reports the count: such values look entirely plausible.
+            <strong>Low flows are handled two different ways, decided by your record.</strong>{' '}
+            Below the simulated monthly minimum the mapping extrapolates off the bottom of the
+            observed distribution, and what happens next depends on whether the observed month has
+            anything in its lowest histogram bin. If it is empty, the inverse slope divides by zero,
+            the result is NaN, and the reference keeps the <em>raw</em> value. If it holds even one
+            value, the slope is finite and the flow maps at or below zero, so the clip at 0 turns a
+            real low flow into <strong>exactly 0</strong>. A single 0 in your record flips every
+            sub-minimum timestep between the two — and a clamped negative gauge reading is exactly
+            such a value. This is what the reference does and the app matches it bit for bit, so the
+            banner counts both outcomes rather than changing either. A corrected low flow reading 0
+            is an artefact of the mapping, not a forecast of no water.
           </li>
           <li>
             <strong>The distributions are daily.</strong> Forecasts are typically sub-daily, so
