@@ -161,7 +161,15 @@ export function OverviewTab() {
         <p style={p}>
           Note this is aggregation over <em>time</em>, applied to each ensemble member separately.
           It never combines members — a 51-member ensemble stays 51 trajectories through every one
-          of these paths, and no metric here is computed from a maximum across the ensemble.
+          of these paths.
+        </p>
+        <p style={p}>
+          Combining members is a <em>separate</em> choice, made in the Contingency matrix block,
+          which classifies one representative series per lead. That defaults to the ensemble{' '}
+          <strong>median</strong> and offers the mean, individual members and the ensemble maximum.
+          An ensemble maximum there asks "did <em>any</em> member cross", which with 51 members
+          crosses far more readily than the median does — a different question, not a stricter
+          version of the same one. Every other categorical score reads all 51 members.
         </p>
         <p style={p}>
           It only bites when your data is finer than the comparison grid. With a daily gauge on a
@@ -278,9 +286,9 @@ export function OverviewTab() {
           SABER's own failure is <strong>saturation</strong>: once the percentile clamps, larger
           discharges all map to one value and flood magnitudes stop being distinguishable; nor are
           the polynomial fits guaranteed monotonic. The banner above the corrected metrics counts
-          both; the variant is withheld when essentially everything clamps. With no assignment for
-          a reach, SABER's scalars are exactly 1.0 — an identity, so any movement is fitting error
-          around a no-op.
+          both; the variant is withheld when essentially everything clamps. A reach with no published
+          transformer does not fall back to an identity — the lookup fails and the variant is
+          withheld with that reason, so SABER is either applied or absent, never silently a no-op.
         </p>
         <p style={p}>
           Which to prefer depends on the reach and shows in the diagnostics, not in advance: past
@@ -501,9 +509,10 @@ export function OverviewTab() {
           metrics.
         </p>
         <p style={p}>
-          Beforehand the 3-hourly ensemble members are linearly interpolated to hourly resolution,
-          matching the hourly observed gauge record. Straight-line interpolation cannot overshoot
-          or undershoot the original points, so the interpolated peak equals the native peak.
+          Nothing is interpolated up. Comparison happens at the <em>coarser</em> of the two
+          cadences and the finer series is aggregated down, as the Temporal resolution section
+          above describes — upsampling would manufacture samples that were never measured and let
+          every metric count them as evidence.
         </p>
 
         <h3 style={h3}>Event window limit</h3>
@@ -526,10 +535,12 @@ export function OverviewTab() {
 
         <h3 style={h3}>Interpretation caveat: initialization pooling</h3>
         <p style={p}>
-          Pooling initialization dates means one observed timestep may appear{' '}
-          <em>more than once</em> — once per initialization whose lead-<em>d</em> window covers
-          it. The flood peak falls in the lead-3 window of one initialization, the lead-4 window
-          of the next, and so on, all compared against the same observed value.
+          Within a single lead day the windows are disjoint — 24 hours wide, initializations 24
+          hours apart — so a timestep belongs to exactly one initialization there. The reuse is{' '}
+          <em>across</em> leads: the flood peak falls in the lead-3 window of one initialization,
+          the lead-4 window of the previous one, and so on, so the same observed value is scored
+          again at every lead. Lead days are therefore not independent samples of the same event,
+          and a run of them agreeing is not sixteen confirmations.
         </p>
       </section>
 
@@ -595,10 +606,11 @@ export function OverviewTab() {
             fixed reference.
           </p>
           <p style={{ margin: '0.5rem 0 0' }}>
-            Only scores that exclude correct negatives — the critical success index, a/(a+b+c), and
-            F1 — are exactly invariant to window length. Rare-event scores, EDI and SEDI included,
-            are <em>not</em>: padding drives their false-alarm rate to zero and they climb toward 1
-            regardless of skill.
+            Only scores that exclude the correct-negative cell are invariant to window length. Of
+            those shown here that means CSI = a/(a+b+c), POD, FAR and frequency bias. Rare-event
+            scores built on the false-alarm <em>rate</em> are not invariant — padding drives that
+            rate to zero and they climb toward 1 regardless of skill — which is one reason none is
+            offered.
           </p>
         </div>
 
@@ -609,8 +621,10 @@ export function OverviewTab() {
           <sub>ref</sub>), PC the proportion correct, PC<sub>ref</sub> that expected by chance.
         </p>
         <p style={p}>
-          Its denominator is the largest the shared numerator could be given the marginals, so HSS
-          is the fraction of the gap between chance and perfection that the forecast closes. MCC
+          Its denominator is the gap between a perfect forecast and chance, N² − Σtₖpₖ, so HSS is
+          the fraction of that gap the forecast closes. Note "perfect" here is the unconstrained
+          ideal, not the best attainable given these marginals — with mismatched marginals a
+          forecast cannot reach 1 however well it ranks. MCC
           divides instead by the geometric mean of the two marginal spreads, making it the
           correlation between forecast and observed category.
         </p>
@@ -654,8 +668,8 @@ export function OverviewTab() {
         <p style={p}>
           Report <strong>RPSS</strong> when comparing across events. Raw RPS is a mean over
           timesteps, so quiet days drag it toward zero whatever the skill — but the climatological
-          reference absorbs the same easy timesteps, so the ratio barely moves: measured drift is
-          about 0.01 across an 800-fold increase in window length, against 0.37 for MCC.
+          reference absorbs the same easy timesteps, so the ratio moves far less. Measured across
+          an 800-fold increase in window length: CSI 0.003, RPSS 0.028, MCC 0.070, HSS 0.074.
         </p>
         <p style={p}>
           <strong>What the reference is, exactly.</strong> RPSS and CRPSS are both skill scores —
@@ -784,9 +798,11 @@ export function OverviewTab() {
         <p style={pMono}>Δt_RP = t_crossing,forecast − t_crossing,observed  [hours]</p>
         <p style={p}>
           For each return-period threshold Q<sub>RP</sub>, t<sub>crossing</sub> is the first
-          ascending crossing — the first timestep at-or-above the threshold after being below.
-          This beats peak timing operationally: flood early-warning systems alert on threshold
-          exceedance, not peak arrival.
+          ascending crossing — the first in-window timestep at or above the threshold. If a series
+          is already above at its first sample it counts as crossing there, which matters when the
+          record itself starts mid-flood: both sides then register at the window edge and Δt_RP
+          reads 0 for a crossing neither actually witnessed. This beats peak timing operationally:
+          flood early-warning systems alert on threshold exceedance, not peak arrival.
         </p>
         <p style={p}>Reported separately:</p>
         <ul style={ul}>
@@ -889,7 +905,10 @@ export function OverviewTab() {
           </a>
           . NSE is keyed to <strong>0</strong> instead, its own mean-flow benchmark, since it is
           already normalised by the observed variance — so the two panels are coloured on different
-          scales, with different palettes and separate legends to say so.
+          scales, with different palettes and separate legends to say so. NSE therefore has{' '}
+          <strong>four</strong> bands where KGE′ has five: with its benchmark at 0 there is no gap
+          between Poor and the benchmark, so at or below 0 it is Unacceptable directly. Do not carry
+          the KGE′ ladder across.
         </p>
         <p style={caution}>
           <strong>On one event, −0.41 is not the climatology line.</strong> It is the best score any{' '}
