@@ -545,6 +545,19 @@ export function MetricsTab() {
   // the median construction is a coin flip at high thresholds.
   const [csiLead, setCsiLead] = useState<CsiByLead | null>(null);
   const [csiCategory, setCsiCategory] = useState<number>(1);
+  /**
+   * How a bin is summarised before it is classified against a threshold.
+   *
+   * Median by default. The choice is not a preference: a threshold is only
+   * comparable to a quantity of the same kind, and these thresholds are fitted to
+   * whatever resolution the uploaded record happens to be. Max was the previous
+   * hard-coded answer, and it crosses a 10-year-ish level 7.2x as often as the
+   * mean on a bin with realistic within-day shape — so it was silently deciding
+   * the exceedance count. The median is the least distorting default: not dragged
+   * by one extreme step like the mean, and not representing a whole day by its
+   * most extreme instant like the max.
+   */
+  const [categoricalAgg, setCategoricalAgg] = useState<Aggregation>('median');
   const [rpsResult, setRpsResult] = useState<RpsResult | null>(null);
   const [thresholdRows, setThresholdRows] = useState<ThresholdScores[] | null>(null);
   const [accuracyVariant, setAccuracyVariant] = useState<MetricVariant>('raw');
@@ -637,12 +650,14 @@ export function MetricsTab() {
     if (!app.eventData || !rawBuckets || !grid) return null;
     return {
       mean: griddedFor(rawBuckets, app.eventData, grid.stepMs, 'mean'),
-      max: griddedFor(rawBuckets, app.eventData, grid.stepMs, 'max'),
+      // The threshold family follows the selector; still two griddings, not
+      // three, so this costs no more than it did.
+      categorical: griddedFor(rawBuckets, app.eventData, grid.stepMs, categoricalAgg),
     };
-  }, [app.eventData, rawBuckets, grid]);
+  }, [app.eventData, rawBuckets, grid, categoricalAgg]);
 
   const griddedMean = gridded?.mean ?? null;
-  const griddedMax = gridded?.max ?? null;
+  const griddedMax = gridded?.categorical ?? null;
 
   // --- Bias correction ------------------------------------------------------
   // Correction runs on RAW forecast values, upstream of lead-bucketing and grid
@@ -929,7 +944,7 @@ export function MetricsTab() {
           const clim =
             app.historicalData && grid
               ? seasonalClimatology(
-                  aggregateSeries(app.historicalData, grid.stepMs, 'max'),
+                  aggregateSeries(app.historicalData, grid.stepMs, categoricalAgg),
                   eventData,
                   obsThr,
                 )
@@ -1618,13 +1633,40 @@ export function MetricsTab() {
           </p>
         )}
         {canCompute && (
-          <button onClick={computeCategoricalMetrics} disabled={computing} style={btn}>
-            {computing
-              ? 'Computing…'
-              : hasResults
-                ? 'Re-compute categorical metrics'
-                : 'Compute categorical metrics'}
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+            <label style={lbl}>
+              Summarise each bin by:&nbsp;
+              <select
+                value={categoricalAgg}
+                onChange={(e) => setCategoricalAgg(e.target.value as Aggregation)}
+                style={sel}
+              >
+                <option value="median">Median — typical flow in the bin (default)</option>
+                <option value="mean">Mean — average flow, preserves volume</option>
+                <option value="max">Maximum — the bin's peak, preserves exceedance</option>
+              </select>
+            </label>
+            <div style={aggNote}>
+              Only bites when your data is finer than the comparison grid; with a daily gauge and a
+              daily grid every bin holds one value and all three agree. Where it does bite it
+              decides the exceedance count: on a bin with realistic within-day shape the maximum
+              crosses a 10-year-ish level <strong>7.2×</strong> as often as the mean.
+              <br />
+              The honest choice matches whatever the return-period thresholds were fitted to, and
+              that is a property of the record you uploaded — <code>returnPeriodsFromSeries</code>
+              takes annual maxima at the record's <em>native</em> resolution, so a daily-values
+              upload gives a daily threshold and a 15-minute upload gives an instantaneous one.
+              This applies to every threshold metric below and to the RPSS reference, which is
+              summarised the same way.
+            </div>
+            <button onClick={computeCategoricalMetrics} disabled={computing} style={btn}>
+              {computing
+                ? 'Computing…'
+                : hasResults
+                  ? 'Re-compute categorical metrics'
+                  : 'Compute categorical metrics'}
+            </button>
+          </div>
         )}
         {error && <p style={{ color: '#b91c1c' }}>{error}</p>}
         {app.eventReturnPeriod != null && app.eventReturnPeriod > 0 && (
@@ -2945,6 +2987,12 @@ const noCategoriesAlert: React.CSSProperties = {
   fontSize: '0.9rem',
   lineHeight: 1.55,
   maxWidth: '52rem',
+};
+const aggNote: React.CSSProperties = {
+  fontSize: '0.85rem',
+  color: '#444',
+  lineHeight: 1.55,
+  maxWidth: '46rem',
 };
 const variantNote: React.CSSProperties = {
   fontSize: '0.85rem',

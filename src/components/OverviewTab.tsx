@@ -120,24 +120,48 @@ export function OverviewTab() {
           and pairs still equal real observations.
         </p>
 
-        <h3 style={h3}>Mean or maximum</h3>
+        <h3 style={h3}>How a bin is summarised</h3>
         <p style={p}>
-          Both are used, depending on the question:
+          When several timesteps fall in one grid bin they have to become one number, and that
+          choice is not cosmetic — it decides how often the flow is counted as crossing a threshold.
         </p>
         <ul style={ul}>
           <li>
-            <strong>Bin mean</strong> for error and distribution metrics (CRPS, CRPSS, KGE' and its
-            components): volume and shape.
+            <strong>Bin mean</strong>, always, for the error and distribution metrics (CRPS, CRPSS,
+            KGE′ and its components). These are about volume and shape, and the mean is what
+            preserves them.
           </li>
           <li>
-            <strong>Bin maximum</strong> for the categorical and threshold families (contingency
-            matrix, MCC, HSS, peak timing, threshold crossing): how high the flow got. A daily{' '}
-            <em>mean</em> can fall below a return-period threshold the actual flow crossed,
-            erasing the exceedance the metric exists to detect.
+            <strong>Your choice</strong> for the categorical and threshold families, defaulting to
+            the <strong>median</strong>. The selector sits above the Compute button in the
+            Categorical block, and also governs the reference RPSS is scored against.
           </li>
         </ul>
         <p style={p}>
-          Labels follow — "daily maximum discharge" is not "daily mean discharge".
+          <strong>Why it is a choice rather than a fixed answer.</strong> A threshold can only be
+          compared against a quantity of the same kind, and these thresholds inherit whatever you
+          uploaded: <code>returnPeriodsFromSeries</code> fits Gumbel-I to annual maxima taken at the
+          record's <em>native</em> resolution. A daily-values upload — which for most gauge services
+          means daily <em>mean</em> discharge — therefore produces a threshold on daily means. A
+          15-minute upload produces one on instantaneous peaks. Same code, two different kinds of
+          threshold, and only you know which you have.
+        </p>
+        <p style={p}>
+          The three differ sharply where it matters most. On a bin with realistic within-day shape,
+          the maximum crosses a 10-year-ish level <strong>7.2×</strong> as often as the mean; at a
+          2-year level the gap is only 1.3×. The distortion grows with severity, which is the end
+          the flood metrics live at. The median is the default because it is the least distorting
+          summary of the three: not dragged by a single extreme step the way the mean is, and not
+          representing a whole day by its most extreme instant the way the maximum is.
+        </p>
+        <p style={p}>
+          Note this is aggregation over <em>time</em>, applied to each ensemble member separately.
+          It never combines members — a 51-member ensemble stays 51 trajectories through every one
+          of these paths, and no metric here is computed from a maximum across the ensemble.
+        </p>
+        <p style={p}>
+          It only bites when your data is finer than the comparison grid. With a daily gauge on a
+          daily grid every bin holds one value and all three choices give the same number.
         </p>
 
         <h3 style={h3}>Consequences</h3>
@@ -616,11 +640,11 @@ export function OverviewTab() {
             (0.0102 whole-record against 0.0419 in season). The window wraps across New Year.
           </li>
           <li>
-            <strong>Aggregated the same way the scored observations are.</strong> The categorical
-            metrics classify bin <em>maxima</em>, so the reference is built from bin maxima too. A
-            reference of raw sub-daily readings understates exceedance badly — most readings within
-            a day sit below that day's peak — and on a 15-minute record the matched reference
-            expects exceedance 96× more often.
+            <strong>Aggregated the same way the scored observations are.</strong> Whatever bin
+            summary the Categorical block is set to — median by default — the reference uses it too.
+            A reference summarised differently is answering a different question: on a 15-minute
+            record, one built from raw readings expects exceedance 96× less often than a matched
+            one, because most readings within a day sit below that day's peak.
           </li>
           <li>
             <strong>Withheld rather than estimated.</strong> With no historical upload, or fewer

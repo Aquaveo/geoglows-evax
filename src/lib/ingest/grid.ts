@@ -5,12 +5,40 @@ import { describeStep, type Cadence } from './cadence';
  * How values inside a bin are combined.
  *
  * 'mean' preserves volume and is right for error and distribution metrics
- * (CRPS, KGE, β). 'max' preserves exceedance and is right for anything about
- * thresholds or peaks — a daily *mean* can sit below a return-period threshold
- * that the day's actual flow crossed, which would silently erase the event.
- * They answer different questions and must be labelled differently.
+ * (CRPS, KGE, β).
+ *
+ * 'median' is the default for threshold classification. It is the typical flow
+ * in the bin, so it is the least distorting summary when the bin has to stand in
+ * for the whole period: unlike the mean it is not dragged by one extreme step,
+ * and unlike the max it does not represent a day by its most extreme instant.
+ *
+ * 'max' preserves exceedance — a daily *mean* can sit below a return-period
+ * threshold the day's actual flow crossed, which erases the event. But it cuts
+ * the other way too, and harder at the thresholds that matter: on a bucket with
+ * realistic within-day shape, the max crosses a 10-year-ish level 7.2x as often
+ * as the mean. Which is right depends on what the threshold was fitted to, and
+ * that is a property of the uploaded record, not of this function — hence the
+ * choice being offered rather than assumed.
+ *
+ * Note this is aggregation over TIME within a bin, applied to each ensemble
+ * member independently. It never combines members: a 51-member ensemble stays 51
+ * trajectories through every one of these paths.
  */
-export type Aggregation = 'mean' | 'max';
+export type Aggregation = 'mean' | 'median' | 'max';
+
+/**
+ * Median of the finite values, or NaN. Sorts a copy; callers pass scratch arrays.
+ *
+ * Kept here rather than imported so the aggregation paths have no dependency
+ * beyond this module — they run over every member of every bucket and are the
+ * hottest loops in the app.
+ */
+function medianOf(xs: number[]): number {
+  if (xs.length === 0) return Number.NaN;
+  xs.sort((a, b) => a - b);
+  const mid = xs.length / 2;
+  return xs.length % 2 === 1 ? xs[Math.floor(mid)] : (xs[mid - 1] + xs[mid]) / 2;
+}
 
 export interface ComparisonGrid {
   /** Bin width in ms. */
@@ -72,7 +100,10 @@ export function aggregateSeries(
   stepMs: number,
   how: Aggregation,
 ): TimeSeries {
-  const bins = new Map<number, { sum: number; n: number; max: number }>();
+  // Values are only retained for the median, which needs them all. The mean and
+  // max paths stay streaming, because this runs over whole multi-decade records.
+  const keep = how === 'median';
+  const bins = new Map<number, { sum: number; n: number; max: number; vals: number[] }>();
   for (let i = 0; i < s.time.length; i++) {
     const v = s.values[i];
     if (!Number.isFinite(v)) continue;
@@ -82,8 +113,9 @@ export function aggregateSeries(
       cur.sum += v;
       cur.n += 1;
       if (v > cur.max) cur.max = v;
+      if (keep) cur.vals.push(v);
     } else {
-      bins.set(b, { sum: v, n: 1, max: v });
+      bins.set(b, { sum: v, n: 1, max: v, vals: keep ? [v] : [] });
     }
   }
   const keys = [...bins.keys()].sort((a, b) => a - b);
@@ -91,7 +123,9 @@ export function aggregateSeries(
     time: keys.map((k) => new Date(k)),
     values: keys.map((k) => {
       const e = bins.get(k)!;
-      return how === 'max' ? e.max : e.sum / e.n;
+      if (how === 'max') return e.max;
+      if (how === 'median') return medianOf(e.vals);
+      return e.sum / e.n;
     }),
   };
 }
@@ -109,7 +143,13 @@ export function aggregateBucket(
   if (b.time.length === 0) return b;
   const memberCount = b.members[0]?.length ?? 0;
 
-  const bins = new Map<number, { sum: number[]; n: number[]; max: number[] }>();
+  // Per-member value lists only when the median needs them; the mean and max
+  // paths stay streaming.
+  const keep = how === 'median';
+  const bins = new Map<
+    number,
+    { sum: number[]; n: number[]; max: number[]; vals: number[][] | null }
+  >();
   for (let i = 0; i < b.time.length; i++) {
     const key = binStart(b.time[i].getTime(), stepMs);
     let e = bins.get(key);
@@ -118,6 +158,7 @@ export function aggregateBucket(
         sum: new Array<number>(memberCount).fill(0),
         n: new Array<number>(memberCount).fill(0),
         max: new Array<number>(memberCount).fill(Number.NEGATIVE_INFINITY),
+        vals: keep ? Array.from({ length: memberCount }, () => [] as number[]) : null,
       };
       bins.set(key, e);
     }
@@ -128,6 +169,9 @@ export function aggregateBucket(
       e.sum[m] += v;
       e.n[m] += 1;
       if (v > e.max[m]) e.max[m] = v;
+      // Each member keeps its OWN list: this is aggregation over time within the
+      // bin, per member, never across members.
+      if (e.vals) e.vals[m].push(v);
     }
   }
 
@@ -139,7 +183,13 @@ export function aggregateBucket(
     const row = new Array<number>(memberCount);
     for (let m = 0; m < memberCount; m++) {
       row[m] =
-        e.n[m] === 0 ? Number.NaN : how === 'max' ? e.max[m] : e.sum[m] / e.n[m];
+        e.n[m] === 0
+          ? Number.NaN
+          : how === 'max'
+            ? e.max[m]
+            : how === 'median'
+              ? medianOf(e.vals![m])
+              : e.sum[m] / e.n[m];
     }
     time.push(new Date(k));
     members.push(row);
