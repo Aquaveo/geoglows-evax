@@ -195,16 +195,39 @@ export function aggregateBucket(
   for (const k of keys) {
     const e = bins.get(k)!;
     const row = new Array<number>(memberCount);
+    let anyFinite = false;
     for (let m = 0; m < memberCount; m++) {
+      if (e.n[m] === 0) {
+        row[m] = Number.NaN;
+        continue;
+      }
+      anyFinite = true;
       row[m] =
-        e.n[m] === 0
-          ? Number.NaN
-          : how === 'max'
-            ? e.max[m]
-            : how === 'median'
-              ? medianOf(e.vals![m])
-              : e.sum[m] / e.n[m];
+        how === 'max'
+          ? e.max[m]
+          : how === 'median'
+            ? medianOf(e.vals![m])
+            : e.sum[m] / e.n[m];
     }
+    // A bin where NO member has a value carries nothing, and emitting it does
+    // active harm. Bins are allocated from the timestamp before any value is
+    // seen, so such rows used to survive and be counted: countPairs counts
+    // bucket timestamps against observation timestamps without inspecting the
+    // values, so a bucket whose first 20 of 30 days were empty reported 30
+    // pairs behind a number computed from 10. That denominator is also the gate
+    // — `pairs < MIN_PAIRS_CORRELATION` decides whether a lead is scored at all
+    // — so an inflated count can push a lead with four real pairs past a
+    // threshold of ten.
+    //
+    // It moved the window bounds too. Several metrics take their overlap from
+    // time[0] and time[last]; leading empty bins put time[0] twenty days before
+    // any real data.
+    //
+    // Safe for the per-member alignment gridRun depends on: that bug was members
+    // having DIFFERENT lengths, and this drops the same row for every member, so
+    // positions keep their meaning. A gap in SOME members is still a gap held in
+    // place, which is the distinction the docblock above is drawing.
+    if (!anyFinite) continue;
     time.push(new Date(k));
     members.push(row);
   }

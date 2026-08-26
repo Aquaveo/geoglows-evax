@@ -67,8 +67,39 @@ describe('aggregateBucket', () => {
     }
   });
 
-  it('does not let the max leak -Infinity for an all-NaN member', () => {
-    const b = { time: [new Date(t0)], members: [[Number.NaN]] };
-    expect(Number.isNaN(aggregateBucket(b, DAY, 'max').members[0][0])).toBe(true);
+  it('drops a bin where NO member has a value', () => {
+    // It carried nothing and inflated the reported pair count: countPairs counts
+    // bucket timestamps without inspecting values, so empty bins padded the
+    // denominator shown beside every score — and pushed time[0], which several
+    // metrics use as their window bound, before any real data.
+    const b = {
+      time: [new Date(t0), new Date(t0 + DAY)],
+      members: [
+        [Number.NaN, Number.NaN],
+        [5, 7],
+      ],
+    };
+    const out = aggregateBucket(b, DAY, 'max');
+    expect(out.time).toHaveLength(1);
+    expect(out.time[0].getTime()).toBe(t0 + DAY);
+    expect(out.members[0]).toEqual([5, 7]);
+  });
+
+  it('keeps a bin where only SOME members are missing, as a hole in place', () => {
+    // The distinction: a per-member gap must stay put or members lose alignment,
+    // which is the defect gridRun exists to avoid.
+    const b = { time: [new Date(t0)], members: [[Number.NaN, 7]] };
+    const out = aggregateBucket(b, DAY, 'max');
+    expect(out.members).toHaveLength(1);
+    expect(Number.isNaN(out.members[0][0])).toBe(true);
+    expect(out.members[0][1]).toBe(7);
+  });
+
+  it('never leaks -Infinity from the max path', () => {
+    const b = { time: [new Date(t0)], members: [[Number.NaN, 7]] };
+    for (const how of ['mean', 'median', 'max'] as const) {
+      const v = aggregateBucket(b, DAY, how).members[0][0];
+      expect(Number.isNaN(v)).toBe(true);
+    }
   });
 });
