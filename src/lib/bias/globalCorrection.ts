@@ -96,13 +96,35 @@ export function correctForecastsGlobal(
   // series report a saturation share of zero and pass as healthy.
   const total = n + skippedNoFit;
   const noFitShare = total > 0 ? skippedNoFit / total : 0;
+  //
+  // Any part of the event falling in a month with no transform withholds the
+  // variant entirely, rather than serving a correction that covers only some of
+  // it. `unusableMonths` is populated only when a timestep actually lands in
+  // that month, so this is already scoped to the event rather than to the river.
+  //
+  // A partial correction is not merely incomplete, it is incomparable. The
+  // metrics would be computed from the surviving months while raw is computed
+  // from all of them, and the comparison table puts the two side by side as
+  // though they measured the same thing. Worse, the gap is a contiguous block of
+  // calendar time: lose the month holding the crest and the corrected scores
+  // improve, because only the recession was scored. correctForecasts already
+  // takes this position for its own exclusions — "a biased subset is worse than
+  // no answer: it looks like a result" — and there is no reason for the two
+  // corrections to disagree about it.
+  //
+  // No tolerance threshold, deliberately. Any missing stretch can be the one
+  // that matters, and a share cannot tell you whether it was.
   const unusable =
     total === 0
       ? 'no forecast values to transform'
-      : n === 0
+      : badMonthList.length > 0
         ? `no usable transform is published for ${
             badMonthList.length === 1 ? 'month' : 'months'
-          } ${badMonthList.join(', ')}, which is every month this event covers`
+          } ${badMonthList.join(', ')}, which ${
+            badMonthList.length === 1 ? 'covers' : 'cover'
+          } ${(noFitShare * 100).toFixed(0)}% of this event. Correcting only the rest would be ` +
+          'scored on a different stretch of the event than the raw forecast, so the two would not ' +
+          'be comparable'
         : saturatedShare >= 0.995
         ? `${(saturatedShare * 100).toFixed(1)}% of forecast values hit the transform's clamp, ` +
           'so nearly every value maps onto the same number and the corrected series is effectively constant'

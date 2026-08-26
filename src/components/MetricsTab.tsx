@@ -417,17 +417,19 @@ function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
         {c.unusableMonths.length > 0 && (
           <li style={{ color: '#8a6d1f' }}>
             <strong>
-              No usable transform is published for month
+              Withheld: no usable transform is published for month
               {c.unusableMonths.length === 1 ? '' : 's'} {c.unusableMonths.join(', ')}.
             </strong>{' '}
-            {c.skippedNoFit.toLocaleString()} member-timestep
-            {c.skippedNoFit === 1 ? '' : 's'} fall in {c.unusableMonths.length === 1 ? 'it' : 'them'}
-            {' '}— {(c.noFitShare * 100).toFixed(0)}% of this event — and are left blank rather than
-            transformed. Every metric on this variant is computed from the remainder, so it
-            describes only the part of the event those months do not cover. The river is present in
-            the published table but its coefficients for {c.unusableMonths.length === 1 ? 'that month' : 'those months'}
-            {' '}are not numbers, so there is nothing to apply; only the affected months are skipped
-            rather than the whole river.
+            The river is in the published table, but its coefficients for{' '}
+            {c.unusableMonths.length === 1 ? 'that month' : 'those months'} are not numbers, so
+            there is nothing to apply. {(c.noFitShare * 100).toFixed(0)}% of this event falls there.
+            <br />
+            Correcting only the remainder was the alternative, and it would have been worse than
+            offering nothing: those metrics would be scored on a different stretch of the event than
+            the raw ones sitting beside them in the comparison table. The gap is a contiguous block
+            of calendar time, so if it holds the crest the corrected scores <em>improve</em> — only
+            the recession got scored. Months the event never reaches are ignored, so a river with a
+            broken month outside your window is unaffected.
           </li>
         )}
         {saturated > 0 && (

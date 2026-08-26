@@ -50,15 +50,31 @@ describe('a river with some months unusable', () => {
     expect(r.unusable).toBeNull();
   });
 
-  it('still corrects an event that only partly touches it, and says how much it lost', () => {
+  it('withholds when the event only PARTLY touches the bad month', () => {
+    // A correction covering 55% of the event is not merely incomplete, it is
+    // incomparable: its metrics would be scored on a different stretch than the
+    // raw ones beside them in the comparison table. And the gap is contiguous
+    // calendar time, so losing the month with the crest makes the corrected
+    // scores look BETTER — only the recession was scored.
     const r = correctForecastsGlobal(runIn(6, 20), fitsWithBroken(7));
     expect(r.unusableMonths).toEqual([7]);
     expect(r.skippedNoFit).toBeGreaterThan(0);
     expect(r.noFitShare).toBeGreaterThan(0.2);
-    // Rejecting the whole river here would discard a correction that works for
-    // most of the event.
+    expect(r.unusable).toMatch(/month 7/);
+    expect(r.unusable).toMatch(/not be comparable/);
+  });
+
+  it('names the share of the event that is affected', () => {
+    const r = correctForecastsGlobal(runIn(6, 20), fitsWithBroken(7));
+    expect(r.unusable).toMatch(/\d+% of this event/);
+  });
+
+  it('ignores a broken month the event never reaches', () => {
+    // Scoped to the event, not the river: unusableMonths is only populated when
+    // a timestep actually lands in that month.
+    const r = correctForecastsGlobal(runIn(6, 5), fitsWithBroken(11));
+    expect(r.unusableMonths).toEqual([]);
     expect(r.unusable).toBeNull();
-    expect(r.n).toBeGreaterThan(0);
   });
 
   it('declares itself unusable when the bad month is the whole event', () => {
@@ -67,6 +83,7 @@ describe('a river with some months unusable', () => {
     expect(vals.every((v) => Number.isNaN(v))).toBe(true);
     expect(r.n).toBe(0);
     expect(r.unusable).toMatch(/no usable transform is published for month 7/);
+    expect(r.unusable).toMatch(/100% of this event/);
   });
 
   it('does not report a saturation share computed from nothing', () => {
