@@ -13,6 +13,18 @@ interface PlotProps {
   style?: React.CSSProperties;
 }
 
+/**
+ * Charts currently inside a band restyle.
+ *
+ * syncTopBands issues a `Plotly.restyle`, which fires `plotly_restyle`, which is
+ * the event syncTopBands listens for. The value guard below is supposed to stop
+ * the second pass, and in theory it does — but "in theory it terminates" is not
+ * a property worth betting a frozen tab on, and this is the one chart family
+ * that can hold two band groups at once. A re-entrancy latch makes the echo
+ * structurally incapable of recursing, whatever the arithmetic does.
+ */
+const syncing = new WeakSet<PlotlyHTMLElement>();
+
 /** Marker written by `rpBandTraces` onto the topmost band of each group. */
 interface TopBandMeta {
   rpTopBand?: boolean;
@@ -33,6 +45,7 @@ interface TopBandMeta {
  * change and the cascade stops.
  */
 function syncTopBands(gd: PlotlyHTMLElement) {
+  if (syncing.has(gd)) return;
   const traces = (gd.data ?? []) as Array<Record<string, unknown>>;
 
   let dataMax = 0;
@@ -64,7 +77,13 @@ function syncTopBands(gd: PlotlyHTMLElement) {
   });
 
   if (indices.length > 0) {
-    void Plotly.restyle(gd, { y: updated }, indices);
+    syncing.add(gd);
+    // Cleared in a microtask rather than in .then: the restyle event can arrive
+    // synchronously, before the promise settles, and the latch has to still be
+    // closed when it does.
+    void Plotly.restyle(gd, { y: updated }, indices).finally(() => {
+      syncing.delete(gd);
+    });
   }
 }
 
