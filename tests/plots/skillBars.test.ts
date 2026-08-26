@@ -3,7 +3,7 @@ import { skillBarsFigure } from '../../src/plots/skillBars';
 import type { SkillRow } from '../../src/lib/metrics/skillSummary';
 
 const row = (label: string, nse: number, kge: number, extra: Partial<SkillRow> = {}): SkillRow => ({
-  label, nse, kge, pairs: 40, members: 51, ...extra,
+  label, nse, kge, pairs: 40, members: 51, nseMembers: 51, kgeMembers: 51, ...extra,
 });
 
 const texts = (fig: ReturnType<typeof skillBarsFigure>) =>

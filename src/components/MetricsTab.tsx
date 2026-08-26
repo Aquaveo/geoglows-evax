@@ -1311,7 +1311,11 @@ export function MetricsTab() {
       const label = /^\d{8}$/.test(ex.date)
         ? `${ex.date.slice(0, 4)}-${ex.date.slice(4, 6)}-${ex.date.slice(6, 8)}`
         : ex.date;
-      rows.push({ label, nse: NaN, kge: NaN, pairs: 0, members: 0, skipped: ex.reason });
+      rows.push({
+        label, nse: NaN, kge: NaN, pairs: 0,
+        members: 0, nseMembers: 0, kgeMembers: 0,
+        skipped: ex.reason,
+      });
     }
     rows.sort((a, b) => a.label.localeCompare(b.label));
     return rows;

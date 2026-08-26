@@ -15,6 +15,17 @@ export interface SkillRow {
   pairs: number;
   /** Members that produced a finite score. */
   members: number;
+  /**
+   * Members behind each median separately.
+   *
+   * `members` above is max(nse, kge), which is what the hover used to print for
+   * BOTH bars. The two counts diverge whenever one metric is defined for a
+   * member and the other is not — a flat forecast has a real β and γ but no r,
+   * so it scores NSE and not KGE' — and the hover then overstated the evidence
+   * behind whichever median had fewer.
+   */
+  nseMembers: number;
+  kgeMembers: number;
   /** Set when the row was not scored, and why. */
   skipped?: string;
 }
@@ -44,7 +55,11 @@ export function skillByLead(
     const bucket = buckets[lead];
     const label = `Lead ${lead}`;
     if (!bucket || bucket.time.length === 0) {
-      rows.push({ label, nse: NaN, kge: NaN, pairs: 0, members: 0, skipped: 'no forecast data' });
+      rows.push({
+        label, nse: NaN, kge: NaN, pairs: 0,
+        members: 0, nseMembers: 0, kgeMembers: 0,
+        skipped: 'no forecast data',
+      });
       continue;
     }
 
@@ -76,6 +91,8 @@ export function skillByLead(
         kge: NaN,
         pairs,
         members: 0,
+        nseMembers: 0,
+        kgeMembers: 0,
         skipped:
           pairs < minPairs
             ? `only ${pairs} overlapping timestep${pairs === 1 ? '' : 's'}`
@@ -89,6 +106,8 @@ export function skillByLead(
       kge: median(kgeVals),
       pairs,
       members: scored,
+      nseMembers: nseVals.length,
+      kgeMembers: kgeVals.length,
     });
   }
   return rows;
@@ -115,7 +134,11 @@ export function skillByRun(
         ? `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`
         : dateStr;
     if (run.time.length === 0) {
-      rows.push({ label, nse: NaN, kge: NaN, pairs: 0, members: 0, skipped: 'no forecast data' });
+      rows.push({
+        label, nse: NaN, kge: NaN, pairs: 0,
+        members: 0, nseMembers: 0, kgeMembers: 0,
+        skipped: 'no forecast data',
+      });
       continue;
     }
 
@@ -142,6 +165,8 @@ export function skillByRun(
         kge: NaN,
         pairs,
         members: 0,
+        nseMembers: 0,
+        kgeMembers: 0,
         skipped:
           pairs < minPairs
             ? `only ${pairs} timestep${pairs === 1 ? '' : 's'} overlapping the event`
@@ -155,6 +180,8 @@ export function skillByRun(
       kge: median(kgeVals),
       pairs,
       members: scored,
+      nseMembers: nseVals.length,
+      kgeMembers: kgeVals.length,
     });
   }
 

@@ -210,7 +210,7 @@ export function skillBarsFigure(
       showlegend: false,
       customdata: display.map(
         (r) =>
-          [r.pairs, r.members, r.nse, bandOf(r.nse, 'nse')?.name ?? 'not scored'] as [
+          [r.pairs, r.nseMembers ?? r.members, r.nse, bandOf(r.nse, 'nse')?.name ?? 'not scored'] as [
             number, number, number, string,
           ],
       ),
@@ -229,7 +229,7 @@ export function skillBarsFigure(
       showlegend: false,
       customdata: display.map(
         (r) =>
-          [r.pairs, r.members, r.kge, bandOf(r.kge, 'kge')?.name ?? 'not scored'] as [
+          [r.pairs, r.kgeMembers ?? r.members, r.kge, bandOf(r.kge, 'kge')?.name ?? 'not scored'] as [
             number, number, number, string,
           ],
       ),
