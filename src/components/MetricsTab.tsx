@@ -9,11 +9,12 @@ import {
 } from '../lib/metrics/contingency';
 import { computeMcc } from '../lib/metrics/mcc';
 import { computeHss } from '../lib/metrics/hss';
-import { computeCsi } from '../lib/metrics/csi';
 import { climatologyFromRecord, orderedThresholds, rpsByLead, type RpsResult } from '../lib/metrics/rps';
 import { thresholdScores, type ThresholdScores } from '../lib/metrics/thresholdScores';
 import { rpsPerLeadFigure } from '../plots/rpsPerLead';
 import { categoricalCombinedFigure } from '../plots/categoricalCombined';
+import { csiByLeadFigure } from '../plots/csiByLead';
+import { csiByLead, type CsiByLead } from '../lib/metrics/csiByLead';
 import { computePeakTimingError } from '../lib/metrics/peakTiming';
 import { computePeakTimingByRun } from '../lib/metrics/peakTimingByRun';
 import { computeThresholdCrossing } from '../lib/metrics/thresholdCrossing';
@@ -444,7 +445,10 @@ export function MetricsTab() {
   const [globalCrps, setGlobalCrps] = useState<CrpsPerLead | null>(null);
   // Local rather than in AppContext: only this tab reads it, and the context's
   // dependency array is maintained by hand and already long.
-  const [csiDistribution, setCsiDistribution] = useState<PerLeadDistribution | null>(null);
+  // Pooled per lead, not median-across-members: see csiByLead's docblock for why
+  // the median construction is a coin flip at high thresholds.
+  const [csiLead, setCsiLead] = useState<CsiByLead | null>(null);
+  const [csiCategory, setCsiCategory] = useState<number>(1);
   const [rpsResult, setRpsResult] = useState<RpsResult | null>(null);
   const [thresholdRows, setThresholdRows] = useState<ThresholdScores[] | null>(null);
   const [accuracyVariant, setAccuracyVariant] = useState<MetricVariant>('raw');
@@ -683,22 +687,18 @@ export function MetricsTab() {
         app.setEventReturnPeriod(eventRp);
 
         const mccDist: PerLeadDistribution = { leads: [], values: [], pairs: [], skipped: [] };
-        const csiDist: PerLeadDistribution = { leads: [], values: [], pairs: [], skipped: [] };
         const hssDist: PerLeadDistribution = { leads: [], values: [], pairs: [], skipped: [] };
 
         for (let lead = 0; lead <= MAX_LEAD; lead++) {
           const bucket = buckets[lead];
           mccDist.leads.push(lead);
-          csiDist.leads.push(lead);
           hssDist.leads.push(lead);
 
           const pairs = countPairs(bucket, eventData);
           mccDist.pairs!.push(pairs);
-          csiDist.pairs!.push(pairs);
           hssDist.pairs!.push(pairs);
 
           const mccVals: number[] = [];
-          const csiVals: number[] = [];
           const hssVals: number[] = [];
 
           // Chance-corrected scores over a handful of timesteps are noise; leave
@@ -706,7 +706,6 @@ export function MetricsTab() {
           const tooFew = pairs < MIN_PAIRS_CORRELATION;
           mccDist.skipped!.push(tooFew ? FEW_PAIRS_REASON : null);
           hssDist.skipped!.push(tooFew ? FEW_PAIRS_REASON : null);
-          csiDist.skipped!.push(tooFew ? FEW_PAIRS_REASON : null);
 
           if (!tooFew && bucket && bucket.time.length > 0) {
             for (let m = 0; m < MEMBER_COUNT; m++) {
@@ -723,19 +722,21 @@ export function MetricsTab() {
                 if (Number.isFinite(mcc)) mccVals.push(mcc);
                 const hss = computeHss(cm.matrix);
                 if (Number.isFinite(hss)) hssVals.push(hss);
-                const csi = computeCsi(cm.matrix);
-                if (Number.isFinite(csi)) csiVals.push(csi);
               }
             }
           }
           mccDist.values.push(mccVals);
           hssDist.values.push(hssVals);
-          csiDist.values.push(csiVals);
         }
 
         app.setMccDistribution(mccDist);
         app.setHssDistribution(hssDist);
-        setCsiDistribution(csiDist);
+        // CSI is scored once per lead on the members POOLED, and at every
+        // threshold, because CSI is only defined on a 2x2 table.
+        setCsiLead(
+          csiByLead(buckets, eventData, app.obsRp!, app.simRp!, eventRp, MAX_LEAD, MEMBER_COUNT),
+        );
+        setCsiCategory(1);
 
         // RPS uses the ensemble as a distribution over categories rather than
         // scoring each member separately, so it is computed from the buckets
@@ -1618,16 +1619,6 @@ export function MetricsTab() {
                     dist: app.hssDistribution,
                     note: '0 = chance',
                   },
-                  ...(csiDistribution
-                    ? [
-                        {
-                          name: 'CSI',
-                          color: '#1baf7a',
-                          dist: csiDistribution,
-                          note: '0 = no hits, not chance',
-                        },
-                      ]
-                    : []),
                 ],
                 {
                   title: `Categorical Scores by Lead Day${riverIdSuffix}`,
@@ -1650,11 +1641,72 @@ export function MetricsTab() {
               other.
               <br />
               <br />
-              <strong>CSI is the independent one.</strong> It is hits / (hits + false alarms +
-              misses), so correct negatives never enter it — which makes it the only one of the
-              three that does not move when you lengthen the uploaded window. If MCC and HSS look
-              healthier than CSI, suspect that quiet timesteps are inflating them. Note it is not
-              a skill score: 0 means no hits were scored, not "no better than chance".
+              Both grade all {app.eventReturnPeriod ? 'the' : ''} return-period categories at once,
+              so they answer "did the forecast place the severity correctly" rather than "did it
+              call an exceedance". Both also include correct negatives, so both move when you
+              lengthen the uploaded window — measured drift over an 800-fold increase is 0.070 for
+              MCC and 0.074 for HSS. <strong>CSI is the check on that</strong>, and it now has its
+              own panel below, because it is only defined on a two-by-two table and cannot share
+              this axis honestly.
+            </PlotNote>
+          </div>
+        )}
+
+        {csiLead && csiLead.thresholds.length > 0 && (
+          <div style={subBlock}>
+            <h3 style={h3}>CSI by lead day, per exceedance threshold</h3>
+            {csiLead.thresholds.length > 1 && (
+              <label style={lbl}>
+                Threshold:&nbsp;
+                <select
+                  value={csiCategory}
+                  onChange={(e) => setCsiCategory(Number(e.target.value))}
+                  style={sel}
+                >
+                  {csiLead.thresholds.map((t) => (
+                    <option key={t.category} value={t.category}>
+                      at or above {t.label.replace('≥', '')}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <Plot
+              {...csiByLeadFigure(csiLead, {
+                title: 'CSI by Lead Day',
+                selected: csiCategory,
+                riverId: app.reach?.riverId ?? undefined,
+              })}
+            />
+            <PlotNote>
+              CSI is <strong>only defined on a two-by-two table</strong> — there is no accepted
+              multi-category version, and the standard practice is to report it once per exceedance
+              threshold, which is what the selector does. That is also why it cannot sit on the
+              MCC/HSS axis above: collapsing to "at or above the 2-year level" is an easier question
+              than grading every category, and CSI reads about 0.08 to 0.12 higher on a severe event
+              for that reason alone. Every line here is the same kind of quantity, so this axis is
+              comparable; the unselected thresholds stay faint for context.
+              <br />
+              <br />
+              <strong>Why carry it at all:</strong> it is the only score in the app that is
+              essentially exactly invariant to how long a window you uploaded. Padding an event with
+              quiet days adds only correct negatives, and CSI never touches that cell. Over an
+              800-fold increase in window length CSI moves 0.003, against 0.028 for RPSS, 0.070 for
+              MCC and 0.074 for HSS. If the chance-corrected scores look healthier than this one,
+              quiet timesteps are flattering them.
+              <br />
+              <br />
+              Scored on the {csiLead.members} members <strong>pooled into one table per lead</strong>,
+              not as the median of {csiLead.members} separate scores. The median construction
+              collapses at the high thresholds, where most members produce the same degenerate table
+              — its ability to rank a known-better forecast on a single event measures 0.576, a coin
+              flip.
+              <br />
+              <br />
+              A hollow red marker means fewer than three <em>distinct</em> observed exceedances fed
+              that lead. The hover gives the exact count, and it is the number that matters: 51
+              members scoring the same three flood days is three events, not 153. It is not a skill
+              score — 0 means no hits, not "no better than chance".
             </PlotNote>
           </div>
         )}
