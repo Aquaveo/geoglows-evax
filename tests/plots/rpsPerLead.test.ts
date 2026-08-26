@@ -18,35 +18,21 @@ const result = (over: Partial<RpsResult> = {}): RpsResult => ({
 describe('rpsPerLeadFigure axis direction', () => {
   const fig = rpsPerLeadFigure(result(), { title: 'T' });
 
-  it('captions the RPSS panel with its direction and both endpoints', () => {
-    // The top panel says "lower is better"; the bottom needs its own statement
-    // or the reader carries the wrong direction down.
-    const cap = (fig.layout.annotations ?? []).find((a) =>
-      String(a.text).includes('higher is better'),
-    )!;
-    expect(cap).toBeDefined();
-    expect(String(cap.text)).toContain('1');
-    expect(String(cap.text)).toContain('matches climatology');
-  });
-
-  it('anchors that caption to the RPSS panel, not the figure', () => {
-    // A shared legend cannot say which panel an entry describes; the panel's own
-    // domain can.
-    const cap = (fig.layout.annotations ?? []).find((a) =>
-      String(a.text).includes('higher is better'),
-    )!;
-    expect(cap.xref).toBe('x2 domain');
-    expect(cap.yref).toBe('y2 domain');
-    // Above the panel, in the gap between the two subplots.
-    expect(Number(cap.y)).toBeGreaterThan(1);
-  });
-
   it('keeps the top panel direction on its own axis', () => {
     expect(String(fig.layout.yaxis!.title!.text)).toContain('lower is better');
   });
 
-  it('leaves the RPSS axis title bare, since the caption carries it', () => {
-    expect(String(fig.layout.yaxis2!.title!.text)).toBe('RPSS');
+  it('states the RPSS direction on its own axis', () => {
+    // Both panels name their direction, because they disagree and a single
+    // labelled panel is worse than neither.
+    expect(String(fig.layout.yaxis2!.title!.text)).toBe('RPSS — higher is better');
+  });
+
+  it('adds no caption or in-plot label for the scale', () => {
+    // Only the withheld-RPSS notice may appear here.
+    const texts = (fig.layout.annotations ?? []).map((a) => String(a.text));
+    expect(texts.some((t) => t.includes('higher is better'))).toBe(false);
+    expect(texts.some((t) => t.includes('climatology'))).toBe(false);
   });
 
   it('adds no legend entry for a mark it never draws', () => {

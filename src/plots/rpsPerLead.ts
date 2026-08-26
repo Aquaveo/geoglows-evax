@@ -106,30 +106,7 @@ export function rpsPerLeadFigure(
 
   // The zero line is named in the legend rather than on the plot: at this panel
   // height an in-plot label sat on top of the leftmost bars.
-  const annotations: NonNullable<Layout['annotations']> = [
-    // Everything about the RPSS scale, said once, immediately above the panel it
-    // describes.
-    //
-    // Not in the axis title: rotated, it has ~175px in a panel a third of the
-    // figure tall. Not in the legend: the legend is shared by both panels, so an
-    // entry there cannot say which one it belongs to — and "1 = perfect" keyed a
-    // mark that is never drawn, because extending the axis to reach 1 would
-    // flatten every bar. Horizontal, inside this panel's own gap, it is
-    // unambiguous and has room.
-    {
-      xref: 'x2 domain' as const,
-      yref: 'y2 domain' as const,
-      x: 0,
-      y: 1.06,
-      text:
-        '<b>RPSS</b> — higher is better: <b>1</b> is perfect, <b>0</b> matches climatology' +
-        ' (the dark line), below 0 is worse than climatology',
-      showarrow: false,
-      xanchor: 'left' as const,
-      yanchor: 'bottom' as const,
-      font: { size: 10, color: '#52514e' },
-    },
-  ];
+  const annotations: NonNullable<Layout['annotations']> = [];
   if (noRef > 0 && refReason) {
     annotations.push({
       xref: 'paper',
@@ -177,9 +154,10 @@ export function rpsPerLeadFigure(
     yaxis2: {
       domain: [0, 0.34],
       anchor: 'x2',
-      // Bare, because the caption above the panel carries the direction and both
-      // endpoints in horizontal text with room to spare.
-      title: { text: 'RPSS' },
+      // States its direction because the panel directly above states the
+      // OPPOSITE, and one labelled panel out of two leaves the reader carrying
+      // the wrong direction downward.
+      title: { text: 'RPSS — higher is better' },
       range: [lo - 0.05, hi + 0.05],
       gridcolor: GRID,
       zeroline: true,
