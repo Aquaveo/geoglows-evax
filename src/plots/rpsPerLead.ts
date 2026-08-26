@@ -87,35 +87,6 @@ export function rpsPerLeadFigure(
       customdata: r.n.map((n) => [n] as [number]),
       hovertemplate: 'lead %{x}<br>RPSS %{y:.3f}<br>%{customdata[0]} steps<extra></extra>',
     },
-    // Scale anchors for the lower panel, in the legend rather than the axis
-    // title. Two named endpoints fix the direction between them, which a long
-    // axis title was doing less legibly in a panel only a third of the figure
-    // tall. Nothing is drawn at 1: extending the axis to reach it would flatten
-    // every bar, since a real single-event RPSS lives near 0.
-    {
-      type: 'scatter',
-      mode: 'markers',
-      x: [null],
-      y: [null],
-      xaxis: 'x2',
-      yaxis: 'y2',
-      name: '1 = perfect',
-      marker: { symbol: 'triangle-up', size: 9, color: SKILL },
-      hoverinfo: 'skip',
-      showlegend: true,
-    },
-    {
-      type: 'scatter',
-      mode: 'lines',
-      x: [null],
-      y: [null],
-      xaxis: 'x2',
-      yaxis: 'y2',
-      name: '0 = climatology',
-      line: { color: '#52514e', width: 1.5 },
-      hoverinfo: 'skip',
-      showlegend: true,
-    },
   ];
 
   const skillVals = r.rpss.filter(Number.isFinite);
@@ -135,7 +106,30 @@ export function rpsPerLeadFigure(
 
   // The zero line is named in the legend rather than on the plot: at this panel
   // height an in-plot label sat on top of the leftmost bars.
-  const annotations: NonNullable<Layout['annotations']> = [];
+  const annotations: NonNullable<Layout['annotations']> = [
+    // Everything about the RPSS scale, said once, immediately above the panel it
+    // describes.
+    //
+    // Not in the axis title: rotated, it has ~175px in a panel a third of the
+    // figure tall. Not in the legend: the legend is shared by both panels, so an
+    // entry there cannot say which one it belongs to — and "1 = perfect" keyed a
+    // mark that is never drawn, because extending the axis to reach 1 would
+    // flatten every bar. Horizontal, inside this panel's own gap, it is
+    // unambiguous and has room.
+    {
+      xref: 'x2 domain' as const,
+      yref: 'y2 domain' as const,
+      x: 0,
+      y: 1.06,
+      text:
+        '<b>RPSS</b> — higher is better: <b>1</b> is perfect, <b>0</b> matches climatology' +
+        ' (the dark line), below 0 is worse than climatology',
+      showarrow: false,
+      xanchor: 'left' as const,
+      yanchor: 'bottom' as const,
+      font: { size: 10, color: '#52514e' },
+    },
+  ];
   if (noRef > 0 && refReason) {
     annotations.push({
       xref: 'paper',
@@ -183,11 +177,9 @@ export function rpsPerLeadFigure(
     yaxis2: {
       domain: [0, 0.34],
       anchor: 'x2',
-      // Direction still stated, because the panel immediately above says the
-      // OPPOSITE ("lower is better") and one labelled panel out of two is worse
-      // than neither. The endpoints moved to the legend to keep this short — a
-      // rotated title has only ~175px here.
-      title: { text: 'RPSS — higher is better' },
+      // Bare, because the caption above the panel carries the direction and both
+      // endpoints in horizontal text with room to spare.
+      title: { text: 'RPSS' },
       range: [lo - 0.05, hi + 0.05],
       gridcolor: GRID,
       zeroline: true,

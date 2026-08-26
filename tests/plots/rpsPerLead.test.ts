@@ -18,45 +18,48 @@ const result = (over: Partial<RpsResult> = {}): RpsResult => ({
 describe('rpsPerLeadFigure axis direction', () => {
   const fig = rpsPerLeadFigure(result(), { title: 'T' });
 
-  it('states the direction on BOTH axes, since they disagree', () => {
-    // The top panel saying "lower is better" while the bottom said only "RPSS"
-    // made the lower panel read as if lower were better there too.
+  it('captions the RPSS panel with its direction and both endpoints', () => {
+    // The top panel says "lower is better"; the bottom needs its own statement
+    // or the reader carries the wrong direction down.
+    const cap = (fig.layout.annotations ?? []).find((a) =>
+      String(a.text).includes('higher is better'),
+    )!;
+    expect(cap).toBeDefined();
+    expect(String(cap.text)).toContain('1');
+    expect(String(cap.text)).toContain('matches climatology');
+  });
+
+  it('anchors that caption to the RPSS panel, not the figure', () => {
+    // A shared legend cannot say which panel an entry describes; the panel's own
+    // domain can.
+    const cap = (fig.layout.annotations ?? []).find((a) =>
+      String(a.text).includes('higher is better'),
+    )!;
+    expect(cap.xref).toBe('x2 domain');
+    expect(cap.yref).toBe('y2 domain');
+    // Above the panel, in the gap between the two subplots.
+    expect(Number(cap.y)).toBeGreaterThan(1);
+  });
+
+  it('keeps the top panel direction on its own axis', () => {
     expect(String(fig.layout.yaxis!.title!.text)).toContain('lower is better');
-    expect(String(fig.layout.yaxis2!.title!.text)).toContain('higher is better');
   });
 
-  it('keeps the RPSS axis title short enough for a third-height panel', () => {
-    // A rotated title has only ~175px here; the endpoints live in the legend.
-    const t = String(fig.layout.yaxis2!.title!.text);
-    expect(t.length).toBeLessThan(26);
-    expect(t).not.toContain('perfect');
+  it('leaves the RPSS axis title bare, since the caption carries it', () => {
+    expect(String(fig.layout.yaxis2!.title!.text)).toBe('RPSS');
   });
 
-  it('names both scale endpoints in the legend instead', () => {
+  it('adds no legend entry for a mark it never draws', () => {
+    // "1 = perfect" as a legend swatch keyed nothing on the plot: the axis
+    // cannot reach 1 without flattening every bar.
+    // showlegend is undefined on the real series, which means shown.
     const legend = fig.data
-      .filter((d) => (d as { showlegend?: boolean }).showlegend)
+      .filter((d) => (d as { showlegend?: boolean }).showlegend !== false)
       .map((d) => String((d as { name?: string }).name));
-    expect(legend).toContain('1 = perfect');
-    expect(legend).toContain('0 = climatology');
-  });
-
-  it('anchors the legend entries to the RPSS panel and plots no data for them', () => {
-    for (const name of ['1 = perfect', '0 = climatology']) {
-      const t = fig.data.find((d) => (d as { name?: string }).name === name) as {
-        yaxis?: string; x?: unknown[]; hoverinfo?: string;
-      };
-      expect(t.yaxis).toBe('y2');
-      // Nothing is drawn at 1 — extending the axis to reach it would flatten
-      // every bar, since single-event RPSS lives near zero.
-      expect(t.x).toEqual([null]);
-      expect(t.hoverinfo).toBe('skip');
-    }
-  });
-
-  it('does not also label the zero line inside the plot', () => {
-    // At this panel height an in-plot label sat on the leftmost bars.
-    const texts = (fig.layout.annotations ?? []).map((a) => String(a.text));
-    expect(texts.some((t) => t.includes('climatology'))).toBe(false);
+    expect(legend).not.toContain('1 = perfect');
+    expect(legend).not.toContain('0 = climatology');
+    // The real series are still there.
+    expect(legend.some((n) => n.includes('RPS'))).toBe(true);
   });
 
   it('explains a withheld RPSS on the panel rather than leaving a gap', () => {
