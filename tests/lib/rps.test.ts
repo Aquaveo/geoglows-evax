@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { categoryOf, climatologyFromRecord, rpsOne } from '../../src/lib/metrics/rps';
+import { categoryOf, climatologyFromRecord, rpsByLead, rpsOne } from '../../src/lib/metrics/rps';
 import { thresholdScores } from '../../src/lib/metrics/thresholdScores';
 
 describe('rpsOne', () => {
@@ -110,5 +110,82 @@ describe('thresholdScores', () => {
     for (const r of rows) {
       expect(r.hits + r.falseAlarms + r.misses + r.correctNegatives).toBe(total);
     }
+  });
+});
+
+describe('RPSS on a near-miss event — the degenerate-reference guard', () => {
+  // The audit's A1: when nothing in the scored window crosses even the lowest
+  // threshold, the climatological reference is right by default, its RPS
+  // collapses toward zero, and 1 - rps/rpsClim explodes. Measured on a real
+  // near-miss: rpsClim 8.7e-6, RPSS -2266 to -3421, which then set the panel
+  // axis and crushed every other bar to under 0.1% of the plot height.
+  const THR = 233.1;
+  const day = (d: number) => new Date(Date.UTC(2025, 6, d));
+  const obsThr = [THR];
+  const simThr = [THR];
+
+  /** 20 days peaking at 92% of the 2-year threshold — a near miss. */
+  const peakAt = (frac: number) => ({
+    time: Array.from({ length: 20 }, (_, i) => day(1 + i)),
+    values: Array.from({ length: 20 }, (_, i) =>
+      20 + (THR * frac - 20) * Math.exp(-((i - 10) ** 2) / 8),
+    ),
+  });
+  // A long, mostly quiet record, so climatology puts nearly all mass below 2yr.
+  const record = {
+    time: Array.from({ length: 4000 }, (_, i) => new Date(Date.UTC(2000, 0, 1) + i * 86400000)),
+    values: Array.from({ length: 4000 }, (_, i) => (i % 700 === 0 ? THR * 1.4 : 30 + (i % 17))),
+  };
+  const clim = climatologyFromRecord(record, obsThr);
+
+  const bucketsFor = (obs: { time: Date[]; values: number[] }) => {
+    const b: Record<number, { time: Date[]; members: number[][] }> = {};
+    for (let lead = 0; lead <= 3; lead++) {
+      b[lead] = {
+        time: obs.time,
+        // Members spread around the observation — a real forecast, not a perfect one.
+        members: obs.values.map((v) =>
+          Array.from({ length: 51 }, (_, m) => v * (0.6 + (m % 11) * 0.09)),
+        ),
+      };
+    }
+    return b;
+  };
+
+  it('confirms the reference really is near-perfect on a quiet window', () => {
+    // This is the mechanism, not an assumption: climatology assigns almost all
+    // its mass to "below 2yr", and that is what happened at every timestep.
+    expect(clim[0]).toBeGreaterThan(0.99);
+    expect(rpsOne(clim, 0)).toBeLessThan(1e-3);
+  });
+
+  it('scores RPS but declines RPSS, instead of emitting a huge negative', () => {
+    const near = peakAt(0.92);
+    const res = rpsByLead(bucketsFor(near), near, obsThr, simThr, clim, {
+      maxLead: 3,
+      minPairs: 5,
+    });
+    for (let i = 0; i < res.leads.length; i++) {
+      expect(res.exceedances[i]).toBe(0);
+      // RPS is a proper score and still stands on its own.
+      expect(Number.isFinite(res.rps[i])).toBe(true);
+      expect(Number.isNaN(res.rpss[i])).toBe(true);
+      expect(res.rpssSkipped[i]).toMatch(/no observed exceedance/);
+      // The lead is NOT marked wholly unscored — RPS was scored.
+      expect(res.skipped[i]).toBeNull();
+    }
+  });
+
+  it('leaves RPSS finite and readable once the event crosses the threshold', () => {
+    const real = peakAt(1.6);
+    const res = rpsByLead(bucketsFor(real), real, obsThr, simThr, clim, {
+      maxLead: 3,
+      minPairs: 5,
+    });
+    expect(res.exceedances[0]).toBeGreaterThan(0);
+    expect(Number.isFinite(res.rpss[0])).toBe(true);
+    expect(res.rpssSkipped[0]).toBeNull();
+    // In a readable range rather than the thousands.
+    expect(res.rpss[0]).toBeGreaterThan(-20);
   });
 });

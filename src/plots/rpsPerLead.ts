@@ -94,9 +94,36 @@ export function rpsPerLeadFigure(
   const hi = Math.max(0.2, maxOf(skillVals, 0.2));
 
   const unscored = r.skipped.filter(Boolean).length;
-  const note = unscored > 0 ? `  |  ${unscored} lead${unscored === 1 ? '' : 's'} unscored` : '';
+  // A lead whose RPS scored but whose RPSS is undefined is a different outcome
+  // from an unscored lead, and it needs saying: otherwise the RPSS panel just
+  // has a gap and the reader assumes a bug rather than a reference that was
+  // never contested.
+  const noRef = (r.rpssSkipped ?? []).filter(Boolean).length;
+  const refReason = (r.rpssSkipped ?? []).find(Boolean) ?? null;
+  const note =
+    (unscored > 0 ? `  |  ${unscored} lead${unscored === 1 ? '' : 's'} unscored` : '') +
+    (noRef > 0 ? `  |  RPSS undefined at ${noRef} lead${noRef === 1 ? '' : 's'}` : '');
+
+  const annotations: NonNullable<Layout['annotations']> = [];
+  if (noRef > 0 && refReason) {
+    annotations.push({
+      xref: 'paper',
+      yref: 'y2 domain',
+      x: 0.5,
+      y: 0.5,
+      text: `RPSS not shown — ${refReason}`,
+      showarrow: false,
+      xanchor: 'center',
+      font: { size: 11, color: '#8a6d1f' },
+      bgcolor: 'rgba(253,246,227,0.92)',
+      bordercolor: '#e6d9ae',
+      borderwidth: 1,
+      borderpad: 5,
+    });
+  }
 
   const layout: Partial<Layout> = {
+    annotations,
     title: {
       text:
         `${opts.title ?? 'Ranked probability score by lead day'}` +

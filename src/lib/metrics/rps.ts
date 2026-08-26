@@ -54,20 +54,40 @@ export function rpsOne(probs: number[], observedCat: number): number {
   return total;
 }
 
+/**
+ * Below this, a climatological RPS is treated as untested rather than skilful.
+ *
+ * A backstop only — the structural test (was there any observed exceedance at
+ * all) is what actually catches the real case. Set well under any reference a
+ * genuinely contested window produces: a real near-miss event measured 8.7e-6
+ * here, while a flood-dominated window measures ~1e0.
+ */
+const MIN_REFERENCE_RPS = 1e-3;
+
 export interface RpsResult {
   leads: number[];
   /** Mean RPS of the ensemble at each lead. Lower is better. */
   rps: number[];
   /** Mean RPS of the climatological reference over the same timesteps. */
   rpsClim: number[];
-  /** 1 − rps/rpsClim. NaN where the reference is zero. */
+  /** 1 − rps/rpsClim. NaN where the reference is degenerate — see `rpssSkipped`. */
   rpss: number[];
   /** Timesteps behind each lead. */
   n: number[];
   /** Climatological category probabilities used as the reference. */
   climatology: number[];
-  /** Set when a lead could not be scored. */
+  /** Set when a lead could not be scored at all. */
   skipped: (string | null)[];
+  /**
+   * Set when RPS was scored but RPSS is not defined, and why.
+   *
+   * Separate from `skipped` because these are different outcomes: RPS is a
+   * proper score and stands on its own, while RPSS is a ratio that needs a
+   * reference which was actually put to the test.
+   */
+  rpssSkipped: (string | null)[];
+  /** Observed exceedances of the lowest threshold behind each lead. */
+  exceedances: number[];
 }
 
 /**
@@ -129,6 +149,8 @@ export function rpsByLead(
     n: [],
     climatology,
     skipped: [],
+    rpssSkipped: [],
+    exceedances: [],
   };
 
   const obsAt = new Map<number, number>();
@@ -145,13 +167,16 @@ export function rpsByLead(
       out.rpsClim.push(Number.NaN);
       out.rpss.push(Number.NaN);
       out.n.push(0);
+      out.exceedances.push(0);
       out.skipped.push('no forecast data');
+      out.rpssSkipped.push(null);
       continue;
     }
 
     let sum = 0;
     let sumClim = 0;
     let n = 0;
+    let exceedances = 0;
     for (let t = 0; t < bucket.time.length; t++) {
       const o = obsAt.get(bucket.time[t].getTime());
       if (o === undefined) continue;
@@ -169,6 +194,7 @@ export function rpsByLead(
       if (m === 0) continue;
       const probs = counts.map((c) => c / m);
       const obsCat = categoryOf(o, obsThresholds);
+      if (obsCat > 0) exceedances += 1;
       sum += rpsOne(probs, obsCat);
       sumClim += rpsOne(climatology, obsCat);
       n += 1;
@@ -179,16 +205,40 @@ export function rpsByLead(
       out.rpsClim.push(Number.NaN);
       out.rpss.push(Number.NaN);
       out.n.push(n);
+      out.exceedances.push(exceedances);
       out.skipped.push(`only ${n} overlapping timestep${n === 1 ? '' : 's'}`);
+      out.rpssSkipped.push(null);
       continue;
     }
     const rps = sum / n;
     const rpsClim = sumClim / n;
     out.rps.push(rps);
     out.rpsClim.push(rpsClim);
-    out.rpss.push(rpsClim === 0 ? Number.NaN : 1 - rps / rpsClim);
     out.n.push(n);
+    out.exceedances.push(exceedances);
     out.skipped.push(null);
+
+    // RPSS needs a reference that was actually tested.
+    //
+    // If nothing in the scored window crossed even the lowest threshold, the
+    // climatological reference was right at every timestep almost by
+    // construction: it puts ~99.7% of its mass on "below the 2-year level" and
+    // that is what happened. Its RPS collapses toward zero — measured at 8.7e-6
+    // on a real near-miss event — and RPSS = 1 − rps/rpsClim explodes. Guarding
+    // only `rpsClim === 0` let that through: a moderate event produced RPSS of
+    // −2266 to −3421, which then set the panel's axis and compressed every other
+    // lead's bar to under a tenth of a percent of the plot height.
+    //
+    // The structural test is the real guard; the floor is a backstop for any
+    // other route to a near-perfect reference.
+    const reason =
+      exceedances === 0
+        ? 'no observed exceedance in this window, so the climatological reference is right by default'
+        : rpsClim < MIN_REFERENCE_RPS
+          ? 'climatological reference is degenerate (RPS below ' + MIN_REFERENCE_RPS + ')'
+          : null;
+    out.rpss.push(reason ? Number.NaN : 1 - rps / rpsClim);
+    out.rpssSkipped.push(reason);
   }
   return out;
 }
