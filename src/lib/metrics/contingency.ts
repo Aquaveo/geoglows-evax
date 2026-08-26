@@ -79,6 +79,21 @@ export function categoryLabels(eventRp: number): string[] {
 }
 
 /**
+ * Labels for the EXCEEDANCE rows, e.g. ["<2yr", "≥2yr", "≥5yr", …].
+ *
+ * Distinct from `categoryLabels`, and the distinction is not cosmetic. Those are
+ * BAND labels — "2–5yr" names the cells of the contingency matrix, which is
+ * right there because a cell really is a band. But a threshold-score row is a
+ * DICHOTOMISATION at category k, "at or above the k-th level", which lumps every
+ * band from k upward together. Labelling row k "2–5yr" under a column headed
+ * "At or above" names the wrong set: that row includes the 100-year days too.
+ */
+export function exceedanceLabels(eventRp: number): string[] {
+  const cats = validCategories(eventRp);
+  return cats.map((c, i) => (i === 0 ? '<2yr' : `≥${c}yr`));
+}
+
+/**
  * Classify a flow value into a return-period category using the given thresholds.
  * Mirrors the notebook's `classify_series`. Categories are bounded by eventRp;
  * values at or above thresholds[eventRp] map to eventRp (the top category).

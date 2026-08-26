@@ -5,6 +5,7 @@ import type { LeadBucket, RpThresholds, TimeSeries } from '../lib/types';
 import {
   buildContingencyMatrix,
   determineEventReturnPeriod,
+  exceedanceLabels,
   type ContingencyResult,
 } from '../lib/metrics/contingency';
 import { computeMcc } from '../lib/metrics/mcc';
@@ -768,7 +769,12 @@ export function MetricsTab() {
           app.simRp!,
           eventRp,
         );
-        const labels = pooled.labels;
+        // The per-threshold table's rows are dichotomisations — "at or above
+        // level k" — so they need exceedance labels. pooled.labels are BAND
+        // labels ("2–5yr"), which are right for the contingency matrix axes,
+        // where a cell really is a band, and wrong for a row that lumps every
+        // band above k in with it.
+        const rowLabels = exceedanceLabels(eventRp);
         const agg = pooled.matrix.map((row) => row.map(() => 0));
         for (let lead = 0; lead <= MAX_LEAD; lead++) {
           const b = buckets[lead];
@@ -787,7 +793,7 @@ export function MetricsTab() {
             }
           }
         }
-        setThresholdRows(thresholdScores(agg, labels));
+        setThresholdRows(thresholdScores(agg, rowLabels));
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {

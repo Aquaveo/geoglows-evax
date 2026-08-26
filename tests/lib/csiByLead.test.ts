@@ -40,7 +40,10 @@ describe('csiByLead', () => {
     )!;
     // eventRp 10 -> categories [0,2,5,10] -> 3 dichotomisations.
     expect(r.thresholds.map((t) => t.category)).toEqual([1, 2, 3]);
-    expect(r.thresholds.map((t) => t.label)).toEqual(['2–5yr', '5–10yr', '≥10yr']);
+    // Exceedance labels, not band labels. Row k is the dichotomisation "at or
+    // above level k", so it includes every band above k — calling it "2–5yr"
+    // named a set the row does not represent.
+    expect(r.thresholds.map((t) => t.label)).toEqual(['≥2yr', '≥5yr', '≥10yr']);
   });
 
   it('agrees with computeCsi on every threshold of the pooled matrix it built', () => {

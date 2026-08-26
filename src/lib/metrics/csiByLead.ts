@@ -1,6 +1,6 @@
 import { memberSeries } from '../leadBuckets';
 import type { LeadBuckets, RpThresholds, TimeSeries } from '../types';
-import { buildContingencyMatrix, categoryLabels, validCategories } from './contingency';
+import { buildContingencyMatrix, exceedanceLabels, validCategories } from './contingency';
 import { computeCsi } from './csi';
 
 /**
@@ -37,7 +37,7 @@ import { computeCsi } from './csi';
 export interface CsiThresholdSeries {
   /** Threshold category index into the matrix, 1-based. */
   category: number;
-  /** Display label, e.g. "≥10yr". */
+  /** Display label for the exceedance level, e.g. "≥10yr". */
   label: string;
   /** CSI per lead. NaN where nothing was observed or forecast at this level. */
   csi: number[];
@@ -76,7 +76,9 @@ export function csiByLead(
   memberCount = 51,
 ): CsiByLead | null {
   const cats = validCategories(eventRp);
-  const labels = categoryLabels(eventRp);
+  // Exceedance labels, not band labels: each row is "at or above level k",
+  // which includes every band above k as well.
+  const labels = exceedanceLabels(eventRp);
   const K = cats.length;
   // K = 1 means the observations never crossed the lowest threshold, so there is
   // no exceedance to score at any level.
