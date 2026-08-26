@@ -41,6 +41,7 @@ import { divergingBarsFigure, type DivergingRow } from '../plots/divergingBars';
 import { maxOf } from '../lib/arrayStats';
 import { pickDefaultRun } from '../lib/defaultRun';
 import { aggregationImpact } from '../lib/ingest/aggregationImpact';
+import { gridRun } from '../lib/ingest/gridRun';
 import {
   variantComparison,
   improvement,
@@ -1294,14 +1295,12 @@ export function MetricsTab() {
     // as everything else so the numbers are comparable with the per-lead bars.
     const gridded = new Map<string, { time: Date[]; discharge: number[][] }>();
     for (const [date, run] of app.forecasts) {
-      const perMember = run.discharge.map((series) =>
-        aggregateSeries({ time: run.time, values: series }, grid.stepMs, 'mean'),
-      );
-      if (perMember.length === 0) continue;
-      gridded.set(date, {
-        time: perMember[0].time,
-        discharge: perMember.map((s) => s.values),
-      });
+      // Every member on one shared bin set. Gridding them separately and
+      // reusing member 0's timestamps slid any member with a gap one step
+      // earlier — see gridRun.
+      const g = gridRun(run, grid.stepMs, 'mean');
+      if (!g) continue;
+      gridded.set(date, g);
     }
     const obs = aggregateSeries(app.eventData, grid.stepMs, 'mean');
     return skillByRun(gridded, obs, { minPairs: MIN_PAIRS_CORRELATION });
@@ -1353,14 +1352,9 @@ export function MetricsTab() {
     if (correction.selectionBias) return null;
     const griddedRuns = new Map<string, { time: Date[]; discharge: number[][] }>();
     for (const [date, run] of correction.forecasts) {
-      const perMember = run.discharge.map((series) =>
-        aggregateSeries({ time: run.time, values: series }, grid.stepMs, 'mean'),
-      );
-      if (perMember.length === 0) continue;
-      griddedRuns.set(date, {
-        time: perMember[0].time,
-        discharge: perMember.map((x) => x.values),
-      });
+      const g = gridRun(run, grid.stepMs, 'mean');
+      if (!g) continue;
+      griddedRuns.set(date, g);
     }
     const obs = aggregateSeries(app.eventData, grid.stepMs, 'mean');
     const rows = skillByRun(griddedRuns, obs, { minPairs: MIN_PAIRS_CORRELATION });
@@ -1397,14 +1391,9 @@ export function MetricsTab() {
     // transform keeps every run, which is the point of offering it.
     const griddedRuns = new Map<string, { time: Date[]; discharge: number[][] }>();
     for (const [date, run] of globalCorrection.forecasts) {
-      const perMember = run.discharge.map((series) =>
-        aggregateSeries({ time: run.time, values: series }, grid.stepMs, 'mean'),
-      );
-      if (perMember.length === 0) continue;
-      griddedRuns.set(date, {
-        time: perMember[0].time,
-        discharge: perMember.map((x) => x.values),
-      });
+      const g = gridRun(run, grid.stepMs, 'mean');
+      if (!g) continue;
+      griddedRuns.set(date, g);
     }
     const obs = aggregateSeries(app.eventData, grid.stepMs, 'mean');
     const rows = skillByRun(griddedRuns, obs, { minPairs: MIN_PAIRS_CORRELATION });
