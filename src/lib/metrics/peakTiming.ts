@@ -70,7 +70,7 @@ export function computePeakTiming(
   if (fcst == null || obs == null) return { deltaHours: null, reason: 'no-overlap' };
   // The forecast side is the one being judged; a degenerate observed series is
   // an upload problem and surfaces as no-overlap for every member alike.
-  if (fcst.tied) return { deltaHours: null, reason: 'no-distinct-peak' };
+  if (fcst.flat) return { deltaHours: null, reason: 'no-distinct-peak' };
   if (fcst.atEdge) return { deltaHours: null, reason: 'peak-at-window-edge' };
 
   return { deltaHours: (fcst.time - obs.time) / HOUR_MS, reason: null };
@@ -86,16 +86,26 @@ export function computePeakTimingError(
 
 interface Argmax {
   time: number;
-  /** The maximum is attained at more than one timestep, so there is no argmax. */
-  tied: boolean;
+  /**
+   * Every finite value in the window is the same, so there is no peak at all.
+   *
+   * Distinct from a maximum shared by a few adjacent timesteps, which is a crest
+   * with a plateau and IS a peak. Rejecting any tie discarded those — and a
+   * saturated bias correction maps neighbouring values to exactly the same
+   * number, so they are what the corrected variants produce.
+   */
+  flat: boolean;
   /** It is the first or last finite sample in the window. */
   atEdge: boolean;
 }
 
 function argmaxInWindow(s: TimeSeries, start: number, end: number): Argmax | null {
   let bestT: number | null = null;
+  let lastPlateauT: number | null = null;
   let bestV = -Infinity;
-  let ties = 0;
+  let distinct = 0;
+  let prevV = Number.NaN;
+  let prevT: number | null = null;
   let firstT: number | null = null;
   let lastT: number | null = null;
 
@@ -106,14 +116,28 @@ function argmaxInWindow(s: TimeSeries, start: number, end: number): Argmax | nul
     if (!Number.isFinite(v)) continue;
     if (firstT == null) firstT = ms;
     lastT = ms;
+    if (v !== prevV) {
+      distinct += 1;
+      prevV = v;
+    }
     if (v > bestV) {
       bestV = v;
+      // FIRST attainment: the time to peak is when the flow reaches its
+      // maximum, and it must match the observed side, which keeps the first of
+      // any ties too.
       bestT = ms;
-      ties = 1;
-    } else if (v === bestV) {
-      ties += 1;
+      lastPlateauT = ms;
+    } else if (v === bestV && prevT === lastPlateauT) {
+      // Contiguous continuation of the same crest, tracked only so the edge
+      // test can see whether the plateau runs to the window's end.
+      lastPlateauT = ms;
     }
+    prevT = ms;
   }
   if (bestT == null) return null;
-  return { time: bestT, tied: ties > 1, atEdge: bestT === firstT || bestT === lastT };
+  return {
+    time: bestT,
+    flat: distinct <= 1,
+    atEdge: bestT === firstT || lastPlateauT === lastT,
+  };
 }

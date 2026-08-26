@@ -48,25 +48,45 @@ describe('a crest with a flat top is still a peak', () => {
     expect(r.values.flat().flat()).toEqual([12]);
   });
 
-  it('times a two-step plateau at its midpoint', () => {
-    // Rejecting any tie discarded exactly the members a saturated bias
-    // correction produces, since saturation maps neighbours to the same number.
+  it('times a plateau at its FIRST sample, not its midpoint', () => {
+    // Time to peak is when the flow reaches its maximum; the rest of the plateau
+    // is the crest holding rather than arriving, and operationally the first
+    // moment is what a warning is issued against.
+    //
+    // It also has to match the other side of the subtraction: the observed peak
+    // is found with `v > obsPeakVal`, which keeps the first of any ties. Timing
+    // the forecast at a midpoint instead biased every plateau Δt LATE by half
+    // the plateau's width — an offset produced by the estimator, not the
+    // forecast.
     const r = computePeakTimingByRun(
       run((i) => (i === 16 || i === 17 ? 320 : crest(i))),
       eventData,
     );
-    // Midway between +12 h and +18 h — leaning neither early nor late.
-    expect(r.values.flat().flat()).toEqual([15]);
+    // Index 16, the same answer a single-valued crest at 16 gives.
+    expect(r.values.flat().flat()).toEqual([12]);
     expect(r.noPeakMembers).toBe(0);
   });
 
-  it('times a three-step plateau at its centre', () => {
+  it('times a three-step plateau at its first sample too', () => {
     const r = computePeakTimingByRun(
       run((i) => (i >= 15 && i <= 17 ? 320 : crest(i))),
       eventData,
     );
-    expect(r.values.flat().flat()).toEqual([12]);
+    expect(r.values.flat().flat()).toEqual([6]);
     expect(r.noPeakMembers).toBe(0);
+  });
+
+  it('gives a plateau the same time as a single-valued crest starting there', () => {
+    // The consistency the first-sample rule buys: widening a crest into a
+    // plateau must not move its timing.
+    const single = computePeakTimingByRun(run(crest), eventData).values.flat().flat();
+    const plateau = computePeakTimingByRun(
+      run((i) => (i === 16 || i === 17 ? crest(16) : crest(i))),
+      eventData,
+    )
+      .values.flat()
+      .flat();
+    expect(plateau).toEqual(single);
   });
 
   it('still reports no peak when the member is flat throughout', () => {

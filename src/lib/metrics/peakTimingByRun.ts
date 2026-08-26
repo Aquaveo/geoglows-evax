@@ -207,12 +207,18 @@ export function computePeakTimingByRun(
         continue;
       }
 
-      // A plateau's midpoint. The peak time is ambiguous across the plateau's
-      // width, not undefined, and the midpoint is the only choice that does not
-      // lean early or late.
-      const peakMs =
-        (run.time[plateauStart].getTime() + run.time[plateauEnd].getTime()) / 2;
-      deltas.push((peakMs - obsPeakMs) / HOUR_MS);
+      // A plateau is timed at its FIRST sample: the time to peak is when the
+      // flow reaches its maximum, and the rest of the plateau is the crest
+      // holding rather than arriving. Operationally that first moment is the one
+      // a warning is issued against.
+      //
+      // It also has to match the other side of this subtraction. The observed
+      // peak above is found with `v > obsPeakVal`, which keeps the first of any
+      // ties, and the by-lead module does the same. Timing the forecast at a
+      // plateau's midpoint instead would bias every such Δt LATE by half the
+      // plateau's width — a systematic offset produced by the estimator rather
+      // than by the forecast.
+      deltas.push((run.time[plateauStart].getTime() - obsPeakMs) / HOUR_MS);
     }
 
     // A run with nothing left after censoring gets counted but not plotted —

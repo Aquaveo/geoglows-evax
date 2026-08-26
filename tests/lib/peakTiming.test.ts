@@ -71,3 +71,29 @@ describe('computePeakTiming exclusions are facts, not thresholds', () => {
     expect(computePeakTiming(far, obs).reason).toBe('no-overlap');
   });
 });
+
+describe('plateaux in the by-lead module', () => {
+  it('times a plateau at its first sample, matching the by-run module', () => {
+    // Both sides of Δt must use the same tie rule. The observed argmax keeps the
+    // first of any ties, so the forecast has to as well or every plateau reads
+    // late by half its width.
+    const plateau = series((i) => (i === 40 || i === 41 ? 500 : at(i)));
+    const single = series((i) => (i === 40 ? 500 : at(i)));
+    const a = computePeakTiming(plateau, obs);
+    const b = computePeakTiming(single, obs);
+    expect(a.reason).toBeNull();
+    expect(a.deltaHours).toBe(b.deltaHours);
+  });
+
+  it('still reports no peak only when the member is flat throughout', () => {
+    expect(computePeakTiming(series(() => 60), obs).reason).toBe('no-distinct-peak');
+    expect(computePeakTiming(series((i) => (i === 40 || i === 41 ? 500 : at(i))), obs).reason)
+      .toBeNull();
+  });
+
+  it('censors a plateau that runs to the window edge', () => {
+    // The peak may continue past the window, so Δt would be a bound.
+    const toEdge = series((i) => (i >= 80 ? 900 : at(i)));
+    expect(computePeakTiming(toEdge, obs).reason).toBe('peak-at-window-edge');
+  });
+});
