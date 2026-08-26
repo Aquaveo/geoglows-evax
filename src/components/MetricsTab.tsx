@@ -39,6 +39,7 @@ import { correctionEffectByLead } from '../lib/bias/correctionEffect';
 import { dumbbellFigure, type DumbbellRow } from '../plots/dumbbell';
 import { divergingBarsFigure, type DivergingRow } from '../plots/divergingBars';
 import { maxOf } from '../lib/arrayStats';
+import { pickDefaultRun } from '../lib/defaultRun';
 import {
   variantComparison,
   improvement,
@@ -1506,8 +1507,25 @@ export function MetricsTab() {
       for (const k of globalCorrection.forecasts.keys()) d.add(k);
     return [...d].sort();
   }, [correction, globalCorrection]);
+  /**
+   * Which run this panel opens on.
+   *
+   * Was `biasRunDates[0]` — the EARLIEST initialization, whose 15-day horizon
+   * ends before the event begins, since runs are fetched from
+   * eventStart − INIT_LOOKBACK_DAYS. The panel therefore opened on a forecast
+   * that could not show the flood it is meant to be diagnosing: raw and
+   * corrected traces sitting at baseflow, weeks to the left of the observed
+   * crest.
+   *
+   * pickDefaultRun chooses a run that actually forecast the crest, preferring
+   * the crest a few days into its horizon so the rise, the peak and some
+   * recession are all visible. The same helper the Forecast tab uses, so both
+   * land on the same run. A manual choice still wins, and survives.
+   */
   const activeBiasRun =
-    biasRunDate && biasRunDates.includes(biasRunDate) ? biasRunDate : (biasRunDates[0] ?? null);
+    biasRunDate && biasRunDates.includes(biasRunDate)
+      ? biasRunDate
+      : pickDefaultRun(biasRunDates, app.eventData, MAX_LEAD);
 
   // Peak timing grouped by how far ahead of the observed peak each run was
   // issued. Works straight off the raw forecasts — no lead buckets needed, so
@@ -2516,9 +2534,19 @@ export function MetricsTab() {
               entry to bring the zones in when they are in range.
               <br />
               <br />
+              Opens on a run whose horizon actually spans the observed crest, rather than the
+              earliest one available. Runs are fetched from 15 days before the event, so the
+              earliest initialization finishes before the flood begins — its raw and corrected
+              traces sit at baseflow, weeks to the left of anything worth comparing. Drag the
+              selector to watch the correction's effect change as the forecast closes on the event.
+              <br />
+              <br />
               The run list is the union of both corrections: the local map drops runs whose mapping
               ran to infinity, while SABER drops none, so a run can be available for one and not
-              the other. The title and legend always name which correction is drawn.
+              the other. If none of the survivors reaches the crest — which happens when the local
+              map excluded exactly the runs that forecast the event — this falls back to the middle
+              of the list, and the selection-bias banner above will be saying why. The title and
+              legend always name which correction is drawn.
             </PlotNote>
           </div>
         )}
