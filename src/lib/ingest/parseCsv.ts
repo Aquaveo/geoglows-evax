@@ -9,6 +9,18 @@ export interface CsvParseResult {
   valueColumn: string;
   /** Rows skipped because of unparseable datetime or non-numeric value. */
   skipped: number;
+  /**
+   * Negative readings clamped up to 0.
+   *
+   * Counted because downstream this is indistinguishable from a genuine zero
+   * flow, and the two mean opposite things. An intermittent river really does
+   * read 0 and its record should contain zeros; a perennial one reads negative
+   * only from backwater, ice or a drifting sensor, and clamping manufactures a
+   * zero that was never observed. Bias correction is sensitive to the difference
+   * — a single value in the record's lowest bin changes how every below-range
+   * forecast is mapped — so the count has to survive parsing.
+   */
+  clampedNegatives: number;
 }
 
 /**
@@ -43,6 +55,7 @@ export async function parseDischargeCsv(input: File | string): Promise<CsvParseR
         const time: Date[] = [];
         const values: number[] = [];
         let skipped = 0;
+        let clampedNegatives = 0;
 
         for (const row of result.data) {
           const tRaw = row[timeColumn];
@@ -58,6 +71,7 @@ export async function parseDischargeCsv(input: File | string): Promise<CsvParseR
             continue;
           }
           time.push(d);
+          if (n < 0) clampedNegatives += 1;
           values.push(n < 0 ? 0 : n);
         }
 
@@ -65,7 +79,7 @@ export async function parseDischargeCsv(input: File | string): Promise<CsvParseR
           reject(new Error('CSV had no parseable (datetime, discharge) rows.'));
           return;
         }
-        resolve({ series: { time, values }, timeColumn, valueColumn, skipped });
+        resolve({ series: { time, values }, timeColumn, valueColumn, skipped, clampedNegatives });
       },
       error: (err) => reject(err),
     });

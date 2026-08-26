@@ -348,8 +348,15 @@ export function OverviewTab() {
             real low flow into <strong>exactly 0</strong>. A single 0 in your record flips every
             sub-minimum timestep between the two — and a clamped negative gauge reading is exactly
             such a value. This is what the reference does and the app matches it bit for bit, so the
-            banner counts both outcomes rather than changing either. A corrected low flow reading 0
-            is an artefact of the mapping, not a forecast of no water.
+            banner counts both outcomes rather than changing either.
+            <br />
+            Whether the zeros are <em>right</em> depends on the river. An intermittent one genuinely
+            reads 0, its observed distribution genuinely has mass there, and mapping the lowest
+            forecasts onto it is the correction working. A perennial one reads negative only from
+            backwater, ice or a drifting sensor — and those are clamped up to 0 on upload, so the
+            zeros are manufactured and the correction inherits them. The banner reports how many
+            negative readings your record had clamped, which is the number that separates the two
+            cases.
           </li>
           <li>
             <strong>The distributions are daily.</strong> Forecasts are typically sub-daily, so

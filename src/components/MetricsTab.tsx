@@ -460,7 +460,7 @@ function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
 }
 
 /** What the correction actually did, so corrected numbers are never unexplained. */
-function CorrectionBanner({ c }: { c: BiasCorrection }) {
+function CorrectionBanner({ c, clampedNegatives }: { c: BiasCorrection; clampedNegatives: number }) {
   return (
     <div style={correctionBanner}>
       {c.selectionBias && (
@@ -502,12 +502,28 @@ function CorrectionBanner({ c }: { c: BiasCorrection }) {
             <strong>{c.zeroedBelowRange.toLocaleString()}</strong> member-timestep
             {c.zeroedBelowRange === 1 ? '' : 's'} held a positive flow that the mapping turned into{' '}
             <strong>exactly 0</strong>. These sat below the simulated monthly minimum, where the
-            mapping extrapolates off the bottom of the observed distribution. Whether such a value
-            is kept raw or zeroed depends on whether your observed record has anything in its lowest
-            histogram bin — a single 0, which is what a clamped negative gauge reading becomes,
-            flips every one of them. This matches the reference implementation and is reported
-            rather than changed, but low flows reading 0 in the corrected output are not a real
-            forecast of no water.
+            mapping runs off the bottom of the observed distribution and lands on its lowest value.
+            <br />
+            <strong>Whether that is right depends on your river.</strong> On an intermittent river
+            the gauge genuinely reads 0, the observed distribution genuinely has mass there, and
+            mapping the lowest forecasts onto it is the correction working as intended. On a
+            perennial river a 0 in the record usually is not an observation at all — negative
+            readings from backwater, ice or a drifting sensor are clamped up to 0 on upload — and
+            then the zeros here are an artefact of that clamp rather than a forecast of no water.
+            Your record{' '}
+            {clampedNegatives > 0 ? (
+              <>
+                had <strong>{clampedNegatives.toLocaleString()}</strong> negative reading
+                {clampedNegatives === 1 ? '' : 's'} clamped to 0, so treat these with suspicion
+                unless the river really does run dry.
+              </>
+            ) : (
+              <>
+                had <strong>no</strong> negative readings clamped, so any zeros in it were observed
+                rather than manufactured.
+              </>
+            )}{' '}
+            The arithmetic matches the reference either way and is reported rather than changed.
           </li>
         )}
         {c.nanKeptRaw > 0 && (
@@ -2186,7 +2202,7 @@ export function MetricsTab() {
               disabledReason={correctedAccuracy ? null : correctedUnavailableReason}
               globalDisabledReason={globalUnavailableReason}
             />
-            {accuracyVariant === 'corrected' && correction && <CorrectionBanner c={correction} />}
+            {accuracyVariant === 'corrected' && correction && <CorrectionBanner c={correction} clampedNegatives={app.historicalClampedNegatives} />}
             {accuracyVariant === 'global' && globalCorrection && (
               <GlobalCorrectionBanner c={globalCorrection} />
             )}
@@ -2356,7 +2372,7 @@ export function MetricsTab() {
           <GlobalCorrectionBanner c={globalCorrection} />
         )}
 
-        {correction && <CorrectionBanner c={correction} />}
+        {correction && <CorrectionBanner c={correction} clampedNegatives={app.historicalClampedNegatives} />}
 
         {/*
           One selector for the whole section rather than a pair of panels per
@@ -2526,7 +2542,7 @@ export function MetricsTab() {
               disabledReason={skillLeadCorrected ? null : correctedUnavailableReason}
               globalDisabledReason={globalUnavailableReason}
             />
-            {skillVariant === 'corrected' && correction && <CorrectionBanner c={correction} />}
+            {skillVariant === 'corrected' && correction && <CorrectionBanner c={correction} clampedNegatives={app.historicalClampedNegatives} />}
             {skillVariant === 'global' && globalCorrection && (
               <GlobalCorrectionBanner c={globalCorrection} />
             )}
@@ -2641,7 +2657,7 @@ export function MetricsTab() {
               disabledReason={correctedCrps ? null : correctedUnavailableReason}
               globalDisabledReason={globalUnavailableReason}
             />
-            {crpsVariant === 'corrected' && correction && <CorrectionBanner c={correction} />}
+            {crpsVariant === 'corrected' && correction && <CorrectionBanner c={correction} clampedNegatives={app.historicalClampedNegatives} />}
             {crpsVariant === 'global' && globalCorrection && (
               <GlobalCorrectionBanner c={globalCorrection} />
             )}

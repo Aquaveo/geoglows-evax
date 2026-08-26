@@ -7,7 +7,13 @@ interface CsvUploaderProps {
   label: string;
   onParsed: (
     s: TimeSeries,
-    meta: { fileName: string; skipped: number; timeColumn: string; valueColumn: string },
+    meta: {
+      fileName: string;
+      skipped: number;
+      clampedNegatives: number;
+      timeColumn: string;
+      valueColumn: string;
+    },
   ) => void;
 }
 
@@ -34,12 +40,15 @@ export function CsvUploader({ label, onParsed }: CsvUploaderProps) {
     timeColumn: string,
     valueColumn: string,
     skipped: number,
+    clampedNegatives: number,
   ) {
-    onParsed(series, { fileName: name, skipped, timeColumn, valueColumn });
+    onParsed(series, { fileName: name, skipped, clampedNegatives, timeColumn, valueColumn });
     setFailed(false);
     setStatus(
       `${name}: ${series.time.length.toLocaleString()} rows (cols: ${timeColumn}, ${valueColumn}` +
-        (skipped > 0 ? `; skipped ${skipped})` : ')'),
+        (skipped > 0 ? `; skipped ${skipped}` : '') +
+        (clampedNegatives > 0 ? `; ${clampedNegatives} negative reading${clampedNegatives === 1 ? '' : 's'} clamped to 0` : '') +
+        ')',
     );
   }
 
@@ -49,8 +58,9 @@ export function CsvUploader({ label, onParsed }: CsvUploaderProps) {
     setStatus(`Parsing ${file.name}…`);
     setFailed(false);
     try {
-      const { series, timeColumn, valueColumn, skipped } = await parseDischargeCsv(file);
-      accept(series, file.name, timeColumn, valueColumn, skipped);
+      const { series, timeColumn, valueColumn, skipped, clampedNegatives } =
+        await parseDischargeCsv(file);
+      accept(series, file.name, timeColumn, valueColumn, skipped, clampedNegatives);
     } catch (err) {
       setFailed(true);
       setStatus(err instanceof Error ? err.message : String(err));
@@ -63,11 +73,19 @@ export function CsvUploader({ label, onParsed }: CsvUploaderProps) {
     setStatus('Fetching…');
     try {
       const { text, bytes } = await fetchCsvText(url);
-      const { series, timeColumn, valueColumn, skipped } = await parseDischargeCsv(text);
+      const { series, timeColumn, valueColumn, skipped, clampedNegatives } =
+        await parseDischargeCsv(text);
       // Name it by the object key, not the whole URL — a presigned URL carries a
       // signature that should not be pinned to the screen.
       const name = url.split('?')[0].split('/').pop() || 'remote.csv';
-      accept(series, `${name} (${(bytes / 1024).toFixed(0)} KB)`, timeColumn, valueColumn, skipped);
+      accept(
+        series,
+        `${name} (${(bytes / 1024).toFixed(0)} KB)`,
+        timeColumn,
+        valueColumn,
+        skipped,
+        clampedNegatives,
+      );
     } catch (err) {
       setFailed(true);
       setStatus(err instanceof Error ? err.message : String(err));

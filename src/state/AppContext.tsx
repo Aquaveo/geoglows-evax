@@ -23,7 +23,17 @@ interface AppState {
   setEventData: (s: TimeSeries | null) => void;
 
   historicalData: TimeSeries | null;
+  /**
+   * Negative readings clamped to 0 when the historical CSV was parsed.
+   *
+   * Upload metadata rather than a computed result, but it has to reach the bias
+   * banner: a zero in the record means opposite things on an intermittent river
+   * (a real reading) and a perennial one (a clamped sensor fault), and the
+   * correction's low-flow behaviour turns on exactly that.
+   */
+  historicalClampedNegatives: number;
   setHistoricalData: (s: TimeSeries | null) => void;
+  setHistoricalClampedNegatives: (n: number) => void;
 
   obsRp: RpThresholds | null;
   setObsRp: (r: RpThresholds | null) => void;
@@ -101,6 +111,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [simRp, setSimRp] = useState<RpThresholds | null>(null);
   const [eventData, setEventData] = useState<TimeSeries | null>(null);
   const [historicalData, setHistoricalData] = useState<TimeSeries | null>(null);
+  const [historicalClampedNegatives, setHistoricalClampedNegatives] = useState(0);
   const [obsRp, setObsRp] = useState<RpThresholds | null>(null);
   const [forecasts, setForecasts] = useState<Map<string, ForecastResult>>(new Map());
   const [forecastProgress, setForecastProgress] = useState<{ done: number; total: number } | null>(null);
@@ -130,6 +141,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       simRp, setSimRp,
       eventData, setEventData,
       historicalData, setHistoricalData,
+      historicalClampedNegatives, setHistoricalClampedNegatives,
       obsRp, setObsRp,
       forecasts, setForecasts,
       forecastProgress, setForecastProgress,
@@ -147,7 +159,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       eventReturnPeriod, setEventReturnPeriod,
       crpsResults, setCrpsResults,
     }),
-    [riverId, reach, retro, simRp, eventData, historicalData, obsRp, forecasts, forecastProgress, selectedDate, leadBuckets, mccDistribution, hssDistribution, peakTimingDistribution, kgeDistribution, rDistribution, betaDistribution, gammaDistribution, crossingDistributions, crossingDetections, eventReturnPeriod, crpsResults],
+    [riverId, reach, retro, simRp, eventData, historicalData, historicalClampedNegatives, obsRp, forecasts, forecastProgress, selectedDate, leadBuckets, mccDistribution, hssDistribution, peakTimingDistribution, kgeDistribution, rDistribution, betaDistribution, gammaDistribution, crossingDistributions, crossingDetections, eventReturnPeriod, crpsResults],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

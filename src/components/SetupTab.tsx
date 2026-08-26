@@ -179,8 +179,9 @@ export function SetupTab() {
         )}
         <CsvUploader
           label="Historical observations — long record (observed return periods, bias correction, CRPSS)"
-          onParsed={(s) => {
+          onParsed={(s, meta) => {
             app.setHistoricalData(s);
+            app.setHistoricalClampedNegatives(meta.clampedNegatives);
             try {
               app.setObsRp(returnPeriodsFromSeries(s));
             } catch (e) {
