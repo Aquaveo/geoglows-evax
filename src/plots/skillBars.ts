@@ -5,11 +5,20 @@ import { maxOf, minOf } from '../lib/arrayStats';
 /**
  * Performance classification, keyed to each metric's OWN no-skill benchmark.
  *
- * The categories and the KGE' boundaries are the published scheme: Good,
- * Intermediate, Poor, Very poor, Unacceptable, split at 0.75 / 0.50 / 0.00 /
- * −0.41. The bottom boundary is the point of the whole thing — KGE' = −0.41 is
- * the score of a forecast equal to the observed mean flow at every timestep, so
- * below it the model adds nothing beyond climatology.
+ * The KGE' ladder is Thiemig et al. (2015, HESS 19:3365-3385, citing Kling
+ * 2012): Good above 0.75, Intermediate 0.50-0.75, Poor 0.00-0.50. Note that
+ * published scheme has FOUR bands, its bottom one being "Very poor" at <= 0.00 —
+ * splitting that at −0.41 into Very poor and Unacceptable is this app's own
+ * extension, and no source publishes 0.75/0.50 together with a −0.41 floor.
+ *
+ * −0.41 is the mean-flow benchmark (Knoben, Freer & Woods 2019; stated for KGE'
+ * by Harrigan et al. 2020): the score of a forecast equal to the observed mean at
+ * every timestep. Below it the forecast is worse than A FLAT LINE — which is not
+ * the same as worse than climatology, and must not be written as though it were.
+ * −0.41 is the best score any constant can attain, reached only by the constant
+ * equal to this window's own observed mean, whereas a real seasonal climatology
+ * is a different and generally better forecast whose own score climbs steeply
+ * with window length. The −0.41 line never moves; climatology's score does.
  *
  * This previously used one pair of thresholds (0.5 and 0.3) for BOTH metrics,
  * with no source. It was wrong twice over. The 0.3 boundary appears in neither

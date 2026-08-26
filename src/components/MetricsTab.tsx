@@ -2529,7 +2529,7 @@ export function MetricsTab() {
                 title: `Skill by Lead Day${riverIdSuffix}${variantSuffix(skillVariant)}`,
                 subtitle:
                   'Median across the 51 ensemble members  |  bars coloured by band  |' +
-                  ` dotted = do-nothing benchmark (NSE 0, KGE' ${'−'}0.41), dashed = 0.5`,
+                  ` dotted = mean-flow benchmark (NSE 0, KGE' ${'−'}0.41), dashed = band edges`,
               })}
             />
             <PlotNote>
