@@ -57,10 +57,14 @@ export interface PeakTimingByRun {
  *    before the rain enters the initial conditions — yields an argmax at an
  *    arbitrary point, reporting timing errors of hundreds of hours. Bounding the
  *    window caps |Δt| at the half-width.
- * 2. The member must actually have a peak: its in-window range must clear
- *    `minProminence` relative to its maximum. A flat series has no peak to time,
- *    so it is counted as "no peak predicted" rather than scored. That count is
- *    the real signal at long lead — not a timing number.
+ * 2. The member must have a DISTINCT maximum. A flat series attains its maximum
+ *    at every timestep, so there is no argmax and the tie-break would invent
+ *    one. Counted as "no peak predicted" rather than scored — and that count is
+ *    the real signal at long lead, not a timing number.
+ *
+ *    This is a fact about the data, not a tuned threshold. It replaces a
+ *    relative-prominence gate that discarded broad crests, since inside a window
+ *    centred on the crest the minimum is itself flood flow.
  *
  * A member whose in-window maximum sits on the window edge is censored too: the
  * true peak probably lies outside, making Δt a bound rather than a measurement.
@@ -71,7 +75,6 @@ export function computePeakTimingByRun(
   opts: PeakTimingByRunOptions = {},
 ): PeakTimingByRun {
   const searchWindowHours = opts.searchWindowHours ?? 72;
-  const minProminence = opts.minProminence ?? 0.1;
 
   const empty: PeakTimingByRun = {
     daysBefore: [],
@@ -138,27 +141,38 @@ export function computePeakTimingByRun(
 
       let bestIdx = -1;
       let bestVal = -Infinity;
-      let minVal = Infinity;
+      let ties = 0;
       for (const i of inWindow) {
         const v = series[i];
         if (!Number.isFinite(v)) continue;
         if (v > bestVal) {
           bestVal = v;
           bestIdx = i;
+          ties = 1;
+        } else if (v === bestVal) {
+          ties += 1;
         }
-        if (v < minVal) minVal = v;
       }
       if (bestIdx < 0) continue;
 
-      // No discernible rise: this member never predicted the event, so there is
-      // no peak whose timing could be wrong.
-      const prominence = bestVal > 0 ? (bestVal - minVal) / bestVal : 0;
-      if (!(prominence >= minProminence)) {
+      // No distinct maximum: a flat member's max is attained everywhere, so
+      // there is no argmax to report. The tie-break would otherwise return an
+      // arbitrary timestep and manufacture a timing error.
+      //
+      // This replaces a relative-prominence gate, (max−min)/max >= 0.1, which
+      // discarded broad crests: inside a window centred on the crest the minimum
+      // IS flood flow, so the test compared the crest against itself. A flood
+      // three times baseflow scored 0.667 at a 12-hour crest and 0.029 at a
+      // 240-hour snowmelt crest — rejected — and river size had nothing to do
+      // with it. A return-period gate was rejected too: it would put magnitude
+      // back into a metric that is deliberately magnitude-independent.
+      if (ties > 1) {
         noPeakMembers++;
         continue;
       }
 
-      // Maximum on the window edge: the real peak is probably outside it.
+      // Maximum on the window edge: the real peak is probably outside it, so Δt
+      // is a bound rather than a measurement.
       if (bestIdx === inWindow[0] || bestIdx === inWindow[inWindow.length - 1]) {
         censoredMembers++;
         continue;

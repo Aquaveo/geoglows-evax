@@ -16,7 +16,7 @@ import { rpsPerLeadFigure } from '../plots/rpsPerLead';
 import { categoricalCombinedFigure } from '../plots/categoricalCombined';
 import { csiByLeadFigure } from '../plots/csiByLead';
 import { csiByLead, type CsiByLead } from '../lib/metrics/csiByLead';
-import { computePeakTimingError } from '../lib/metrics/peakTiming';
+import { computePeakTiming } from '../lib/metrics/peakTiming';
 import { computePeakTimingByRun } from '../lib/metrics/peakTimingByRun';
 import { computeThresholdCrossing } from '../lib/metrics/thresholdCrossing';
 import { kge } from '../lib/metrics/kge';
@@ -575,6 +575,9 @@ export function MetricsTab() {
   // the median construction is a coin flip at high thresholds.
   const [csiLead, setCsiLead] = useState<CsiByLead | null>(null);
   const [csiCategory, setCsiCategory] = useState<number>(1);
+  /** Members with no distinct peak / a peak on the window edge, per lead. */
+  const [peakNoPeak, setPeakNoPeak] = useState<number[] | null>(null);
+  const [peakAtEdge, setPeakAtEdge] = useState<number[] | null>(null);
   /**
    * How a bin is summarised before it is classified against a threshold.
    *
@@ -1047,19 +1050,33 @@ export function MetricsTab() {
 
         // Peak timing distribution
         const peakDist: PerLeadDistribution = { leads: [], values: [], pairs: [] };
+        // Members yielding no timing, per lead, and why. Without these the
+        // exclusions would be survivorship bias: a narrow box at long lead means
+        // nothing if it rests on nine members out of 51.
+        const peakNoPeak: number[] = [];
+        const peakAtEdge: number[] = [];
         for (let lead = 0; lead <= MAX_LEAD; lead++) {
           peakDist.leads.push(lead);
           const vals: number[] = [];
+          let noPeak = 0;
+          let atEdge = 0;
           const bucket = buckets[lead];
           peakDist.pairs!.push(countPairs(bucket, eventData));
           if (bucket && bucket.time.length > 0) {
             for (let m = 0; m < MEMBER_COUNT; m++) {
-              const dt = computePeakTimingError(memberSeries(bucket, m), eventData);
-              if (dt != null && Number.isFinite(dt)) vals.push(dt);
+              const res = computePeakTiming(memberSeries(bucket, m), eventData);
+              if (res.deltaHours != null && Number.isFinite(res.deltaHours)) {
+                vals.push(res.deltaHours);
+              } else if (res.reason === 'no-distinct-peak') noPeak += 1;
+              else if (res.reason === 'peak-at-window-edge') atEdge += 1;
             }
           }
           peakDist.values.push(vals);
+          peakNoPeak.push(noPeak);
+          peakAtEdge.push(atEdge);
         }
+        setPeakNoPeak(peakNoPeak);
+        setPeakAtEdge(peakAtEdge);
         app.setPeakTimingDistribution(peakDist);
 
         // Threshold crossing — only if both RP sets are present.
@@ -1551,7 +1568,12 @@ export function MetricsTab() {
           label: `Lead ${lead}`,
           value: Number.NaN,
           n: 0,
-          detail: pairs === 0 ? 'no overlapping timesteps' : 'no member timed a peak',
+          detail:
+            pairs === 0
+              ? 'no overlapping timesteps'
+              : `no member had a distinct peak (${peakNoPeak?.[i] ?? 0} flat, ${
+                  peakAtEdge?.[i] ?? 0
+                } at the window edge)`,
         };
       }
       const sorted = [...vals].sort((a, b) => a - b);
@@ -1561,6 +1583,18 @@ export function MetricsTab() {
         const hi = Math.ceil(h);
         return lo === hi ? sorted[lo] : sorted[lo] + (h - lo) * (sorted[hi] - sorted[lo]);
       };
+      // The denominator, on the face of the row. Excluding a member that had no
+      // peak is only honest if the count travels with the number: a narrow box
+      // built from nine members says something very different from one built
+      // from fifty.
+      const noPeak = peakNoPeak?.[i] ?? 0;
+      const atEdge = peakAtEdge?.[i] ?? 0;
+      const excluded =
+        noPeak + atEdge > 0
+          ? `; ${vals.length} of ${vals.length + noPeak + atEdge} members timed a peak` +
+            (noPeak > 0 ? `, ${noPeak} flat` : '') +
+            (atEdge > 0 ? `, ${atEdge} peaked at the window edge` : '')
+          : '';
       return {
         label: `Lead ${lead}`,
         value: q(0.5),
@@ -1569,10 +1603,10 @@ export function MetricsTab() {
         lo: sorted[0],
         hi: sorted[sorted.length - 1],
         n: vals.length,
-        detail: `, ${pairs} pairs`,
+        detail: `, ${pairs} pairs${excluded}`,
       };
     });
-  }, [app.peakTimingDistribution]);
+  }, [app.peakTimingDistribution, peakNoPeak, peakAtEdge]);
 
   /** Median signed peak-timing error per initialization, for the diverging bars. */
   const peakTimingRows = useMemo<DivergingRow[] | null>(() => {
@@ -2102,6 +2136,16 @@ export function MetricsTab() {
               median across members. The heavy whisker is the middle half of them and the light one
               behind it is the full range, so the two together answer different questions: whether
               the bulk of members agreed on the sign, and whether <em>any</em> member got it right.
+              <br />
+              <br />
+              <strong>Check the member count in the hover before reading a box.</strong> A member
+              is excluded only when it has no timing to report — its maximum is attained at every
+              timestep, so there is no peak, or the maximum sits on the window edge where the true
+              peak is probably outside. Nothing is dropped for being a poor forecast: a member that
+              runs 55% low but times the crest perfectly still scores 0, which is the property that
+              makes this worth reading separately from KGE′. Members with a noisy, incoherent shape
+              are scored too, and their scatter is the finding rather than something to hide — so a
+              wide band at long lead usually means the ensemble had no peak to agree on.
               The axis is scaled to the bars and the middle half, not to the full range — a single
               straggling member can sit hundreds of hours out, and letting that set the scale left
               every bar too short to read. A <strong>›</strong> marks each row whose range carries on
