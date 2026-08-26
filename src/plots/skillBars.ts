@@ -31,11 +31,28 @@ const KGE_MEAN_BENCHMARK = -0.41;
 /** NSE of that same forecast. NSE is normalised by observed variance. */
 const NSE_MEAN_BENCHMARK = 0;
 
-const COLOR_GOOD = '#125e30';
-const COLOR_INTERMEDIATE = '#4fae4f';
-const COLOR_POOR = '#f2b13a';
-const COLOR_VERY_POOR = '#d84a3a';
-const COLOR_UNACCEPTABLE = '#6e1414';
+// A separate hue family per metric, because the two do NOT share a scale: the
+// boundaries differ and KGE' has a band NSE does not. One palette across both
+// panels implied a single classification and invited reading a colour on one
+// panel as the same verdict on the other.
+//
+// KGE' keeps green–amber–red, the convention in the classification it follows.
+// NSE takes blue–brown, which is also the CVD-safe pair: measured worst adjacent
+// separation passes every check bar a contrast warning on the tan, which the
+// labelled boundary lines and hover categories already answer.
+const KGE_COLORS = {
+  good: '#125e30',
+  intermediate: '#4fae4f',
+  poor: '#f2b13a',
+  veryPoor: '#d84a3a',
+  unacceptable: '#6e1414',
+};
+const NSE_COLORS = {
+  good: '#0b4f9e',
+  intermediate: '#3d91e0',
+  poor: '#e0a336',
+  unacceptable: '#8a4a06',
+};
 
 interface Band {
   /** Lower bound, exclusive. A value sits in the highest band it clears. */
@@ -56,17 +73,17 @@ interface Band {
  */
 const BANDS: Record<SkillMetric, Band[]> = {
   kge: [
-    { above: 0.75, name: 'Good', color: COLOR_GOOD },
-    { above: 0.5, name: 'Intermediate', color: COLOR_INTERMEDIATE },
-    { above: 0, name: 'Poor', color: COLOR_POOR },
-    { above: KGE_MEAN_BENCHMARK, name: 'Very poor', color: COLOR_VERY_POOR },
-    { above: Number.NEGATIVE_INFINITY, name: 'Unacceptable', color: COLOR_UNACCEPTABLE },
+    { above: 0.75, name: 'Good', color: KGE_COLORS.good },
+    { above: 0.5, name: 'Intermediate', color: KGE_COLORS.intermediate },
+    { above: 0, name: 'Poor', color: KGE_COLORS.poor },
+    { above: KGE_MEAN_BENCHMARK, name: 'Very poor', color: KGE_COLORS.veryPoor },
+    { above: Number.NEGATIVE_INFINITY, name: 'Unacceptable', color: KGE_COLORS.unacceptable },
   ],
   nse: [
-    { above: 0.75, name: 'Good', color: COLOR_GOOD },
-    { above: 0.5, name: 'Intermediate', color: COLOR_INTERMEDIATE },
-    { above: NSE_MEAN_BENCHMARK, name: 'Poor', color: COLOR_POOR },
-    { above: Number.NEGATIVE_INFINITY, name: 'Unacceptable', color: COLOR_UNACCEPTABLE },
+    { above: 0.75, name: 'Good', color: NSE_COLORS.good },
+    { above: 0.5, name: 'Intermediate', color: NSE_COLORS.intermediate },
+    { above: NSE_MEAN_BENCHMARK, name: 'Poor', color: NSE_COLORS.poor },
+    { above: Number.NEGATIVE_INFINITY, name: 'Unacceptable', color: NSE_COLORS.unacceptable },
   ],
 };
 
@@ -215,29 +232,40 @@ export function skillBarsFigure(
 
   // Legend-only swatches: per-bar colours cannot produce legend entries.
   //
-  // Names only, no numbers. The two metrics share the category NAMES but not the
-  // boundaries — NSE's benchmark is 0 and KGE''s is −0.41 — so a numeric range in
-  // a legend shared by both panels would be wrong for one of them. The numbers
-  // live on each panel's own boundary lines.
-  const swatches: { name: string; color: string }[] = [
-    { name: 'Good', color: COLOR_GOOD },
-    { name: 'Intermediate', color: COLOR_INTERMEDIATE },
-    { name: 'Poor', color: COLOR_POOR },
-    { name: 'Very poor (KGE′ only)', color: COLOR_VERY_POOR },
-    { name: 'Unacceptable — below the observed mean', color: COLOR_UNACCEPTABLE },
-  ];
-  for (const s of swatches) {
-    data.push({
-      type: 'bar',
-      orientation: 'h',
-      x: [null],
-      y: [labels[0] ?? ''],
-      marker: { color: s.color },
-      name: s.name,
-      showlegend: true,
-      hoverinfo: 'skip',
-      xaxis: 'x',
-      yaxis: 'y',
+  // One group per metric, titled, with each metric's OWN numeric ranges. A single
+  // shared legend could not print a range at all — 0.00–0.50 is Poor on both, but
+  // the band below it is "Very poor" down to −0.41 on KGE' and "Unacceptable"
+  // immediately on NSE. Splitting the legend is what makes the numbers sayable,
+  // and it says out loud that these are two classifications rather than one.
+  const rangeLabel = (metric: SkillMetric, i: number): string => {
+    const bands = BANDS[metric];
+    const lower = bands[i].above;
+    if (i === 0) return `> ${lower.toFixed(2)}`;
+    const upper = bands[i - 1].above;
+    if (!Number.isFinite(lower)) return `≤ ${upper.toFixed(2)}`;
+    return `${lower.toFixed(2)} – ${upper.toFixed(2)}`;
+  };
+  for (const [metric, title, axis] of [
+    ['nse', 'NSE', 'x'],
+    ['kge', "KGE′", 'x2'],
+  ] as const) {
+    BANDS[metric].forEach((b, i) => {
+      data.push({
+        type: 'bar',
+        orientation: 'h',
+        x: [null],
+        y: [labels[0] ?? ''],
+        marker: { color: b.color },
+        name: `${rangeLabel(metric, i)}  ${b.name}`,
+        legendgroup: metric,
+        legendgrouptitle: { text: `${title} — benchmark ${
+          metric === 'kge' ? KGE_MEAN_BENCHMARK : NSE_MEAN_BENCHMARK
+        }` },
+        showlegend: true,
+        hoverinfo: 'skip',
+        xaxis: axis,
+        yaxis: axis === 'x' ? 'y' : 'y2',
+      });
     });
   }
 
@@ -397,7 +425,7 @@ export function skillBarsFigure(
       })(),
       x: 0.5,
     },
-    margin: { l: 130, r: 30, t: 104, b: 62 },
+    margin: { l: 130, r: 30, t: 104, b: 150 },
     // Two panels, one shared row order.
     xaxis: {
       domain: [0, 0.46],
@@ -434,8 +462,20 @@ export function skillBarsFigure(
     annotations,
     barmode: 'overlay',
     bargap: 0.25,
-    height: Math.max(360, 74 + display.length * 26),
-    legend: { orientation: 'h', y: -0.16 },
+    // + room for the two legend groups below the plot.
+    height: Math.max(430, 150 + display.length * 26),
+    // Two titled groups of four or five entries each will not fit on one row, so
+    // the legend is vertical, under the plot, in two columns' worth of stacked
+    // groups. The bottom margin and the height both allow for it.
+    legend: {
+      orientation: 'h',
+      y: -0.1,
+      yanchor: 'top',
+      x: 0,
+      xanchor: 'left',
+      tracegroupgap: 14,
+      font: { size: 10 },
+    },
     plot_bgcolor: 'white',
     paper_bgcolor: 'white',
   };

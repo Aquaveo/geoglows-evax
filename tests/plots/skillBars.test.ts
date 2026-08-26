@@ -74,17 +74,47 @@ describe('skillBarsFigure labelling', () => {
     expect(cd.some((row) => row[3] === 'Unacceptable')).toBe(true);
   });
 
-  it('gives the legend category names without numbers', () => {
-    const names = fig.data
-      .filter((d) => (d as { showlegend?: boolean }).showlegend)
-      .map((d) => String((d as { name?: string }).name));
-    expect(names).toContain('Good');
-    expect(names).toContain('Intermediate');
-    expect(names).toContain('Poor');
-    // The two metrics share names but not boundaries, so a shared legend must
-    // not print a range that would be wrong for one panel.
-    expect(names.some((n) => n.includes('0.5'))).toBe(false);
-    expect(names.some((n) => n.includes('Very poor'))).toBe(true);
+  it('splits the legend per metric and titles each group', () => {
+    const entries = fig.data.filter((d) => (d as { showlegend?: boolean }).showlegend) as {
+      name?: string; legendgroup?: string; legendgrouptitle?: { text?: string };
+    }[];
+    const groups = new Set(entries.map((e) => e.legendgroup));
+    expect(groups).toEqual(new Set(['nse', 'kge']));
+    const titles = entries.map((e) => String(e.legendgrouptitle?.text));
+    expect(titles.some((t) => t.includes('NSE') && t.includes('0'))).toBe(true);
+    expect(titles.some((t) => t.includes('KGE') && t.includes('-0.41'))).toBe(true);
+  });
+
+  it('prints each metric OWN ranges, which one shared legend could not', () => {
+    const nameOf = (group: string) =>
+      fig.data
+        .filter((d) => (d as { legendgroup?: string }).legendgroup === group)
+        .map((d) => String((d as { name?: string }).name));
+    const nse = nameOf('nse').join(' | ');
+    const kge = nameOf('kge').join(' | ');
+    // NSE bottoms out at its own benchmark, 0, with no Very poor band.
+    expect(nse).toContain('Unacceptable');
+    expect(nse).toContain('≤ 0.00');
+    expect(nse).not.toContain('Very poor');
+    // KGE' has the extra band down to -0.41.
+    expect(kge).toContain('Very poor');
+    expect(kge).toContain('≤ -0.41');
+    // Shared upper boundaries still read the same on both.
+    expect(nse).toContain('> 0.75');
+    expect(kge).toContain('> 0.75');
+  });
+
+  it('uses a different hue family per metric, so a colour cannot be misread across panels', () => {
+    const colorsOf = (group: string) =>
+      fig.data
+        .filter((d) => (d as { legendgroup?: string }).legendgroup === group)
+        .map((d) => (d as { marker: { color: string } }).marker.color);
+    const nse = new Set(colorsOf('nse'));
+    const kge = new Set(colorsOf('kge'));
+    expect(nse.size).toBe(4);
+    expect(kge.size).toBe(5);
+    // No colour appears in both classifications.
+    for (const c of nse) expect(kge.has(c)).toBe(false);
   });
 
   it('labels a clamped bar with its true value, in white so it is legible', () => {

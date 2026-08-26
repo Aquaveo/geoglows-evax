@@ -2233,8 +2233,15 @@ export function MetricsTab() {
               an NSE paper.
               <br />
               <br />
-              Colour is a convenience, not the record: five ordered categories through green–amber–red
-              cannot be made fully colour-blind-safe, so every boundary is also drawn as a line and
+              <strong>The two panels use different colours on purpose.</strong> They are two
+              classifications, not one — the boundaries differ and KGE′ has a Very poor band that
+              NSE does not — so a shared palette invited reading a colour on one panel as the same
+              verdict on the other. KGE′ keeps green–amber–red, the convention of the scheme it
+              follows; NSE is blue–brown. The legend is split per metric and carries each one's own
+              numeric ranges, which a shared legend could not have done correctly.
+              <br />
+              <br />
+              Colour is a convenience, not the record. Every boundary is also drawn as a line, and
               each bar names its category in the hover.
               <br />
               <br />
