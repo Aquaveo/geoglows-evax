@@ -29,13 +29,62 @@ describe('skillBarsFigure labelling', () => {
     expect(fig.layout.xaxis2!.title).toMatchObject({ text: "KGE'" });
   });
 
-  it('names the reference lines instead of leaving bare dashes', () => {
+  it('names each metric\'s own benchmark, at its own value', () => {
     const all = texts(fig).join(' | ');
-    expect(all).toContain('no better than the observed mean');
+    // NSE is normalised by observed variance, so its mean-flow benchmark is 0;
+    // KGE' is not, so its is -0.41. Colouring both off one number was the bug.
+    expect(all).toContain('observed mean (0)');
     expect(all).toContain('observed mean (-0.41)');
-    expect(all).toContain('usable (0.5)');
-    // One "usable" marker per panel.
-    expect(texts(fig).filter((t) => t.includes('usable (0.5)'))).toHaveLength(2);
+  });
+
+  it('draws a line at every band boundary, per panel', () => {
+    const shapes = fig.layout.shapes ?? [];
+    const nse = shapes.filter((sh) => sh.xref === 'x').map((sh) => Number(sh.x0)).sort((a, b) => a - b);
+    const kge = shapes.filter((sh) => sh.xref === 'x2').map((sh) => Number(sh.x0)).sort((a, b) => a - b);
+    expect(nse).toEqual([0, 0.5, 0.75]);
+    expect(kge).toEqual([-0.41, 0, 0.5, 0.75]);
+  });
+
+  it('dots the benchmark and dashes the rest, per panel', () => {
+    const shapes = fig.layout.shapes ?? [];
+    const dashOf = (xref: string, x: number) =>
+      shapes.find((sh) => sh.xref === xref && Number(sh.x0) === x)?.line?.dash;
+    expect(dashOf('x', 0)).toBe('dot');
+    expect(dashOf('x', 0.5)).toBe('dash');
+    expect(dashOf('x2', -0.41)).toBe('dot');
+    expect(dashOf('x2', 0)).toBe('dash');
+  });
+
+  it('colours each metric against its own bands', () => {
+    // A KGE' of -0.2 beats the observed mean and must NOT read the same as an
+    // NSE of -0.2, which does not. One shared scale was the defect.
+    const f = skillBarsFigure([row('r', -0.2, -0.2)], { categoryLabel: 'x' });
+    const bars = f.data.filter((d) => (d as { type?: string }).type === 'bar');
+    const nseColor = (bars[0] as { marker: { color: string[] } }).marker.color[0];
+    const kgeColor = (bars[1] as { marker: { color: string[] } }).marker.color[0];
+    expect(nseColor).not.toBe(kgeColor);
+  });
+
+  it('names the category in the hover, since the colours are not CVD-safe', () => {
+    const bars = fig.data.filter((d) => (d as { type?: string }).type === 'bar');
+    for (const b of bars.slice(0, 2)) {
+      expect(String((b as { hovertemplate?: string }).hovertemplate)).toContain('customdata[3]');
+    }
+    const cd = (bars[1] as { customdata: unknown[][] }).customdata;
+    expect(cd.some((row) => row[3] === 'Unacceptable')).toBe(true);
+  });
+
+  it('gives the legend category names without numbers', () => {
+    const names = fig.data
+      .filter((d) => (d as { showlegend?: boolean }).showlegend)
+      .map((d) => String((d as { name?: string }).name));
+    expect(names).toContain('Good');
+    expect(names).toContain('Intermediate');
+    expect(names).toContain('Poor');
+    // The two metrics share names but not boundaries, so a shared legend must
+    // not print a range that would be wrong for one panel.
+    expect(names.some((n) => n.includes('0.5'))).toBe(false);
+    expect(names.some((n) => n.includes('Very poor'))).toBe(true);
   });
 
   it('labels a clamped bar with its true value, in white so it is legible', () => {

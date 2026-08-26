@@ -2,15 +2,81 @@ import type { Data, Layout } from 'plotly.js-dist-min';
 import type { SkillRow } from '../lib/metrics/skillSummary';
 import { maxOf, minOf } from '../lib/arrayStats';
 
-/** Performance bands. Green is the pass mark, red is below usable. */
-const GOOD = 0.5;
-const WEAK = 0.3;
-const COLOR_GOOD = '#22a145';
-const COLOR_WEAK = '#f0a020';
-const COLOR_POOR = '#e0483c';
+/**
+ * Performance classification, keyed to each metric's OWN no-skill benchmark.
+ *
+ * The categories and the KGE' boundaries are the published scheme: Good,
+ * Intermediate, Poor, Very poor, Unacceptable, split at 0.75 / 0.50 / 0.00 /
+ * −0.41. The bottom boundary is the point of the whole thing — KGE' = −0.41 is
+ * the score of a forecast equal to the observed mean flow at every timestep, so
+ * below it the model adds nothing beyond climatology.
+ *
+ * This previously used one pair of thresholds (0.5 and 0.3) for BOTH metrics,
+ * with no source. It was wrong twice over. The 0.3 boundary appears in neither
+ * metric's literature, and colouring NSE and KGE' on one scale ignores that they
+ * have different origins — a KGE' of −0.2 beats the observed mean, yet it was
+ * painted the same red as −50. The module already drew 0 and −41 as separate
+ * benchmark lines while colouring both panels off the same numbers.
+ *
+ * NSE keeps the same category names and upper boundaries, but its benchmark is
+ * 0, not −0.41 — NSE is already normalised by the observed variance. So NSE has
+ * no "Very poor" band: at or below 0 the forecast is beaten by the observed mean
+ * and is Unacceptable directly. That is a derivation from the definition of the
+ * benchmark, not a published NSE scheme, and the plot note says so.
+ */
+export type SkillMetric = 'nse' | 'kge';
 
 /** KGE' of a forecast equal to the observed mean — the do-nothing benchmark. */
 const KGE_MEAN_BENCHMARK = -0.41;
+/** NSE of that same forecast. NSE is normalised by observed variance. */
+const NSE_MEAN_BENCHMARK = 0;
+
+const COLOR_GOOD = '#125e30';
+const COLOR_INTERMEDIATE = '#4fae4f';
+const COLOR_POOR = '#f2b13a';
+const COLOR_VERY_POOR = '#d84a3a';
+const COLOR_UNACCEPTABLE = '#6e1414';
+
+interface Band {
+  /** Lower bound, exclusive. A value sits in the highest band it clears. */
+  above: number;
+  name: string;
+  color: string;
+}
+
+/**
+ * Bands per metric, highest first.
+ *
+ * Measured CVD separation of this ramp is ΔE 7.2 (protanopia) at its worst
+ * adjacent pair, inside the 6–8 band that is permissible only alongside a
+ * non-colour encoding. Five ordered categories through green–amber–red cannot do
+ * better: yellow-green and amber sit ΔE 1.3–5.3 apart under protanopia whatever
+ * the exact hex. The non-colour encodings here are the numeric axis, a labelled
+ * line at every boundary, and the category NAME in each bar's hover.
+ */
+const BANDS: Record<SkillMetric, Band[]> = {
+  kge: [
+    { above: 0.75, name: 'Good', color: COLOR_GOOD },
+    { above: 0.5, name: 'Intermediate', color: COLOR_INTERMEDIATE },
+    { above: 0, name: 'Poor', color: COLOR_POOR },
+    { above: KGE_MEAN_BENCHMARK, name: 'Very poor', color: COLOR_VERY_POOR },
+    { above: Number.NEGATIVE_INFINITY, name: 'Unacceptable', color: COLOR_UNACCEPTABLE },
+  ],
+  nse: [
+    { above: 0.75, name: 'Good', color: COLOR_GOOD },
+    { above: 0.5, name: 'Intermediate', color: COLOR_INTERMEDIATE },
+    { above: NSE_MEAN_BENCHMARK, name: 'Poor', color: COLOR_POOR },
+    { above: Number.NEGATIVE_INFINITY, name: 'Unacceptable', color: COLOR_UNACCEPTABLE },
+  ],
+};
+
+/** The band a value falls in, or null when it is not finite. */
+export function bandOf(v: number, metric: SkillMetric): Band | null {
+  if (!Number.isFinite(v)) return null;
+  for (const b of BANDS[metric]) if (v > b.above) return b;
+  // Exactly at the metric's benchmark, or below it.
+  return BANDS[metric][BANDS[metric].length - 1];
+}
 
 export interface SkillBarsOptions {
   /** What each row is, e.g. "Lead day" or "Forecast initialization". */
@@ -29,11 +95,8 @@ export interface SkillBarsOptions {
   floor?: number;
 }
 
-function bandColor(v: number): string {
-  if (!Number.isFinite(v)) return 'rgba(0,0,0,0.12)';
-  if (v >= GOOD) return COLOR_GOOD;
-  if (v >= WEAK) return COLOR_WEAK;
-  return COLOR_POOR;
+function bandColor(v: number, metric: SkillMetric): string {
+  return bandOf(v, metric)?.color ?? 'rgba(0,0,0,0.12)';
 }
 
 /**
@@ -49,9 +112,9 @@ function bandColor(v: number): string {
  * log scale because these run to -1000 and beyond. Rows still readable as "all
  * poor", but now distinguishable within that.
  */
-function barColor(v: number, floor: number): string {
+function barColor(v: number, floor: number, metric: SkillMetric): string {
   if (!Number.isFinite(v)) return 'rgba(0,0,0,0.12)';
-  if (v >= floor) return bandColor(v);
+  if (v >= floor) return bandColor(v, metric);
   // How many decades below the floor, capped so the ramp does not saturate on
   // the first outlier: 1 decade -> slightly darker, 3+ -> darkest.
   const decades = Math.min(Math.log10(Math.max(1 + (floor - v), 1)) / 3, 1);
@@ -115,34 +178,53 @@ export function skillBarsFigure(
       orientation: 'h',
       x: nse,
       y: labels,
-      marker: { color: display.map((r) => barColor(r.nse, floor)) },
+      marker: { color: display.map((r) => barColor(r.nse, floor, 'nse')) },
       xaxis: 'x',
       yaxis: 'y',
       showlegend: false,
-      customdata: display.map((r) => [r.pairs, r.members, r.nse] as [number, number, number]),
+      customdata: display.map(
+        (r) =>
+          [r.pairs, r.members, r.nse, bandOf(r.nse, 'nse')?.name ?? 'not scored'] as [
+            number, number, number, string,
+          ],
+      ),
       hovertemplate:
-        '<b>%{y}</b><br>NSE: %{customdata[2]:.3f}<br>%{customdata[0]} pairs, %{customdata[1]} members<extra></extra>',
+        '<b>%{y}</b><br>NSE: %{customdata[2]:.3f} — <b>%{customdata[3]}</b>' +
+        '<br>%{customdata[0]} pairs, %{customdata[1]} members<extra></extra>',
     },
     {
       type: 'bar',
       orientation: 'h',
       x: kge,
       y: labels,
-      marker: { color: display.map((r) => barColor(r.kge, floor)) },
+      marker: { color: display.map((r) => barColor(r.kge, floor, 'kge')) },
       xaxis: 'x2',
       yaxis: 'y2',
       showlegend: false,
-      customdata: display.map((r) => [r.pairs, r.members, r.kge] as [number, number, number]),
+      customdata: display.map(
+        (r) =>
+          [r.pairs, r.members, r.kge, bandOf(r.kge, 'kge')?.name ?? 'not scored'] as [
+            number, number, number, string,
+          ],
+      ),
       hovertemplate:
-        "<b>%{y}</b><br>KGE': %{customdata[2]:.3f}<br>%{customdata[0]} pairs, %{customdata[1]} members<extra></extra>",
+        "<b>%{y}</b><br>KGE': %{customdata[2]:.3f} — <b>%{customdata[3]}</b>" +
+        '<br>%{customdata[0]} pairs, %{customdata[1]} members<extra></extra>',
     },
   ];
 
   // Legend-only swatches: per-bar colours cannot produce legend entries.
+  //
+  // Names only, no numbers. The two metrics share the category NAMES but not the
+  // boundaries — NSE's benchmark is 0 and KGE''s is −0.41 — so a numeric range in
+  // a legend shared by both panels would be wrong for one of them. The numbers
+  // live on each panel's own boundary lines.
   const swatches: { name: string; color: string }[] = [
-    { name: `≥ ${GOOD} — good`, color: COLOR_GOOD },
-    { name: `${WEAK}–${GOOD} — weak`, color: COLOR_WEAK },
-    { name: `< ${WEAK} — poor`, color: COLOR_POOR },
+    { name: 'Good', color: COLOR_GOOD },
+    { name: 'Intermediate', color: COLOR_INTERMEDIATE },
+    { name: 'Poor', color: COLOR_POOR },
+    { name: 'Very poor (KGE′ only)', color: COLOR_VERY_POOR },
+    { name: 'Unacceptable — below the observed mean', color: COLOR_UNACCEPTABLE },
   ];
   for (const s of swatches) {
     data.push({
@@ -247,12 +329,25 @@ export function skillBarsFigure(
       font: { size: 13, color: '#0b0b0b' },
     });
   }
-  for (const [axis, x, label] of [
-    ['x', 0, 'no better than the observed mean'],
-    ['x', GOOD, `usable (${GOOD})`],
-    ['x2', KGE_MEAN_BENCHMARK, `observed mean (${KGE_MEAN_BENCHMARK})`],
-    ['x2', GOOD, `usable (${GOOD})`],
+  // Every band boundary, generated from the same table that colours the bars, so
+  // a line can never sit somewhere the colours do not change. The benchmark is
+  // named rather than numbered: it is the fact, not the number, that matters.
+  const boundaries: [('x' | 'x2'), number, string][] = [];
+  for (const [axis, metric] of [
+    ['x', 'nse'],
+    ['x2', 'kge'],
   ] as const) {
+    const benchmark = metric === 'kge' ? KGE_MEAN_BENCHMARK : NSE_MEAN_BENCHMARK;
+    for (const b of BANDS[metric]) {
+      if (!Number.isFinite(b.above)) continue;
+      boundaries.push([
+        axis,
+        b.above,
+        b.above === benchmark ? `observed mean (${b.above})` : String(b.above),
+      ]);
+    }
+  }
+  for (const [axis, x, label] of boundaries) {
     annotations.push({
       xref: axis,
       yref: 'paper' as const,
@@ -324,13 +419,18 @@ export function skillBarsFigure(
       title: { text: opts.categoryLabel, standoff: 16 },
     },
     yaxis2: { type: 'category', anchor: 'x2', matches: 'y', showticklabels: false },
-    shapes: [
-      // 0 is the mean-flow benchmark for NSE; -0.41 is its KGE' equivalent.
-      refLine(0, 'x', 'y', 'dot'),
-      refLine(GOOD, 'x', 'y', 'dash'),
-      refLine(KGE_MEAN_BENCHMARK, 'x2', 'y2', 'dot'),
-      refLine(GOOD, 'x2', 'y2', 'dash'),
-    ],
+    // One line per band boundary, from the same table. The metric's own
+    // benchmark is dotted and the rest dashed, because that one is categorically
+    // different: above it the forecast beats predicting the observed mean, below
+    // it the forecast is worse than doing nothing.
+    shapes: boundaries.map(([axis, x]) =>
+      refLine(
+        x,
+        axis,
+        axis === 'x' ? 'y' : 'y2',
+        x === (axis === 'x2' ? KGE_MEAN_BENCHMARK : NSE_MEAN_BENCHMARK) ? 'dot' : 'dash',
+      ),
+    ),
     annotations,
     barmode: 'overlay',
     bargap: 0.25,

@@ -2216,12 +2216,26 @@ export function MetricsTab() {
               })}
             />
             <PlotNote>
-              each row is one lead day scored two ways. <strong>NSE</strong> is the
-              mean-squared-error skill score against the observed average, so the dotted line at 0
-              is the do-nothing benchmark — a bar left of it means the forecast was worse than
-              simply predicting average flow. <strong>KGE'</strong> combines correlation, bias and
-              variability; its equivalent benchmark is −0.41, also dotted. The dashed line at 0.5
-              is the green threshold in both panels.
+              each row is one lead day scored two ways, and{' '}
+              <strong>each panel is coloured against its own benchmark</strong>. The dotted line is
+              the score of a forecast that just predicts the observed mean flow at every timestep:
+              0 for <strong>NSE</strong>, which is already normalised by the observed variance, and
+              −0.41 for <strong>KGE′</strong>, which is not. Left of that dotted line the forecast
+              is worse than doing nothing. Dashed lines mark the remaining category boundaries at
+              0.75 and 0.50.
+              <br />
+              <br />
+              Categories follow the published KGE′ classification — Good above 0.75, Intermediate
+              0.50–0.75, Poor 0.00–0.50, Very poor −0.41–0.00, Unacceptable at or below −0.41.
+              NSE reuses the names and the upper boundaries but has no Very poor band, because its
+              benchmark <em>is</em> 0: at or below it the forecast is already beaten by the observed
+              mean. That last part is derived from what the benchmark means rather than taken from
+              an NSE paper.
+              <br />
+              <br />
+              Colour is a convenience, not the record: five ordered categories through green–amber–red
+              cannot be made fully colour-blind-safe, so every boundary is also drawn as a line and
+              each bar names its category in the hover.
               <br />
               <br />
               Read a row straight across: strong on KGE' but weak on NSE usually means the shape
