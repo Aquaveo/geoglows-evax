@@ -62,9 +62,10 @@ export function OverviewTab() {
           can run systematically high or low at a single reach — one running 40% low scores badly
           on magnitude however well it caught the event's shape and timing.{' '}
           <strong>Bias correction</strong> separates the two: the metrics section's Accuracy,
-          Probabilistic and Skill-summary blocks each pair a raw view with two corrected ones — one
-          fitted to your uploaded record, one from centrally published per-river coefficients —
-          detailed in the <em>Bias correction</em> section below. Categorical and Timing need none:
+          Probabilistic and Skill-summary blocks each offer a raw view plus up to two corrected
+          ones — one fitted to your uploaded record, one from centrally published per-river
+          coefficients. Both are conditional and often unavailable; each says why on the selector.
+          Detailed in the <em>Bias correction</em> section below. Categorical and Timing need none:
           their dual-threshold design absorbs magnitude bias by construction, as their own section
           explains.
         </p>
@@ -151,6 +152,12 @@ export function OverviewTab() {
           threshold, and only you know which you have.
         </p>
         <p style={p}>
+          That inheritance applies to the <em>observed</em> thresholds only. The simulated set is
+          always fitted to the daily retrospective the app downloads, whatever you uploaded — so on
+          a sub-daily upload the two halves of the dual threshold are not fitted at the same
+          resolution, and the forecast side is the daily one.
+        </p>
+        <p style={p}>
           The three differ sharply where it matters most. On a bin with realistic within-day shape,
           the maximum crosses a 10-year-ish level <strong>7.2×</strong> as often as the mean; at a
           2-year level the gap is only 1.3×. The distortion grows with severity, which is the end
@@ -188,8 +195,8 @@ export function OverviewTab() {
           </li>
           <li>
             Coarse observations mean few pairs: a four-day event at daily resolution gives four per
-            lead day, too few for the correlation-based scores (r, γ, KGE') however confident the box
-            plots look.
+            lead day, too few for any of the paired scores — r, γ, KGE′, NSE, MCC, HSS and RPS are
+            gated on the same minimum — however confident the box plots look.
           </li>
           <li>
             Peak timing resolves only to the grid interval: on daily data, Δt<sub>peak</sub> answers
@@ -203,7 +210,10 @@ export function OverviewTab() {
         ) : (
           <p style={p}>
             Upload an event CSV (Setup tab) and download forecasts (Forecast tab); detected
-            resolutions and comparison grid appear here.
+            resolutions and comparison grid appear here. This panel reads the forecast cadence off
+            one whole run, while the metrics read it off a single lead day's pooled timestamps — a
+            run that is 3-hourly early and coarser later has no single cadence, so the two can
+            disagree. Where they do, trust the resolution notice shown beside the metrics.
           </p>
         )}
       </section>
@@ -718,8 +728,9 @@ export function OverviewTab() {
         </p>
         <p style={p}>
           These are two-by-two scores, so the K-category matrix is dichotomised at each threshold —
-          "at or above this return period" against "below" — giving one row per level rather than a
-          single number. The trend down the rows is the point: hit rate falling and false-alarm
+          "at or above this return period" against "below" — giving one row per threshold rather
+          than a single number. There are K−1 rows for K categories: the lowest band gets no row,
+          because "at or above the bottom of the scale" is everything. The trend down the rows is the point: hit rate falling and false-alarm
           ratio rising as severity climbs is skill decaying with magnitude, which any collapsed
           number hides.
         </p>
@@ -804,19 +815,36 @@ export function OverviewTab() {
           reads 0 for a crossing neither actually witnessed. This beats peak timing operationally:
           flood early-warning systems alert on threshold exceedance, not peak arrival.
         </p>
-        <p style={p}>Reported separately:</p>
+        <p style={p}>
+          The table splits the members four ways at each lead, because a missing Δt<sub>RP</sub> has
+          more than one cause and they mean opposite things:
+        </p>
         <ul style={ul}>
           <li>
-            <strong>Detection rate</strong>: fraction of members crossing both the observed and
-            forecast thresholds, so having a computable Δt<sub>RP</sub>.
+            <strong>Crossed</strong> — members crossing both thresholds, so having a computable
+            Δt<sub>RP</sub>. The conditional timing error is taken over these alone.
           </li>
           <li>
-            <strong>Conditional timing error</strong>: Δt<sub>RP</sub> over only those members.
+            <strong>Observed crossed, forecast did not</strong> — a genuine miss.
+          </li>
+          <li>
+            <strong>Observations never crossed</strong> — nothing to time against, and not a
+            forecast failure at all.
+          </li>
+          <li>
+            <strong>Total members</strong>, as the denominator for the other three.
           </li>
         </ul>
         <p style={p}>
-          Detection rate typically falls as the threshold rises, exposing the limits of the
-          ensemble's probabilistic coverage of extremes.
+          Detection rate falls as the threshold rises, but read the third column before drawing a
+          conclusion from that. At the 50- and 100-year levels the observations usually never
+          crossed either, so the fall is showing the event's severity rather than a limit of the
+          ensemble.
+        </p>
+        <p style={p}>
+          The whole crossing family needs the <strong>historical observations</strong> upload, since
+          it compares observed return periods against simulated ones and the observed set is fitted
+          to that record. Without it the panel is absent rather than approximate.
         </p>
 
         <h3 style={h3}>Accuracy — Kling–Gupta Efficiency (KGE')</h3>
