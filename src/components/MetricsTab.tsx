@@ -918,9 +918,22 @@ export function MetricsTab() {
           // Null when there is no record or too little of it falls in season.
           // RPS is a proper score and is still reported; only RPSS is withheld,
           // with its reason.
-          const clim = app.historicalData
-            ? seasonalClimatology(app.historicalData, eventData, obsThr)
-            : null;
+          //
+          // Aggregated the same way the scored observations were. RPS
+          // categorises `griddedMax.obs` — bin MAXIMA at the comparison grid —
+          // so a reference built from raw sub-daily readings is answering a
+          // different question: most readings within a day sit below that day's
+          // maximum, so it drastically understates how often exceedance happens
+          // and is far too easy to beat. Measured on a 15-minute record, the
+          // matched reference expects exceedance 96x more often than the raw one.
+          const clim =
+            app.historicalData && grid
+              ? seasonalClimatology(
+                  aggregateSeries(app.historicalData, grid.stepMs, 'max'),
+                  eventData,
+                  obsThr,
+                )
+              : null;
           setRpsResult(
             rpsByLead(buckets, eventData, obsThr, simThr, clim?.climatology ?? null, {
               maxLead: MAX_LEAD,

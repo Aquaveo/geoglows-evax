@@ -594,10 +594,47 @@ export function OverviewTab() {
           Report <strong>RPSS</strong> when comparing across events. Raw RPS is a mean over
           timesteps, so quiet days drag it toward zero whatever the skill — but the climatological
           reference absorbs the same easy timesteps, so the ratio barely moves: measured drift is
-          about 0.01 across an 800-fold increase in window length, against 0.37 for MCC. The
-          reference is built from the uploaded observed record, not from model output, for the same
-          reason CRPSS requires it — a baseline carrying the model's own bias is too easy to beat.
+          about 0.01 across an 800-fold increase in window length, against 0.37 for MCC.
         </p>
+        <p style={p}>
+          <strong>What the reference is, exactly.</strong> RPSS and CRPSS are both skill scores —
+          the number means nothing without saying what it was compared against — so both use one
+          rule, and it is worth stating in full:
+        </p>
+        <ul style={ul}>
+          <li>
+            <strong>Observed, never modelled.</strong> Built from the uploaded gauge record. A
+            baseline carrying the model's own bias is too easy to beat.
+          </li>
+          <li>
+            <strong>Season-restricted to ±15 days</strong> of the event's calendar days. Not an
+            average of those days — a filter: every individual reading from every year whose day of
+            year falls in that window, pooled into one distribution. A whole-record baseline would
+            have to predict a wet-season flood from the dry season's distribution, so beating it
+            would partly reward the forecast for knowing what month it is. Measured on a seasonal
+            record, the two disagree fourfold on how often the 2-year threshold is crossed
+            (0.0102 whole-record against 0.0419 in season). The window wraps across New Year.
+          </li>
+          <li>
+            <strong>Aggregated the same way the scored observations are.</strong> The categorical
+            metrics classify bin <em>maxima</em>, so the reference is built from bin maxima too. A
+            reference of raw sub-daily readings understates exceedance badly — most readings within
+            a day sit below that day's peak — and on a 15-minute record the matched reference
+            expects exceedance 96× more often.
+          </li>
+          <li>
+            <strong>Withheld rather than estimated.</strong> With no historical upload, or fewer
+            than 30 values in season, no skill score is shown. The alternative is a baseline built
+            from the very event being scored, which is circular. RPS and CRPS are proper scores and
+            are still reported; only the skill scores need a reference.
+          </li>
+          <li>
+            <strong>Withheld when the reference was never tested.</strong> If nothing in the window
+            crossed even the lowest threshold, climatology is right by default, its score collapses
+            toward zero, and the ratio explodes — measured RPSS of −3421 on an ordinary near-miss
+            event, which then sets the panel's axis. RPSS is withheld there and says so.
+          </li>
+        </ul>
 
         <h3 style={h3}>Categorical — Scores per exceedance threshold</h3>
         <p style={pMono}>
@@ -715,6 +752,15 @@ export function OverviewTab() {
             normal-flow timesteps, so a moderate CRPS may hide a catastrophic failure at the peak.
           </li>
         </ul>
+        <p style={p}>
+          <strong>CRPSS</strong> uses the same climatological reference rule as RPSS, set out under
+          Ranked probability score above: observed rather than modelled, restricted to ±15 days of
+          the event's calendar days, aggregated the way the scored observations are, and withheld
+          rather than estimated when there is no record or too little of it falls in season. The two
+          skill scores used to be built differently — CRPSS season-restricted and refused to guess,
+          RPSS did neither — so the same app made two claims about what a fair baseline is. They now
+          share one implementation.
+        </p>
       </section>
     </div>
   );
