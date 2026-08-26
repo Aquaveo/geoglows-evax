@@ -158,12 +158,22 @@ export function OverviewTab() {
           resolution, and the forecast side is the daily one.
         </p>
         <p style={p}>
-          The three differ sharply where it matters most. On a bin with realistic within-day shape,
-          the maximum crosses a 10-year-ish level <strong>7.2×</strong> as often as the mean; at a
-          2-year level the gap is only 1.3×. The distortion grows with severity, which is the end
-          the flood metrics live at. The median is the default because it is the least distorting
-          summary of the three: not dragged by a single extreme step the way the mean is, and not
-          representing a whole day by its most extreme instant the way the maximum is.
+          The three differ sharply where it matters most, and <strong>not always in the same
+          direction</strong>. On a bin with realistic within-day shape the maximum crosses a
+          10-year-ish level <strong>7.2×</strong> as often as the mean, so it inflates the
+          exceedance count. But on a flashy event the opposite happens: a 280 m³/s peak only 1.2
+          hours wide, binned to 3 hours, is kept intact by the maximum and reported as 204 by the
+          median and 190 by the mean — erasing an exceedance that genuinely occurred.
+        </p>
+        <p style={p}>
+          So neither is safe in general, and the median is the default only as the least distorting
+          of the three: not dragged by a single extreme step the way the mean is, not representing a
+          whole bin by its most extreme instant the way the maximum is. Which one is right depends
+          on how flashy your event is relative to the grid, which is a property of your data rather
+          than of the method. The app therefore checks: if the choice would change the event's
+          return-period classification, the Categorical block says so, with the peak and
+          classification each summary gives. That is the point at which it stops being a preference
+          and starts deciding what the metrics measure.
         </p>
         <p style={p}>
           Note this is aggregation over <em>time</em>, applied to each ensemble member separately.

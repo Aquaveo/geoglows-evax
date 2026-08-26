@@ -40,6 +40,7 @@ import { dumbbellFigure, type DumbbellRow } from '../plots/dumbbell';
 import { divergingBarsFigure, type DivergingRow } from '../plots/divergingBars';
 import { maxOf } from '../lib/arrayStats';
 import { pickDefaultRun } from '../lib/defaultRun';
+import { aggregationImpact } from '../lib/ingest/aggregationImpact';
 import {
   variantComparison,
   improvement,
@@ -1704,6 +1705,21 @@ export function MetricsTab() {
     matrixSeriesKey,
   ]);
 
+  /**
+   * Whether the bin-summary choice changes the answer for the loaded event.
+   *
+   * Neither summary is universally right — the max keeps a flashy spike the
+   * median erases, and the median resists scatter the max amplifies — so this
+   * reports which regime this event is in rather than arguing for a default.
+   */
+  const aggImpact = useMemo(
+    () =>
+      app.eventData && app.obsRp && grid
+        ? aggregationImpact(app.eventData, app.obsRp, grid.stepMs, categoricalAgg)
+        : null,
+    [app.eventData, app.obsRp, grid, categoricalAgg],
+  );
+
   /** Highest observed flow in the event window — the number that sets eventRp. */
   const observedPeak = useMemo(() => {
     if (!app.eventData) return Number.NaN;
@@ -1772,11 +1788,36 @@ export function MetricsTab() {
                 <option value="max">Maximum — the bin's peak, preserves exceedance</option>
               </select>
             </label>
+            {aggImpact?.changesEventRp && (
+              <div style={aggImpactWarn}>
+                <strong>This choice changes the answer for your event.</strong> The observed peak
+                reads{' '}
+                {(['median', 'mean', 'max'] as const)
+                  .map(
+                    (w) =>
+                      `${Number.isFinite(aggImpact.peak[w]) ? aggImpact.peak[w].toFixed(1) : '—'} m³/s by ${w}`,
+                  )
+                  .join(', ')}
+                , which classifies the event as{' '}
+                {(['median', 'mean', 'max'] as const)
+                  .map(
+                    (w) =>
+                      `${aggImpact.eventRp[w] === 0 ? 'below 2-year' : `${aggImpact.eventRp[w]}-year`} by ${w}`,
+                  )
+                  .join(', ')}
+                . Every categorical metric inherits that, including how many categories exist at
+                all. A flashy event inside a coarse bin survives the maximum and is erased by the
+                median; a broad event with noisy readings has the opposite problem. Look at your
+                hydrograph and pick the summary that represents it.
+              </div>
+            )}
             <div style={aggNote}>
               Only bites when your data is finer than the comparison grid; with a daily gauge and a
-              daily grid every bin holds one value and all three agree. Where it does bite it
-              decides the exceedance count: on a bin with realistic within-day shape the maximum
-              crosses a 10-year-ish level <strong>7.2×</strong> as often as the mean.
+              daily grid every bin holds one value and all three agree. Where it does bite it can go
+              either way: on a bin with realistic within-day shape the maximum crosses a
+              10-year-ish level <strong>7.2×</strong> as often as the mean, while on a 1.2-hour
+              spike inside a 3-hour bin the maximum keeps a 280 m³/s peak that the median reports as
+              204 and the mean as 190 — erasing the exceedance entirely.
               <br />
               The honest choice matches whatever the return-period thresholds were fitted to, and
               that is a property of the record you uploaded — <code>returnPeriodsFromSeries</code>
@@ -3133,6 +3174,17 @@ const noCategoriesAlert: React.CSSProperties = {
   fontSize: '0.9rem',
   lineHeight: 1.55,
   maxWidth: '52rem',
+};
+const aggImpactWarn: React.CSSProperties = {
+  fontSize: '0.85rem',
+  color: '#5c3d16',
+  background: '#fff8ef',
+  border: '1px solid #e0b88a',
+  borderLeft: '4px solid #d97706',
+  borderRadius: 4,
+  padding: '0.55rem 0.7rem',
+  lineHeight: 1.55,
+  maxWidth: '46rem',
 };
 const aggNote: React.CSSProperties = {
   fontSize: '0.85rem',
