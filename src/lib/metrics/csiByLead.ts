@@ -1,6 +1,7 @@
 import { memberSeries } from '../leadBuckets';
 import type { LeadBuckets, RpThresholds, TimeSeries } from '../types';
 import { buildContingencyMatrix, categoryLabels, validCategories } from './contingency';
+import { computeCsi } from './csi';
 
 /**
  * CSI by lead day, at every exceedance threshold, from the MEMBER-POOLED
@@ -144,20 +145,13 @@ export function csiByLead(
       s.falseAlarms.push(b);
       s.misses.push(c);
       s.eventSteps.push(distinctExceedances(bucket, obsAt, obsRp, cats[s.category]));
-      // NaN, not 0, when nothing was observed AND nothing forecast at this
-      // level.
-      //
-      // computeCsi deliberately returns 0 there — a defensible reading for a
-      // single pooled number ("no hits were scored"). On a line against lead
-      // day it is not: at the high thresholds many leads have no exceedance at
-      // all, and plotting them at 0 draws a line crashing to the worst possible
-      // score when in fact nothing happened to score. A gap says that; a zero
-      // lies about it. This also matches thresholdScores, which is the CSI
-      // already on screen in the per-threshold table.
-      //
-      // Wherever the table is non-degenerate the two agree exactly, and a test
-      // pins that, so there is still only one CSI formula in play.
-      s.csi.push(a + b + c === 0 ? Number.NaN : a / (a + b + c));
+      // Through the canonical implementation, so the formula lives in exactly
+      // one place. It returns NaN for an all-correct-negative table, which is
+      // what lets this panel draw a GAP at thresholds a given lead never saw
+      // rather than a line dropping to the floor — 0 is the worst attainable
+      // CSI, and a lead where nothing happened did not earn it. The cells above
+      // are kept for the hover and for POD/FAR, and a test pins them to agree.
+      s.csi.push(computeCsi(pooled, s.category));
       s.pod.push(a + c === 0 ? Number.NaN : a / (a + c));
       s.far.push(a + b === 0 ? Number.NaN : b / (a + b));
     }

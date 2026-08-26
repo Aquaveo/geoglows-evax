@@ -43,7 +43,7 @@ describe('csiByLead', () => {
     expect(r.thresholds.map((t) => t.label)).toEqual(['2–5yr', '5–10yr', '≥10yr']);
   });
 
-  it('agrees with computeCsi wherever the pooled table is non-degenerate', () => {
+  it('agrees with computeCsi on every threshold of the pooled matrix it built', () => {
     const obs = ts([10, 350, 20, 250]);
     const b = buckets({
       2: { days: [1, 2, 3, 4], members: [[10, 12], [400, 60], [20, 18], [220, 210]] },
@@ -57,15 +57,13 @@ describe('csiByLead', () => {
       for (let i = 0; i < K; i++) for (let j = 0; j < K; j++) pooled[i][j] += cm.matrix[i][j];
     }
     const leadIdx = r.leads.indexOf(2);
-    let checked = 0;
     for (const s of r.thresholds) {
-      // Only where something was observed or forecast: computeCsi returns 0 for
-      // an all-correct-negative table while this reports NaN, on purpose.
-      if (s.hits[leadIdx] + s.falseAlarms[leadIdx] + s.misses[leadIdx] === 0) continue;
-      expect(s.csi[leadIdx]).toBeCloseTo(computeCsi(pooled, s.category), 12);
-      checked += 1;
+      const ref = computeCsi(pooled, s.category);
+      // Includes the degenerate case: both are NaN there, since the two now
+      // share one convention and one implementation.
+      if (Number.isNaN(ref)) expect(Number.isNaN(s.csi[leadIdx])).toBe(true);
+      else expect(s.csi[leadIdx]).toBeCloseTo(ref, 12);
     }
-    expect(checked).toBeGreaterThan(0);
   });
 
   it('keeps hits/false alarms/misses consistent with CSI, POD and FAR', () => {

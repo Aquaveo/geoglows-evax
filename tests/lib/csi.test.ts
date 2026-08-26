@@ -46,11 +46,24 @@ describe('computeCsi', () => {
 
   it('reads 1 for a perfect forecast and 0 when every event was missed', () => {
     expect(computeCsi([[10, 0], [0, 5]])).toBe(1);
+    // A REAL zero: five misses, no hits. The denominator is non-zero, so the
+    // forecast genuinely earned the worst score. This must stay 0.
     expect(computeCsi([[10, 0], [5, 0]])).toBe(0);
   });
 
-  it('returns 0, not NaN, when nothing was forecast or observed as an event', () => {
-    expect(computeCsi([[42, 0], [0, 0]])).toBe(0);
+  it('returns NaN, not 0, when nothing was forecast AND nothing observed', () => {
+    // hits = false alarms = misses = 0, so CSI is 0/0 — undefined, not zero.
+    // Reporting 0 would mean "worst possible score" for a period in which
+    // nothing happened to score, which is the opposite of the truth. Matches
+    // thresholdScores, which reports this same quantity in the table.
+    expect(Number.isNaN(computeCsi([[42, 0], [0, 0]]))).toBe(true);
+  });
+
+  it('separates a real zero from an undefined one', () => {
+    // The distinction the two cases above turn on, stated once directly: both
+    // have zero hits, and only one of them is a failure.
+    expect(computeCsi([[10, 0], [5, 0]])).toBe(0); // 5 misses  -> earned a zero
+    expect(Number.isNaN(computeCsi([[10, 0], [0, 0]]))).toBe(true); // nothing -> n/a
   });
 
   it('returns NaN for an empty matrix or an out-of-range threshold', () => {

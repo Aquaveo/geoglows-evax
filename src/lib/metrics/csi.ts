@@ -28,9 +28,21 @@
  * below-lowest-return-period class, so the default of 1 asks the operational
  * question: did the forecast call an exceedance when one happened?
  *
- * Returns NaN when the matrix is empty, and 0 when nothing was forecast and
- * nothing observed at or above the threshold — no hits are possible, and 0 is
- * the honest reading rather than an undefined one.
+ * Returns NaN when the matrix is empty, and also when nothing was forecast and
+ * nothing observed at or above the threshold.
+ *
+ * That second case is genuinely undefined — hits, false alarms and misses are
+ * all zero, so the ratio is 0/0 — and it must not be reported as 0, because 0
+ * is the WORST attainable CSI. "Nothing happened and nothing was predicted" and
+ * "every event was missed" are opposite outcomes, and collapsing them onto the
+ * same number tells the reader a quiet period was a total failure.
+ *
+ * A real 0 is preserved: misses with no hits scores 0, because there the
+ * denominator is non-zero and the forecast genuinely earned it.
+ *
+ * This matches thresholdScores, which reports the same quantity in the
+ * per-threshold table, and it is what lets the by-lead panel draw a GAP rather
+ * than a line dropping to the floor at thresholds an individual lead never saw.
  */
 export function computeCsi(matrix: number[][], atOrAbove = 1): number {
   const K = matrix.length;
@@ -62,5 +74,5 @@ export function computeCsi(matrix: number[][], atOrAbove = 1): number {
 
   if (n === 0) return Number.NaN;
   const denom = hits + falseAlarms + misses;
-  return denom === 0 ? 0 : hits / denom;
+  return denom === 0 ? Number.NaN : hits / denom;
 }
