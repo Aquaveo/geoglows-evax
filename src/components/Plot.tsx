@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import Plotly, {
   type Data,
   type Layout,
@@ -69,21 +69,96 @@ function syncTopBands(gd: PlotlyHTMLElement) {
 }
 
 /**
+ * Structural hash of a figure, used to tell a real change from a re-render.
+ *
+ * Walks the value and folds it into one number rather than serialising it. A
+ * JSON.stringify would work but allocates a several-hundred-kilobyte string for
+ * an ensemble hydrograph on every render, which is the kind of cost this is
+ * meant to avoid in the first place.
+ *
+ * Key order is not sorted: these objects are built by one code path per figure,
+ * so insertion order is already stable between renders.
+ */
+function hashFigure(value: unknown, h = 0x811c9dc5): number {
+  if (value === null) return fold(h, 1);
+  switch (typeof value) {
+    case 'undefined':
+      return fold(h, 2);
+    case 'boolean':
+      return fold(h, value ? 3 : 4);
+    case 'number':
+      // Split the float so 1 and 1.5 cannot collide, and NaN stays stable.
+      if (Number.isNaN(value)) return fold(h, 5);
+      return fold(fold(h, value | 0), Math.round((value % 1) * 0x7fffffff));
+    case 'string': {
+      let out = fold(h, value.length);
+      for (let i = 0; i < value.length; i++) out = fold(out, value.charCodeAt(i));
+      return out;
+    }
+    case 'object': {
+      if (value instanceof Date) return fold(h, value.getTime());
+      if (Array.isArray(value)) {
+        let out = fold(h, value.length);
+        for (let i = 0; i < value.length; i++) out = hashFigure(value[i], out);
+        return out;
+      }
+      let out = h;
+      for (const k in value as Record<string, unknown>) {
+        out = hashFigure(k, out);
+        out = hashFigure((value as Record<string, unknown>)[k], out);
+      }
+      return out;
+    }
+    default:
+      // Functions and symbols: identity is not stable across renders and no
+      // figure should carry them, so fold a constant rather than thrashing.
+      return fold(h, 6);
+  }
+}
+
+function fold(h: number, n: number): number {
+  return (Math.imul(h ^ n, 0x01000193) >>> 0) | 0;
+}
+
+/**
  * Minimal Plotly wrapper. We use plotly.js-dist-min directly instead of
  * react-plotly.js to avoid pulling in the much larger plotly.js bundle.
  */
 export function Plot({ data, layout, config, style }: PlotProps) {
   const ref = useRef<HTMLDivElement | null>(null);
 
+  // Every caller builds `data` and `layout` inline in its JSX, so both are new
+  // objects on every render even when the figure is identical. Keying the effect
+  // on their identity therefore re-ran Plotly.react for EVERY mounted chart on
+  // EVERY render of the tab — and since react() resets the return-period bands
+  // to their unstretched height, syncTopBands then issued a restyle, so each
+  // chart paid two full Plotly operations per render. With ~20 charts mounted
+  // that is what made the page stop responding.
+  //
+  // Keying on the figure's CONTENT makes a render that changes nothing free.
+  //
+  // Memoising on the hash gives back the SAME object while the content is
+  // unchanged, and a fresh one carrying the current figure the moment it is not,
+  // so the effect can depend on it directly. No ref written during render, and
+  // nothing to keep in sync.
+  const signature = hashFigure([data, layout, config]);
+  const figure = useMemo(
+    () => ({ data, layout, config }),
+    // Content, deliberately, not identity — that substitution is the whole fix.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [signature],
+  );
+
   useEffect(() => {
     if (!ref.current) return;
+    const { data: d, layout: l, config: c } = figure;
     const cfg: Partial<Config> = {
       responsive: true,
       displaylogo: false,
-      ...config,
+      ...c,
     };
     let disposed = false;
-    void Plotly.react(ref.current, data, layout ?? {}, cfg).then((gd) => {
+    void Plotly.react(ref.current, d, l ?? {}, cfg).then((gd) => {
       if (disposed) return;
       syncTopBands(gd);
       // Legend clicks arrive as restyles; re-fit the band to what is left.
@@ -93,7 +168,7 @@ export function Plot({ data, layout, config, style }: PlotProps) {
     return () => {
       disposed = true;
     };
-  }, [data, layout, config]);
+  }, [figure]);
 
   useEffect(() => {
     const el = ref.current;

@@ -35,7 +35,7 @@ import { correctForecastsGlobal, type GlobalCorrection } from '../lib/bias/globa
 import { getPolyfits } from '../lib/bias/polyfits';
 import type { RiverPolyfits } from '../lib/bias/polyfitTypes';
 import { correctionEffectByLead } from '../lib/bias/correctionEffect';
-import { biasCdfsFigure, biasTransferFigure } from '../plots/biasTransfer';
+import { biasCdfsFigure } from '../plots/biasTransfer';
 import { dumbbellFigure, type DumbbellRow } from '../plots/dumbbell';
 import { divergingBarsFigure, type DivergingRow } from '../plots/divergingBars';
 import { maxOf } from '../lib/arrayStats';
@@ -1172,20 +1172,6 @@ export function MetricsTab() {
   const activeMapping =
     correction && activeBiasMonth != null ? (correction.mappings.get(activeBiasMonth) ?? null) : null;
 
-  /** Raw forecast values in the selected month, for the transfer-curve rug. */
-  const biasRugValues = useMemo(() => {
-    if (activeBiasMonth == null || app.forecasts.size === 0) return [];
-    const out: number[] = [];
-    for (const run of app.forecasts.values()) {
-      if (run.time.length === 0) continue;
-      if (run.time[0].getUTCMonth() + 1 !== activeBiasMonth) continue;
-      for (const series of run.discharge) {
-        for (const v of series) if (Number.isFinite(v)) out.push(v);
-      }
-    }
-    return out;
-  }, [activeBiasMonth, app.forecasts]);
-
   const correctionEffect = useMemo(
     () =>
       rawBuckets && correctedBuckets
@@ -2041,38 +2027,6 @@ export function MetricsTab() {
             )}
 
             <div style={subBlock}>
-              <h3 style={h3}>Transfer curve — local CDF</h3>
-              <Plot
-                {...biasTransferFigure(activeMapping, {
-                  forecastValues: biasRugValues,
-                  riverId: app.reach?.riverId ?? undefined,
-                })}
-              />
-              <PlotNote>
-                read a simulated flow off the bottom axis and the corrected value off the side.
-                Distance from the grey 1:1 line is the size of the correction; where the blue
-                "Applied" line <em>sits on</em> 1:1, the correction is doing nothing there.
-                <br />
-                <br />
-                The red dotted line is the raw quantile map, and its gaps are the whole story
-                behind the caveats. Below the simulated monthly minimum and above its maximum the
-                observed CDF is flat, so the inverse is undefined — at the low end the reference
-                keeps the raw value (hence Applied returning to 1:1), and at the high end it
-                returns infinity and the run is excluded. The black tick marks along the bottom
-                are your actual forecast values, so you can see which part of this curve your
-                event really uses.
-                <br />
-                <br />
-                This curve and the CDF pair below exist for the <strong>local</strong> correction
-                only, and not because SABER was left out: SABER has no curve of this kind to draw.
-                It applies published per-river, per-month polynomial coefficients rather than
-                matching your uploaded record against the retrospective, so there is no pair of
-                empirical distributions to put side by side. What it does to your numbers is shown
-                in the shift and before/after plots below, which do cover both.
-              </PlotNote>
-            </div>
-
-            <div style={subBlock}>
               <h3 style={h3}>The two distributions being matched — local CDF</h3>
               <Plot
                 {...biasCdfsFigure(activeMapping, { riverId: app.reach?.riverId ?? undefined })}
@@ -2084,6 +2038,14 @@ export function MetricsTab() {
                 are histogram CDFs, and the flat treads are exactly where the inverse mapping
                 fails — a tall flat segment on the black curve is a wide band of probabilities
                 with no distinct observed flow to map back to.
+                <br />
+                <br />
+                This panel exists for the <strong>local</strong> correction only, and not because
+                SABER was left out: SABER has nothing of this kind to draw. It applies published
+                per-river, per-month polynomial coefficients rather than matching your uploaded
+                record against the retrospective, so there is no pair of empirical distributions to
+                put side by side. What it does to your numbers is in the shift and before/after
+                plots below, which do cover both.
               </PlotNote>
             </div>
           </>
