@@ -85,11 +85,21 @@ export function ForecastTab() {
     return dailyDateRange(validation.downloadStart, validation.eventEnd);
   }, [validation]);
 
-  // Default to most-recent fetched date when forecasts arrive.
+  // Default to a MIDDLE initialization, not the most recent.
+  //
+  // Runs are fetched from `eventStart − INIT_LOOKBACK_DAYS` through `eventEnd`,
+  // so the newest run is initialized on the last day of the event and its whole
+  // 15-day horizon lies AFTER it — that run cannot show the event at all, which
+  // made the landing plot look like nothing happened. The first run has the
+  // opposite problem, reaching the event only at the very end of its horizon.
+  // A middle initialization has the event squarely inside its forecast, which is
+  // what someone opening this tab is here to look at.
   useEffect(() => {
     if (!app.selectedDate && app.forecasts.size > 0) {
       const keys = [...app.forecasts.keys()].sort();
-      app.setSelectedDate(keys[keys.length - 1]);
+      // Lower middle: marginally earlier, so slightly more of the event falls
+      // ahead of the run rather than behind it.
+      app.setSelectedDate(keys[Math.floor((keys.length - 1) / 2)]);
     }
   }, [app.forecasts, app.selectedDate, app]);
 
@@ -235,6 +245,14 @@ export function ForecastTab() {
                 apart indicates a skewed ensemble — usually a minority of members predicting a
                 much larger peak. Height against the simulated return-period bands is the
                 model's own severity signal for this initialization.
+                <br />
+                <br />
+                Opens on a <strong>middle</strong> initialization rather than the newest one. Runs
+                are fetched from {INIT_LOOKBACK_DAYS} days before the event through its last day,
+                so the newest run is initialized on the event's final day and its whole horizon
+                lies after it — that run shows no event at all. Drag the slider left toward the
+                earliest runs to watch the forecast pick the event up, and right to watch it fall
+                out of the horizon.
               </PlotNote>
             </>
           )}
