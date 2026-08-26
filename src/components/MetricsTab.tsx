@@ -39,6 +39,12 @@ import { correctionEffectByLead } from '../lib/bias/correctionEffect';
 import { dumbbellFigure, type DumbbellRow } from '../plots/dumbbell';
 import { divergingBarsFigure, type DivergingRow } from '../plots/divergingBars';
 import { maxOf } from '../lib/arrayStats';
+import {
+  variantComparison,
+  improvement,
+  type ComparisonRow,
+  type VariantKey,
+} from '../lib/metrics/variantComparison';
 import { biasHydrographFigure } from '../plots/biasHydrograph';
 import type { BiasCorrection } from '../lib/bias/correctForecasts';
 import { PlotNote } from './PlotNote';
@@ -300,6 +306,96 @@ function NoCategoriesAlert({ peak, obsRp }: { peak: number; obsRp: RpThresholds 
           are the right ones to read here.
         </li>
       </ul>
+    </div>
+  );
+}
+
+/**
+ * Raw against every available correction, one row per metric.
+ *
+ * The charts in this section show one correction at a time, so judging whether a
+ * correction helped meant switching the selector and remembering the other panel.
+ * This is the same numbers side by side.
+ *
+ * Improvement is measured as movement TOWARD the metric's ideal, not as a rise.
+ * That distinction matters for beta and gamma: they are ratios whose target is 1
+ * and which can miss either way, so 1.4 is worse than 1.0 and so is 0.7. Reading
+ * them as "higher is better" would call an over-correction an improvement.
+ */
+function VariantComparisonTable({
+  rows,
+  hasLocal,
+  hasGlobal,
+}: {
+  rows: ComparisonRow[];
+  hasLocal: boolean;
+  hasGlobal: boolean;
+}) {
+  const cols: { key: VariantKey; label: string }[] = [
+    { key: 'raw', label: 'Raw' },
+    ...(hasLocal ? [{ key: 'local' as VariantKey, label: 'Local CDF' }] : []),
+    ...(hasGlobal ? [{ key: 'global' as VariantKey, label: 'SABER' }] : []),
+  ];
+  const fmt = (v: number, digits: number) => (Number.isFinite(v) ? v.toFixed(digits) : '—');
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={scoreTable}>
+        <thead>
+          <tr>
+            <th style={scoreTh}>Metric</th>
+            <th style={scoreTh}>Ideal</th>
+            {cols.map((c) => (
+              <th key={c.key} style={scoreTh}>
+                {c.label}
+              </th>
+            ))}
+            {cols.length > 1 && <th style={scoreTh}>Best</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            // Which correction moved furthest toward the ideal, if any did.
+            const gains = cols
+              .filter((c) => c.key !== 'raw')
+              .map((c) => ({ key: c.key, label: c.label, gain: improvement(r, r.values.raw, r.values[c.key]) }))
+              .filter((g) => Number.isFinite(g.gain));
+            const best = gains.length > 0 ? gains.reduce((a, b) => (b.gain > a.gain ? b : a)) : null;
+            return (
+              <tr key={r.metric}>
+                <td style={scoreTd}>{r.metric}</td>
+                <td style={{ ...scoreTdNum, color: '#898781' }}>{r.ideal}</td>
+                {cols.map((c) => (
+                  <td
+                    key={c.key}
+                    style={{
+                      ...scoreTdNum,
+                      fontWeight: best && best.key === c.key && best.gain > 0 ? 700 : 400,
+                    }}
+                  >
+                    {fmt(r.values[c.key], r.digits)}
+                  </td>
+                ))}
+                {cols.length > 1 && (
+                  <td style={{ ...scoreTdNum, whiteSpace: 'nowrap' }}>
+                    {!best || !Number.isFinite(best.gain) ? (
+                      '—'
+                    ) : best.gain > 0 ? (
+                      <span style={{ color: '#1a7f37' }}>
+                        {best.label} +{best.gain.toFixed(r.digits)}
+                      </span>
+                    ) : (
+                      <span style={{ color: '#b45309' }}>
+                        neither ({best.gain.toFixed(r.digits)})
+                      </span>
+                    )}
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1284,6 +1380,45 @@ export function MetricsTab() {
    * infinity, while SABER excludes none. Keying the selector off the local list
    * alone hid every run SABER could still show.
    */
+  /**
+   * Raw against both corrections, on one table.
+   *
+   * Costs nothing: every input is already computed by the Compute buttons in the
+   * blocks above. Its value is that the charts can only show one correction at a
+   * time, so "did correction help" previously meant switching a selector and
+   * remembering.
+   */
+  const comparison = useMemo(
+    () =>
+      variantComparison({
+        accuracy: {
+          raw:
+            app.kgeDistribution && app.rDistribution && app.betaDistribution && app.gammaDistribution
+              ? {
+                  kge: app.kgeDistribution,
+                  r: app.rDistribution,
+                  beta: app.betaDistribution,
+                  gamma: app.gammaDistribution,
+                }
+              : null,
+          local: correctedAccuracy,
+          global: globalAccuracy,
+        },
+        skill: { raw: skillLead, local: skillLeadCorrected, global: skillLeadGlobal },
+        crps: { raw: app.crpsResults, local: correctedCrps, global: globalCrps },
+      }),
+    [
+      app.kgeDistribution, app.rDistribution, app.betaDistribution, app.gammaDistribution,
+      correctedAccuracy, globalAccuracy,
+      skillLead, skillLeadCorrected, skillLeadGlobal,
+      app.crpsResults, correctedCrps, globalCrps,
+    ],
+  );
+  /** Whether the table has anything to say yet. */
+  const comparisonReady = comparison.some((r) =>
+    (['raw', 'local', 'global'] as VariantKey[]).some((k) => Number.isFinite(r.values[k])),
+  );
+
   /** The selected correction's inputs, resolved once for every panel below. */
   const biasLabel = activeBiasVariant === 'global' ? 'SABER' : 'Local CDF';
   const activeBiasEffect =
@@ -2070,6 +2205,35 @@ export function MetricsTab() {
         title="Bias correction"
         description="What a correction actually does to your forecasts: how far it shifts each lead day, whether KGE′ improved, and one run before and after. Pick which correction with the selector — the local CDF map fitted to your uploaded gauge record, or SABER, fitted centrally per river and month. Diagnostics only, no metric here."
       >
+        {comparisonReady && (
+          <div style={subBlock}>
+            <h3 style={h3}>Raw against each correction, side by side</h3>
+            <VariantComparisonTable
+              rows={comparison}
+              hasLocal={!!correction}
+              hasGlobal={!!globalCorrection && !globalCorrection.unusable}
+            />
+            <PlotNote>
+              every cell is the <strong>median across lead days</strong> of that lead's own median
+              across the 51 members — the same two-level summary the charts in this app plot, so the
+              table cannot disagree with them. It is a summary and hides the lead structure
+              completely; a correction that helps at short lead and hurts at long lead reads as a
+              small change here. The charts below are the record.
+              <br />
+              <br />
+              <strong>Best</strong> names the correction that moved furthest{' '}
+              <em>toward</em> the metric's ideal, which is not the same as furthest up. β and γ are
+              ratios targeting 1 and can miss either way, so 1.4 is as wrong as 0.7 and an
+              over-correction is not an improvement. "neither" means both corrections left that
+              metric worse than raw.
+              <br />
+              <br />
+              A dash means that variant was not computed — press the Compute buttons in the blocks
+              above, since this table reuses their results rather than recomputing anything.
+            </PlotNote>
+          </div>
+        )}
+
         {/*
           Each correction is gated on its OWN availability. The section used to
           be gated on the local map alone, so a user who had not uploaded a
