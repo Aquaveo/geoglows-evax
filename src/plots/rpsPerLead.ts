@@ -87,6 +87,35 @@ export function rpsPerLeadFigure(
       customdata: r.n.map((n) => [n] as [number]),
       hovertemplate: 'lead %{x}<br>RPSS %{y:.3f}<br>%{customdata[0]} steps<extra></extra>',
     },
+    // Scale anchors for the lower panel, in the legend rather than the axis
+    // title. Two named endpoints fix the direction between them, which a long
+    // axis title was doing less legibly in a panel only a third of the figure
+    // tall. Nothing is drawn at 1: extending the axis to reach it would flatten
+    // every bar, since a real single-event RPSS lives near 0.
+    {
+      type: 'scatter',
+      mode: 'markers',
+      x: [null],
+      y: [null],
+      xaxis: 'x2',
+      yaxis: 'y2',
+      name: '1 = perfect',
+      marker: { symbol: 'triangle-up', size: 9, color: SKILL },
+      hoverinfo: 'skip',
+      showlegend: true,
+    },
+    {
+      type: 'scatter',
+      mode: 'lines',
+      x: [null],
+      y: [null],
+      xaxis: 'x2',
+      yaxis: 'y2',
+      name: '0 = climatology',
+      line: { color: '#52514e', width: 1.5 },
+      hoverinfo: 'skip',
+      showlegend: true,
+    },
   ];
 
   const skillVals = r.rpss.filter(Number.isFinite);
@@ -104,22 +133,9 @@ export function rpsPerLeadFigure(
     (unscored > 0 ? `  |  ${unscored} lead${unscored === 1 ? '' : 's'} unscored` : '') +
     (noRef > 0 ? `  |  RPSS undefined at ${noRef} lead${noRef === 1 ? '' : 's'}` : '');
 
-  const annotations: NonNullable<Layout['annotations']> = [
-    // The zero line is the entire meaning of the lower panel — above it the
-    // forecast beat climatology, below it climatology won — and unlabelled it is
-    // just a rule the bars happen to sit on.
-    {
-      xref: 'paper' as const,
-      yref: 'y2' as const,
-      x: 0.004,
-      y: 0,
-      text: '0 = no better than climatology',
-      showarrow: false,
-      xanchor: 'left' as const,
-      yanchor: 'bottom' as const,
-      font: { size: 9, color: '#6b6a65' },
-    },
-  ];
+  // The zero line is named in the legend rather than on the plot: at this panel
+  // height an in-plot label sat on top of the leftmost bars.
+  const annotations: NonNullable<Layout['annotations']> = [];
   if (noRef > 0 && refReason) {
     annotations.push({
       xref: 'paper',
@@ -167,10 +183,11 @@ export function rpsPerLeadFigure(
     yaxis2: {
       domain: [0, 0.34],
       anchor: 'x2',
-      // Spelled out because the panel immediately above says "lower is
-      // better", and two stacked panels reading in opposite directions with
-      // only one of them labelled is worse than neither being labelled.
-      title: { text: 'RPSS — higher is better (1 = perfect)' },
+      // Direction still stated, because the panel immediately above says the
+      // OPPOSITE ("lower is better") and one labelled panel out of two is worse
+      // than neither. The endpoints moved to the legend to keep this short — a
+      // rotated title has only ~175px here.
+      title: { text: 'RPSS — higher is better' },
       range: [lo - 0.05, hi + 0.05],
       gridcolor: GRID,
       zeroline: true,
