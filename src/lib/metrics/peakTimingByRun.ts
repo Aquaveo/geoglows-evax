@@ -31,6 +31,20 @@ export interface PeakTimingByRun {
   runsNotCoveringPeak: number;
   /** Runs left with no usable member, so they contribute no box. */
   emptyRuns: number;
+  /**
+   * Runs skipped before any member was looked at: an unparseable start date, no
+   * timesteps at all, or fewer than three samples inside the overlap.
+   *
+   * Previously these three exits incremented nothing, so the accounting did not
+   * close — a run could leave no trace in any counter, and the caller had no way
+   * to tell a run that was scored from one that silently vanished.
+   */
+  unusableRuns: number;
+  /**
+   * Member slots skipped before timing: no series at that index, or no finite
+   * value inside the overlap. Counted for the same reason.
+   */
+  unusableMembers: number;
 }
 
 /**
@@ -94,6 +108,8 @@ export function computePeakTimingByRun(
     runsAfterPeak: 0,
     runsNotCoveringPeak: 0,
     emptyRuns: 0,
+    unusableRuns: 0,
+    unusableMembers: 0,
   };
   if (eventData.time.length === 0 || forecasts.size === 0) return empty;
 
@@ -125,10 +141,15 @@ export function computePeakTimingByRun(
   let runsAfterPeak = 0;
   let runsNotCoveringPeak = 0;
   let emptyRuns = 0;
+  let unusableRuns = 0;
+  let unusableMembers = 0;
 
   for (const [dateStr, run] of forecasts) {
     const t0 = parseStartDate(dateStr);
-    if (t0 == null || run.time.length === 0) continue;
+    if (t0 == null || run.time.length === 0) {
+      unusableRuns++;
+      continue;
+    }
 
     // Whole days from the run's initialization to the observed peak's day. Both
     // are UTC midnight, so this is exact.
@@ -160,12 +181,20 @@ export function computePeakTimingByRun(
       const ms = run.time[i].getTime();
       if (ms >= lo && ms <= hi) inWindow.push(i);
     }
-    if (inWindow.length < 3) continue; // too little overlap to find a shape in
+    if (inWindow.length < 3) {
+      // Too little overlap to find a shape in. A coverage fact like the two
+      // above, so it is counted rather than dropped silently.
+      unusableRuns++;
+      continue;
+    }
 
     const deltas: number[] = [];
     for (let m = 0; m < run.discharge.length; m++) {
       const series = run.discharge[m];
-      if (!series) continue;
+      if (!series) {
+        unusableMembers++;
+        continue;
+      }
 
       // The member's OWN finite samples, which is what both tests below have to
       // key off. Using the overlap's index bounds instead let a single missing
@@ -200,7 +229,11 @@ export function computePeakTimingByRun(
         }
         prevIdx = i;
       }
-      if (firstFinite < 0) continue;
+      if (firstFinite < 0) {
+        // No finite value anywhere in the overlap.
+        unusableMembers++;
+        continue;
+      }
 
       // No peak only when the member is flat THROUGHOUT. A maximum shared by a
       // few adjacent timesteps is a crest with a plateau, which is a forecast of
@@ -250,8 +283,13 @@ export function computePeakTimingByRun(
     }
 
     // A run with nothing left after censoring gets counted but not plotted —
-    // an empty box would just stretch the axis. Runs older than the forecast
-    // horizon land here, which is why the plot stops where it does.
+    // an empty box would just stretch the axis.
+    //
+    // This used to claim "runs older than the forecast horizon land here, which
+    // is why the plot stops where it does". They do not: such a run fails the
+    // coverage test above and lands in runsNotCoveringPeak, or is dropped for
+    // too little overlap. Only runs whose every member was censored or flat
+    // reach this.
     if (deltas.length === 0) {
       emptyRuns++;
       continue;
@@ -276,6 +314,8 @@ export function computePeakTimingByRun(
     runsAfterPeak,
     runsNotCoveringPeak,
     emptyRuns,
+    unusableRuns,
+    unusableMembers,
   };
 }
 

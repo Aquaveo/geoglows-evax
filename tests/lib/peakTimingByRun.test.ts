@@ -135,3 +135,40 @@ describe('the search is bounded by the data, not by a window', () => {
     expect(r.runsNotCoveringPeak).toBe(1);
   });
 });
+
+describe('B14 — the run accounting closes', () => {
+  it('leaves no run untraced, whatever it was skipped for', () => {
+    // The defect: three run-level exits and two member-level exits incremented
+    // nothing, so a run could vanish without appearing in any counter. Measured
+    // on the audit's case, 6 runs x 5 members left 15 of 30 slots accounted for
+    // and one run left no trace at all.
+    const mk = (times: Date[], members: number) => ({
+      time: times,
+      discharge: Array.from({ length: members }, () =>
+        times.map((_, i) => 20 + 300 * Math.exp(-((i - 4) ** 2) / 6)),
+      ),
+    });
+    const day = (d: number, n: number) =>
+      Array.from({ length: n }, (_, i) => new Date(Date.UTC(2024, 5, d) + i * 6 * H));
+
+    const runs = new Map<string, ForecastRun>([
+      ['20240607', mk(day(8, 12), 2)],   // scoreable
+      ['not-a-date', mk(day(8, 12), 2)], // unparseable start date
+      ['20240609', { time: [], discharge: [] }], // no timesteps
+      ['20240610', mk(day(8, 2), 2)],    // too little overlap
+      ['20240620', mk(day(20, 12), 2)],  // initialized after the peak
+    ]);
+    const r = computePeakTimingByRun(runs, eventData);
+
+    const traced =
+      r.initDates.length +
+      r.runsAfterPeak +
+      r.runsNotCoveringPeak +
+      r.emptyRuns +
+      r.unusableRuns;
+    expect(traced).toBe(runs.size);
+    // And each skip landed in the right bucket rather than a catch-all.
+    expect(r.unusableRuns).toBeGreaterThanOrEqual(2);
+    expect(r.runsAfterPeak).toBeGreaterThanOrEqual(1);
+  });
+});
