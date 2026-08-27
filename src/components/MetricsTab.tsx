@@ -10,7 +10,7 @@ import {
 } from '../lib/metrics/contingency';
 import { computeMcc } from '../lib/metrics/mcc';
 import { computeHss } from '../lib/metrics/hss';
-import { orderedThresholds, rpsByLead, seasonalClimatology, type RpsResult } from '../lib/metrics/rps';
+import { orderedThresholds, rpsByLead, type RpsResult } from '../lib/metrics/rps';
 import { thresholdScores, type ThresholdScores } from '../lib/metrics/thresholdScores';
 import { rpsPerLeadFigure } from '../plots/rpsPerLead';
 import { categoricalCombinedFigure } from '../plots/categoricalCombined';
@@ -20,7 +20,12 @@ import { computePeakTiming } from '../lib/metrics/peakTiming';
 import { computePeakTimingByRun } from '../lib/metrics/peakTimingByRun';
 import { computeThresholdCrossing } from '../lib/metrics/thresholdCrossing';
 import { kge } from '../lib/metrics/kge';
-import { computeCrpsByLead, buildClimatology, type CrpsPerLead } from '../lib/metrics/crps';
+import { computeCrpsByLead, type CrpsPerLead } from '../lib/metrics/crps';
+import {
+  categoricalReference,
+  continuousReference,
+  CLIMATOLOGY_WINDOW_DAYS,
+} from '../lib/metrics/references';
 import { Plot } from './Plot';
 import {
   distributionVsLeadFigure,
@@ -66,8 +71,6 @@ import type { CrossingDetection } from '../state/AppContext';
 const MAX_LEAD = 15;
 const MEMBER_COUNT = 51;
 /** Calendar half-width for sampling the climatological reference used by CRPSS. */
-const CLIMATOLOGY_WINDOW_DAYS = 15;
-const DAY_MS = 24 * 3600 * 1000;
 
 /**
  * Minimum forecast/observation pairs before a correlation-shaped score means
@@ -403,6 +406,42 @@ function VariantComparisonTable({
   );
 }
 
+/**
+ * One side's exceedance counts under all three bin summaries.
+ *
+ * States the no-difference case explicitly rather than printing three equal
+ * numbers under a sentence about the gap between them.
+ */
+function ExceedanceCounts({
+  label,
+  counts,
+  side,
+}: {
+  label: string;
+  counts: Record<'mean' | 'median' | 'max', number>;
+  side: string;
+}) {
+  const ways = ['median', 'mean', 'max'] as const;
+  const identical = ways.every((w) => counts[w] === counts.median);
+  return (
+    <p style={aggP}>
+      {label}:{' '}
+      {identical ? (
+        <>
+          <strong>{counts.median.toLocaleString()}</strong> under all three, so the choice does not
+          move the {side} on this event.
+        </>
+      ) : (
+        <>
+          {ways.map((w) => `${counts[w].toLocaleString()} by ${w}`).join(', ')}. Those counts are
+          what become hits and false alarms, so the spread between them is the size of this
+          setting's effect on every categorical score.
+        </>
+      )}
+    </p>
+  );
+}
+
 /** What the global transform did, so its numbers are never unexplained either. */
 function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
   const pct = (n: number) => (c.n > 0 ? ((n / c.n) * 100).toFixed(1) : '0.0');
@@ -425,13 +464,14 @@ function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
             The river is in the published table, but its coefficients for{' '}
             {c.unusableMonths.length === 1 ? 'that month' : 'those months'} are not numbers, so
             there is nothing to apply. {(c.noFitShare * 100).toFixed(0)}% of this event falls there.
-            <br />
+            <span style={notePara}>
             Correcting only the remainder was the alternative, and it would have been worse than
             offering nothing: those metrics would be scored on a different stretch of the event than
             the raw ones sitting beside them in the comparison table. The gap is a contiguous block
             of calendar time, so if it holds the crest the corrected scores <em>improve</em> — only
             the recession got scored. Months the event never reaches are ignored, so a river with a
             broken month outside your window is unaffected.
+            </span>
           </li>
         )}
         {saturated > 0 && (
@@ -533,12 +573,13 @@ function CorrectionBanner({ c, clampedNegatives }: { c: BiasCorrection; clampedN
                 last bits; those timesteps drop out of every metric as a gap would.
               </>
             )}
-            <br />
+            <span style={notePara}>
             These are kept, not removed, because this app evaluates the geoglows method and the
             reference keeps them. But the finite ones are counted in the metrics as though the
             correction had produced a real number there, and the runs that land here are the ones
             that forecast the event — so read the corrected magnitude scores knowing the top of the
             event was flattened onto a ceiling.
+            </span>
           </li>
         )}
         {c.zeroedBelowRange > 0 && (
@@ -547,7 +588,7 @@ function CorrectionBanner({ c, clampedNegatives }: { c: BiasCorrection; clampedN
             {c.zeroedBelowRange === 1 ? '' : 's'} held a positive flow that the mapping turned into{' '}
             <strong>exactly 0</strong>. These sat below the simulated monthly minimum, where the
             mapping runs off the bottom of the observed distribution and lands on its lowest value.
-            <br />
+            <span style={notePara}>
             <strong>Whether that is right depends on your river.</strong> On an intermittent river
             the gauge genuinely reads 0, the observed distribution genuinely has mass there, and
             mapping the lowest forecasts onto it is the correction working as intended. On a
@@ -568,6 +609,7 @@ function CorrectionBanner({ c, clampedNegatives }: { c: BiasCorrection; clampedN
               </>
             )}{' '}
             The arithmetic matches the reference either way and is reported rather than changed.
+            </span>
           </li>
         )}
         {c.nanKeptRaw > 0 && (
@@ -1034,14 +1076,15 @@ export function MetricsTab() {
           // beat. Measured on a 15-minute record with the summary at bin
           // maxima, the matched reference expected exceedance 96x more often
           // than the raw one; the gap narrows at median but does not close.
-          const clim =
-            app.historicalData && grid
-              ? seasonalClimatology(
-                  aggregateSeries(app.historicalData, grid.stepMs, categoricalAgg),
-                  eventData,
-                  obsThr,
-                )
-              : null;
+          const clim = grid
+            ? categoricalReference(
+                app.historicalData,
+                eventData,
+                grid.stepMs,
+                categoricalAgg,
+                obsThr,
+              )
+            : null;
           setRpsResult(
             rpsByLead(buckets, eventData, obsThr, simThr, clim?.climatology ?? null, {
               maxLead: MAX_LEAD,
@@ -1263,13 +1306,10 @@ export function MetricsTab() {
         //
         // Without a historical upload there is no honest reference, so CRPSS is
         // omitted entirely. CRPS itself needs no climatology and still renders.
-        const clim = app.historicalData
-          ? buildClimatology(
-              aggregateSeries(app.historicalData, Math.max(grid!.stepMs, DAY_MS), 'mean'),
-              eventData,
-              CLIMATOLOGY_WINDOW_DAYS,
-            )
-          : null;
+        // Built at the comparison grid, NOT floored at a day: CRPS is scored on
+        // the bin-mean grid at grid.stepMs, so its reference has to be. The
+        // floor inflated CRPSS on sub-daily data — see continuousReference.
+        const clim = continuousReference(app.historicalData, eventData, grid!.stepMs);
         app.setCrpsResults(computeCrpsByLead(buckets, eventData, MAX_LEAD, clim));
         setCorrectedCrps(
           griddedCorrected
@@ -1760,12 +1800,13 @@ export function MetricsTab() {
           {feasibility.achievable === 1 ? '' : 's'}, and r, γ, KGE′, NSE, MCC and HSS need at
           least {MIN_PAIRS_CORRELATION} to mean anything — so they are reported as
           <em> n/a</em> throughout rather than as confident-looking noise.
-          <br />
+          <span style={notePara}>
           The limit is arithmetic, not data quality: pairs per lead are capped by the number of{' '}
           {grid.label === 'daily' ? 'days' : 'grid intervals'} your event spans, because the
           coarser series sets the comparison resolution. To get these metrics you need either a
           longer event window or observations at a finer cadence. β and the CRPS family survive
           small samples and are still reported.
+          </span>
         </p>
       )}
 
@@ -1828,48 +1869,61 @@ export function MetricsTab() {
             {aggImpact && (
               <div style={aggNote}>
                 {aggImpact.summarising === 'neither' ? (
-                  <>
+                  <p style={aggP}>
                     <strong>Nothing is being summarised on this data.</strong> Both sides already sit
                     at the comparison grid, so each bin holds one value and all three choices give
                     the same number. This setting cannot change your results.
-                  </>
+                  </p>
                 ) : (
                   <>
-                    On this data the summary applies to{' '}
-                    <strong>
-                      {aggImpact.summarising === 'both'
-                        ? 'both the observations and the forecasts'
-                        : `the ${aggImpact.summarising}`}
-                    </strong>
-                    .{' '}
-                    {aggImpact.forecastExceedances && (
-                      <>
-                        Forecast member-timesteps crossing the lowest simulated threshold:{' '}
-                        {(['median', 'mean', 'max'] as const)
-                          .map((w) => `${aggImpact.forecastExceedances![w].toLocaleString()} by ${w}`)
-                          .join(', ')}
-                        . Those counts are what become hits and false alarms, so the gap between
-                        them is the size of this setting's effect on every categorical score.
-                      </>
+                    <p style={aggP}>
+                      On this data the summary applies to{' '}
+                      <strong>
+                        {aggImpact.summarising === 'both'
+                          ? 'both the observations and the forecasts'
+                          : `the ${aggImpact.summarising}`}
+                      </strong>
+                      , so that is the side these counts move.
+                    </p>
+                    {/* Report the side actually being summarised. Showing the forecast
+                        counts when the GAUGE is the finer input printed three identical
+                        numbers under a sentence claiming the gap was the setting's
+                        effect — the one side the setting provably cannot touch. */}
+                    {aggImpact.summarising !== 'forecasts' && (
+                      <ExceedanceCounts
+                        label="Observed bins above the lowest observed threshold"
+                        counts={aggImpact.exceedances}
+                        side="observations"
+                      />
+                    )}
+                    {aggImpact.summarising !== 'observations' && aggImpact.forecastExceedances && (
+                      <ExceedanceCounts
+                        label="Forecast member-timesteps above the lowest simulated threshold"
+                        counts={aggImpact.forecastExceedances}
+                        side="forecasts"
+                      />
                     )}
                   </>
                 )}
               </div>
             )}
             <div style={aggNote}>
-              Only bites when your data is finer than the comparison grid; with a daily gauge and a
-              daily grid every bin holds one value and all three agree. Where it does bite it can go
-              either way: on a bin with realistic within-day shape the maximum crosses a
-              10-year-ish level <strong>7.2×</strong> as often as the mean, while on a 1.2-hour
-              spike inside a 3-hour bin the maximum keeps a 280 m³/s peak that the median reports as
-              204 and the mean as 190 — erasing the exceedance entirely.
-              <br />
-              The honest choice matches whatever the return-period thresholds were fitted to, and
-              that is a property of the record you uploaded — <code>returnPeriodsFromSeries</code>
-              takes annual maxima at the record's <em>native</em> resolution, so a daily-values
-              upload gives a daily threshold and a 15-minute upload gives an instantaneous one.
-              This applies to every threshold metric below and to the RPSS reference, which is
-              summarised the same way.
+              <p style={aggP}>
+                Only bites when your data is finer than the comparison grid; with a daily gauge and a
+                daily grid every bin holds one value and all three agree. Where it does bite it can go
+                either way: on a bin with realistic within-day shape the maximum crosses a
+                10-year-ish level <strong>7.2×</strong> as often as the mean, while on a 1.2-hour
+                spike inside a 3-hour bin the maximum keeps a 280 m³/s peak that the median reports as
+                204 and the mean as 190 — erasing the exceedance entirely.
+              </p>
+              <p style={aggP}>
+                The honest choice matches whatever the return-period thresholds were fitted to, and
+                that is a property of the record you uploaded — <code>returnPeriodsFromSeries</code>{' '}
+                takes annual maxima at the record's <em>native</em> resolution, so a daily-values
+                upload gives a daily threshold and a 15-minute upload gives an instantaneous one.
+                This applies to every threshold metric below and to the RPSS reference, which is
+                summarised the same way.
+              </p>
             </div>
             <button onClick={computeCategoricalMetrics} disabled={computing} style={btn}>
               {computing
@@ -2934,8 +2988,11 @@ export function MetricsTab() {
                 <PlotNote>
                   CRPS on its own has units of discharge, so a "good" value depends on how big
                   the river is. This normalises it against a climatological forecast — the
-                  distribution of retrospective flows within ±{CLIMATOLOGY_WINDOW_DAYS} days of
-                  the event's time of year. 1 is perfect, 0 means the ensemble was worth no more
+                  distribution of flows from your <strong>uploaded observed record</strong>{' '}
+                  within ±{CLIMATOLOGY_WINDOW_DAYS} days of the event's time of year, summarised
+                  onto the same comparison grid the CRPS above is scored on. Observed rather than
+                  modelled on purpose: a baseline carrying the model's own bias is too easy to
+                  beat. 1 is perfect, 0 means the ensemble was worth no more
                   than quoting the long-term record for that season, and anything in the red
                   region means it was actively worse than doing nothing. The lead day where the
                   line crosses zero is the honest limit of useful forecast skill for this event,
@@ -3270,6 +3327,25 @@ const aggNote: React.CSSProperties = {
   lineHeight: 1.55,
   maxWidth: '46rem',
 };
+/**
+ * A second paragraph inside a note, banner or list item.
+ *
+ * These were separated by a bare <br />, which breaks the line without opening
+ * any space — so two paragraphs of dense reasoning ran together while the blocks
+ * around them kept their margins, and the spacing read as broken. A block span
+ * rather than a <p> because several of these sit inside a <p>, where a nested
+ * <p> is invalid and the browser silently closes the outer one.
+ */
+const notePara: React.CSSProperties = { display: 'block', marginTop: '0.5rem' };
+
+/**
+ * Paragraphs inside an aggNote block.
+ *
+ * These used to be separated by a bare <br />, which breaks the line without
+ * opening any space, so two paragraphs of dense reasoning ran together while the
+ * sibling blocks around them kept their margins — the spacing read as broken.
+ */
+const aggP: React.CSSProperties = { margin: '0 0 0.5rem' };
 const variantNote: React.CSSProperties = {
   fontSize: '0.85rem',
   color: '#8a6d1f',

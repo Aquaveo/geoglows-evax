@@ -372,7 +372,7 @@ export function OverviewTab() {
             of 178, 324, 810, 3,239 and 161,950 m³/s all came out at 277.09. Whether the inverse
             returns that ceiling or <em>+Infinity</em> depends on whether two cumulative sums
             finished on the same last bits, so both outcomes occur for the same kind of input.
-            <br />
+            <span style={notePara}>
             Nothing is discarded for it. This app exists to evaluate the geoglows method, so
             dropping what the reference keeps would mean evaluating a different one — and the
             reference has no notion of a run to drop, taking one forecast frame and returning one
@@ -380,6 +380,7 @@ export function OverviewTab() {
             would, since a non-finite pair is not aligned; the finite ceilings are counted as
             though the correction had produced a real number, which is worth knowing when the runs
             that land there are the ones that forecast the event.
+            </span>
           </li>
           <li>
             <strong>Low flows are handled two different ways, decided by your record.</strong>{' '}
@@ -392,7 +393,7 @@ export function OverviewTab() {
             sub-minimum timestep between the two — and a clamped negative gauge reading is exactly
             such a value. This is what the reference does and the app matches it bit for bit, so the
             banner counts both outcomes rather than changing either.
-            <br />
+            <span style={notePara}>
             Whether the zeros are <em>right</em> depends on the river. An intermittent one genuinely
             reads 0, its observed distribution genuinely has mass there, and mapping the lowest
             forecasts onto it is the correction working. A perennial one reads negative only from
@@ -400,6 +401,7 @@ export function OverviewTab() {
             zeros are manufactured and the correction inherits them. The banner reports how many
             negative readings your record had clamped, which is the number that separates the two
             cases.
+            </span>
           </li>
           <li>
             <strong>The distributions are daily.</strong> Forecasts are typically sub-daily, so
@@ -1038,6 +1040,8 @@ const caution: React.CSSProperties = {
   lineHeight: 1.6,
   color: '#713f12',
 };
+/** A second paragraph inside a list item; see the note in MetricsTab. */
+const notePara: React.CSSProperties = { display: 'block', marginTop: '0.5rem' };
 const link: React.CSSProperties = { color: '#1d4ed8', textDecoration: 'underline' };
 const h3: React.CSSProperties = { marginTop: '1.25rem', marginBottom: '0.4rem', fontSize: '1rem' };
 const p: React.CSSProperties = { margin: '0.5rem 0', lineHeight: 1.55, color: '#222' };
