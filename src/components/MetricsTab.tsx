@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { useApp } from '../state/AppContext';
+import { useApp } from '../state/appState';
 import { reorganizeByLead, memberSeries, statSeries, type StatKey } from '../lib/leadBuckets';
 import type { LeadBucket, RpThresholds, TimeSeries } from '../lib/types';
 import {
@@ -70,7 +70,7 @@ import {
 } from '../lib/ingest/grid';
 import type { LeadBuckets } from '../lib/types';
 import { RP_LEVELS } from '../lib/types';
-import type { CrossingDetection } from '../state/AppContext';
+import type { CrossingDetection } from '../state/appState';
 
 const MAX_LEAD = 15;
 const MEMBER_COUNT = 51;

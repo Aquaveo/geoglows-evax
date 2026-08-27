@@ -1,4 +1,4 @@
-import { useApp } from '../state/AppContext';
+import { useApp } from '../state/appState';
 import { detectCadence } from '../lib/ingest/cadence';
 import { chooseGrid } from '../lib/ingest/grid';
 import { ResolutionNotice } from './ResolutionNotice';

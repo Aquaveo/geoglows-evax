@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useApp } from '../state/AppContext';
+import { useApp } from '../state/appState';
 import { fetchForecasts } from '../data/rfs';
 import { dailyDateRange, reorganizeByLead, statSeries, type StatKey } from '../lib/leadBuckets';
 import { pickDefaultRun } from '../lib/defaultRun';
@@ -52,13 +52,21 @@ export function ForecastTab() {
     };
   }, [app.eventData]);
 
-  // User-overridable event window. Defaults to the CSV's first/last day.
-  const [eventStartStr, setEventStartStr] = useState<string>('');
-  const [eventEndStr, setEventEndStr] = useState<string>('');
-  useEffect(() => {
-    if (csvBounds && !eventStartStr) setEventStartStr(ymd(csvBounds.start));
-    if (csvBounds && !eventEndStr) setEventEndStr(ymd(csvBounds.end));
-  }, [csvBounds, eventStartStr, eventEndStr]);
+  // User-overridable event window, DERIVED from the CSV rather than copied into
+  // state by an effect.
+  //
+  // The effect version wrote the CSV's bounds into state on mount, which meant a
+  // render, a setState, and a second render every time the upload changed — the
+  // cascading-render pattern react-hooks/set-state-in-effect exists to catch. It
+  // also could not distinguish "not set yet" from "user cleared the field",
+  // because both are the empty string, so clearing the box refilled it.
+  //
+  // Null here means "not overridden", so the default follows a newly uploaded
+  // CSV while a value the user typed survives one.
+  const [startOverride, setStartOverride] = useState<string | null>(null);
+  const [endOverride, setEndOverride] = useState<string | null>(null);
+  const eventStartStr = startOverride ?? (csvBounds ? ymd(csvBounds.start) : '');
+  const eventEndStr = endOverride ?? (csvBounds ? ymd(csvBounds.end) : '');
 
   const validation = useMemo(() => {
     if (!eventStartStr || !eventEndStr) {
@@ -169,7 +177,7 @@ export function ForecastTab() {
                 <input
                   type="date"
                   value={eventStartStr}
-                  onChange={(e) => setEventStartStr(e.target.value)}
+                  onChange={(e) => setStartOverride(e.target.value)}
                   style={dateInput}
                 />
               </label>
@@ -178,7 +186,7 @@ export function ForecastTab() {
                 <input
                   type="date"
                   value={eventEndStr}
-                  onChange={(e) => setEventEndStr(e.target.value)}
+                  onChange={(e) => setEndOverride(e.target.value)}
                   style={dateInput}
                 />
               </label>
