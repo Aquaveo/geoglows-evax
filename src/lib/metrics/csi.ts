@@ -48,6 +48,13 @@ export function computeCsi(matrix: number[][], atOrAbove = 1): number {
   const K = matrix.length;
   if (K === 0) return Number.NaN;
   if (atOrAbove >= K) return Number.NaN;
+  // Lower end guarded too. Only the upper end was, so atOrAbove <= 0 put every
+  // cell of the matrix on the "event" side of both splits: every count became a
+  // hit, b and c were zero, and the function returned a silent PERFECT 1.0.
+  // computeCsi([[10,1],[2,5]], 0) === 1 before this. There is no meaningful
+  // dichotomisation at or above category 0 — that is the whole table — so the
+  // honest answer is undefined, matching the other undefined cases here.
+  if (atOrAbove < 1) return Number.NaN;
 
   let hits = 0;
   let falseAlarms = 0;

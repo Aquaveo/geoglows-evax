@@ -173,6 +173,18 @@ export function rpsByLead(
 ): RpsResult {
   const maxLead = opts.maxLead ?? 15;
   const minPairs = opts.minPairs ?? 5;
+  // The two threshold sets must define the SAME number of categories.
+  //
+  // Nothing checked it, and RPS differences cumulative probabilities over K-1
+  // boundaries — so a mismatch divided an RPS taken over the simulated
+  // boundaries by a climatological RPS taken over the observed ones, and any
+  // observed category above the forecast's top silently collapsed into it.
+  // Measured with obsThr [100,200,300] against simThr [100,200]: a forecast
+  // confidently calling >=5yr on a >=10yr day scored **rpss 1.0000**, a perfect
+  // score for being wrong. Refused rather than reconciled: the sets come from
+  // two Gumbel fits over the same RP_LEVELS, so unequal lengths mean one fit
+  // failed, and guessing which categories correspond would invent the answer.
+  const mismatched = obsThresholds.length !== simThresholds.length;
   const out: RpsResult = {
     leads: [],
     rps: [],
@@ -194,13 +206,19 @@ export function rpsByLead(
   for (let lead = 0; lead <= maxLead; lead++) {
     out.leads.push(lead);
     const bucket = buckets[lead];
-    if (!bucket || bucket.time.length === 0) {
+    if (mismatched || !bucket || bucket.time.length === 0) {
       out.rps.push(Number.NaN);
       out.rpsClim.push(Number.NaN);
       out.rpss.push(Number.NaN);
       out.n.push(0);
       out.exceedances.push(0);
-      out.skipped.push('no forecast data');
+      out.skipped.push(
+        mismatched
+          ? `observed and simulated thresholds define different category counts ` +
+            `(${obsThresholds.length} vs ${simThresholds.length}); one of the two ` +
+            `Gumbel fits is incomplete`
+          : 'no forecast data',
+      );
       out.rpssSkipped.push(null);
       continue;
     }

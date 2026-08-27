@@ -118,3 +118,44 @@ describe('below the simulated minimum — both reference outcomes', () => {
     }
   });
 });
+
+describe('B11 — dropna() drops NaN, not infinities', () => {
+  // The defect: the drop test was !Number.isFinite, so +-Infinity took the
+  // dropna path and skipped BOTH the mapping and clip(lower=0). The pandas
+  // reference this ports drops NaN and keeps +-inf, so -inf is mapped and then
+  // clipped to 0, and +inf reaches the output where the diagnostics can see it.
+  // Measured before the fix: [[-Inf, Inf, 100, 110]] came out as
+  // [-Infinity, +Infinity, ...] with positiveInfinite 0 — a negative discharge
+  // published, and the infinity uncounted.
+  const sim = Array.from({ length: 600 }, (_, i) => 50 + 150 * ((i * 37) % 100) / 100)
+  const obs = Array.from({ length: 600 }, (_, i) => 60 + 180 * ((i * 53) % 100) / 100)
+  const mapping = {
+    month: 6,
+    simulated: buildMonthlyCdf(sim),
+    observed: buildMonthlyCdf(obs),
+  }
+  const runOf = (vals: number[]) => ({
+    time: vals.map((_, i) => new Date(Date.UTC(2024, 5, 10, i))),
+    discharge: [vals],
+  })
+
+  it('never publishes a negative discharge for -Infinity', () => {
+    const r = correctForecastRun(runOf([-Infinity]), mapping as never)
+    expect(r.discharge[0][0]).toBe(0)
+    expect(r.negativeClipped).toBe(1)
+  })
+
+  it('counts +Infinity instead of passing it through unseen', () => {
+    const r = correctForecastRun(runOf([Infinity]), mapping as never)
+    expect(r.positiveInfinite).toBe(1)
+  })
+
+  it('still drops a genuine NaN, and counts it as such', () => {
+    const r = correctForecastRun(runOf([Number.NaN]), mapping as never)
+    expect(r.discharge[0][0]).toBeNaN()
+    expect(r.rawNonFinite).toBe(1)
+    // An infinity is no longer counted as a dropped input.
+    const inf = correctForecastRun(runOf([Infinity]), mapping as never)
+    expect(inf.rawNonFinite).toBe(0)
+  })
+})

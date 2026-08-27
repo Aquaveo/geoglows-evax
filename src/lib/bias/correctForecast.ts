@@ -165,8 +165,17 @@ export function correctForecastRun(
     for (let i = 0; i < nT; i++) {
       const raw = series?.[i] ?? NaN
 
-      // (1) dropna(): a raw NaN is never mapped.
-      if (!Number.isFinite(raw)) {
+      // (1) dropna(): NaN only.
+      //
+      // This tested !Number.isFinite, which also caught +-Infinity and sent it
+      // down the drop path — skipping both the mapping AND the clip(lower=0)
+      // below. That deviates from the pandas reference this is a stated port of:
+      // dropna() drops NaN and keeps +-inf, so there -inf is mapped and then
+      // clipped to 0, and +inf reaches the output as +inf where the diagnostics
+      // can see it. Measured before this, [[-Inf, Inf, 100, 110]] came out as
+      // [-Infinity, +Infinity, ...] with positiveInfinite 0 — a negative
+      // discharge published, and the infinity uncounted.
+      if (Number.isNaN(raw)) {
         rawNonFinite += 1
         out[i] = raw
         continue

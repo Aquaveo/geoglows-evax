@@ -27,13 +27,26 @@ export function reorganizeByLead(
     const T = fr.time.length;
     for (let i = 0; i < T; i++) {
       const ti = fr.time[i];
-      const dt = ti.getTime() - t0.getTime();
+      const ms = ti.getTime();
+      // An unparseable timestamp gives NaN, and `NaN < 0` and `NaN > maxLead`
+      // are BOTH false — so the guard below passed and `buckets[NaN].time.push`
+      // threw `TypeError: Cannot read properties of undefined`, taking down the
+      // Metrics and Forecast tabs together. Checked before any arithmetic.
+      if (!Number.isFinite(ms)) continue;
+      const dt = ms - t0.getTime();
       let lead: number;
-      if (ti.getTime() === t0.getTime()) {
+      if (ms === t0.getTime()) {
         lead = 0;
       } else {
         lead = Math.ceil(dt / DAY_MS);
       }
+      // NOT normalised for -0, deliberately. Math.ceil(-0.125) is -0, and
+      // neither `-0 < 0` nor `-0 > maxLead` fires, so a timestep in the 24 h
+      // BEFORE t0 lands in lead 0 and gives that bucket a second row for one
+      // run (audit finding B10). Left as-is because numpy's ceil behaves
+      // identically and the client always sends time[0] === t0, so it is
+      // unreachable today. Flagged rather than fixed — see the NaN guard above,
+      // which is a different finding and genuinely reachable.
       if (lead < 0 || lead > maxLead) continue;
 
       const row = new Array<number>(MEMBER_COUNT);

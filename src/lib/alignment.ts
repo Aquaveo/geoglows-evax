@@ -17,15 +17,34 @@ export function alignTimes(forecast: TimeSeries, observed: TimeSeries): {
     return { time: [], forecast: [], observed: [] };
   }
 
-  const fStart = forecast.time[0].getTime();
-  const fEnd = forecast.time[forecast.time.length - 1].getTime();
-  const oStart = observed.time[0].getTime();
-  const oEnd = observed.time[observed.time.length - 1].getTime();
-  const start = Math.max(fStart, oStart);
-  const end = Math.min(fEnd, oEnd);
+  // Window from the actual extremes, NOT from time[0] and time[last].
+  //
+  // Those assume ascending order. A newest-first CSV — which gauge services
+  // hand out and parseCsv does not sort — gave fStart > fEnd, so start > end and
+  // every metric silently returned zero pairs: NaN everywhere, no error, no
+  // explanation. The scan is O(n) either way, so nothing is lost by being
+  // order-independent.
+  const bounds = (ts: readonly Date[]) => {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const d of ts) {
+      const ms = d.getTime();
+      if (!Number.isFinite(ms)) continue;
+      if (ms < lo) lo = ms;
+      if (ms > hi) hi = ms;
+    }
+    return { lo, hi };
+  };
+  const fb = bounds(forecast.time);
+  const ob = bounds(observed.time);
+  if (fb.lo > fb.hi || ob.lo > ob.hi) return { time: [], forecast: [], observed: [] };
+  const start = Math.max(fb.lo, ob.lo);
+  const end = Math.min(fb.hi, ob.hi);
   if (start > end) return { time: [], forecast: [], observed: [] };
 
-  // Build map of observed values by exact UTC ms.
+  // Build map of observed values by exact UTC ms. A duplicate timestamp keeps
+  // the LAST value, which is what a Map does anyway; stated so the forecast side
+  // below can be made to agree rather than differ by accident.
   const obsMap = new Map<number, number>();
   for (let i = 0; i < observed.time.length; i++) {
     const ms = observed.time[i].getTime();
@@ -33,20 +52,27 @@ export function alignTimes(forecast: TimeSeries, observed: TimeSeries): {
     obsMap.set(ms, observed.values[i]);
   }
 
-  const time: Date[] = [];
-  const f: number[] = [];
-  const o: number[] = [];
+  // Forecast side deduplicated the same way. Pushing every row meant a repeated
+  // timestamp was paired against the same observation twice and counted twice in
+  // every paired metric — double-weighting one instant. Sorted at the end so the
+  // result is chronological whatever the inputs were, since callers read
+  // time[0]/time[last] as the window.
+  const picked = new Map<number, number>();
   for (let i = 0; i < forecast.time.length; i++) {
     const ms = forecast.time[i].getTime();
     if (ms < start || ms > end) continue;
     const ov = obsMap.get(ms);
     if (ov === undefined) continue;
     if (!Number.isFinite(forecast.values[i]) || !Number.isFinite(ov)) continue;
-    time.push(forecast.time[i]);
-    f.push(forecast.values[i]);
-    o.push(ov);
+    picked.set(ms, forecast.values[i]);
   }
-  return { time, forecast: f, observed: o };
+
+  const keys = [...picked.keys()].sort((a, b) => a - b);
+  return {
+    time: keys.map((ms) => new Date(ms)),
+    forecast: keys.map((ms) => picked.get(ms)!),
+    observed: keys.map((ms) => obsMap.get(ms)!),
+  };
 }
 
 /**
@@ -62,7 +88,12 @@ export function countAlignedPairs(time: readonly Date[], observed: TimeSeries): 
   for (let i = 0; i < observed.time.length; i++) {
     if (Number.isFinite(observed.values[i])) keys.add(observed.time[i].getTime());
   }
-  let n = 0;
-  for (const t of time) if (keys.has(t.getTime())) n++;
-  return n;
+  // Deduplicated, matching alignTimes: a repeated timestamp is one aligned
+  // instant, not two, and this count is the denominator the gates use.
+  const seen = new Set<number>();
+  for (const t of time) {
+    const ms = t.getTime();
+    if (keys.has(ms)) seen.add(ms);
+  }
+  return seen.size;
 }

@@ -194,7 +194,13 @@ export function computeCrpsByLead(
       if (ms < start || ms > end) continue;
       const obs = obsMap.get(ms);
       if (obs === undefined) continue;
-      const r = crpsTimestep(bucket.members[i], obs);
+      // `?? []` for the same reason rps.ts:215 has it. A bucket row with no
+      // member array made crpsTimestep throw `TypeError: members is not
+      // iterable`, and the throw propagated to setCrpsError and blanked ALL
+      // THREE CRPS panels — raw, local and SABER — on one bad row. crpsTimestep
+      // returns NaN for an empty ensemble, so the row is skipped by the
+      // isFinite check below and the other leads still report.
+      const r = crpsTimestep(bucket.members[i] ?? [], obs);
       if (Number.isFinite(r.crps)) {
         crpsSum += r.crps;
         maeSum += r.mae;
