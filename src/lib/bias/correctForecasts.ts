@@ -52,6 +52,14 @@ export interface BiasCorrection {
   simulatedCadence: string
   observedCadence: string
   /** Member-timesteps that kept their RAW value because the mapping was NaN. */
+  /**
+   * Member-timesteps already missing in the download before correction ran.
+   *
+   * A genuine gap: every member of a run shares one time array, so this is not
+   * cadence padding. Passes through unchanged, so it explains holes in a
+   * corrected series that did not come from the mapping.
+   */
+  rawNonFinite: number
   nanKeptRaw: number
   /**
    * Values at or above the simulated month's maximum, where the CDF is flat.
@@ -128,6 +136,7 @@ export function correctForecasts(
     cdfStepMs,
     simulatedCadence: simCadence?.label ?? 'unknown',
     observedCadence: obsCadence?.label ?? 'unknown',
+    rawNonFinite: 0,
     nanKeptRaw: 0,
     aboveSimRange: 0,
     positiveInfinite: 0,
@@ -166,6 +175,7 @@ export function correctForecasts(
 
   const corrected = new Map<string, ForecastRun>()
   const excluded: RunExclusion[] = []
+  let rawNonFinite = 0
   let nanKeptRaw = 0
   let aboveSimRange = 0
   let positiveInfinite = 0
@@ -227,9 +237,7 @@ export function correctForecasts(
     }
 
     const res = correctForecastRun(run, mapping)
-    // res.rawNonFinite is deliberately NOT accumulated; see its docblock in
-    // correctForecast.ts. It counts NaN padding from the union-joined ensemble
-    // as well as genuine gaps, so one total cannot distinguish them.
+    rawNonFinite += res.rawNonFinite
     nanKeptRaw += res.nanKeptRaw
     zeroedBelowRange += res.zeroedBelowRange
     negativeClipped += res.negativeClipped
@@ -286,6 +294,7 @@ export function correctForecasts(
     mappings: usedMappings,
     excluded,
     months,
+    rawNonFinite,
     nanKeptRaw,
     aboveSimRange,
     positiveInfinite,

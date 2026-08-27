@@ -72,21 +72,18 @@ export interface CorrectedRun {
   /**
    * Raw inputs that were already non-finite before correction ran.
    *
-   * Deliberately PER-RUN only: `correctForecasts` does not aggregate this and no
-   * banner shows it. Not an oversight — the number cannot mean what a reader
-   * would take it to mean. The fetched ensemble is union-joined across member
-   * cadences and padded with NaN, so a member published 6-hourly inside a
-   * 3-hourly run is NaN at every other timestep. A single count therefore
-   * conflates "your download had holes" with "RFS publishes members at
-   * different cadences", and a figure that mixes a problem with normal operation
-   * is worse than no figure.
+   * These are genuine gaps in the downloaded forecast, not a structural artefact.
+   * A ForecastRun carries ONE `time` array shared by all 51 members, so a member
+   * cannot be published on a different clock and be padded to fit — raggedness
+   * is not representable. A NaN here means the value was missing, or the member
+   * array was short.
    *
-   * It stays because it is asserted against the reference's own `rawNan` in
-   * tests/bias/correctForecast.test.ts, which is how the port is shown to
-   * implement dropna() the way geoglows does. Distinct from `nanKeptRaw`, which
-   * counts values whose MAPPING produced NaN — those had a real input and are
-   * reported, because they are a property of the correction rather than of the
-   * download.
+   * Worth surfacing for that reason: it passes through the correction unchanged,
+   * so a corrected series can contain holes that came from the download rather
+   * than from the mapping. Distinct from `nanKeptRaw`, which had a real input and
+   * lost it to the MAPPING, and from the deliberate NaN that `aggregateBucket`
+   * writes when a member has no finite value inside a grid bin — that one is
+   * downstream of here.
    */
   rawNonFinite: number
 }

@@ -642,6 +642,16 @@ function CorrectionBanner({ c, clampedNegatives }: { c: BiasCorrection; clampedN
           </li>
         )}
         {c.negativeClipped > 0 && <li>{c.negativeClipped} negative results clipped to zero.</li>}
+        {c.rawNonFinite > 0 && (
+          <li>
+            {c.rawNonFinite.toLocaleString()} member-timestep
+            {c.rawNonFinite === 1 ? '' : 's'} were <strong>already missing</strong> in the
+            downloaded forecast and pass through uncorrected. Every member of a run shares one
+            time axis, so this is a genuine gap in the download rather than members being
+            published on different clocks — worth knowing, because it explains holes in the
+            corrected series that the mapping did not cause.
+          </li>
+        )}
       </ul>
     </div>
   );

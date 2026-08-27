@@ -11,8 +11,13 @@ export interface LeadScores {
   /**
    * Aligned pairs at the LEAD level — how many of this bucket's timestamps the
    * observations cover. Member-independent, because members can each be missing
-   * different timesteps: the fetched ensemble is union-joined across cadences
-   * and padded with NaN, so no single member's count describes the lead.
+   * different timesteps: `aggregateBucket` writes NaN for a member with no
+   * finite value in a bin, so no single member's count describes the lead.
+   *
+   * Not a cadence artefact, which an earlier version of this comment claimed. A
+   * run carries one `time` array shared by all 51 members, so differing member
+   * cadences are not representable; a per-member gap here means the download was
+   * genuinely missing that value.
    */
   pairs: number;
   /** The best-sampled member's own aligned count, for explaining an empty lead. */
