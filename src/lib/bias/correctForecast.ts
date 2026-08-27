@@ -69,7 +69,25 @@ export interface CorrectedRun {
   aboveSimRange: number;
   /** Values clipped up to 0 (negative results, including -Infinity). */
   negativeClipped: number
-  /** Raw inputs that were already non-finite before correction ran. */
+  /**
+   * Raw inputs that were already non-finite before correction ran.
+   *
+   * Deliberately PER-RUN only: `correctForecasts` does not aggregate this and no
+   * banner shows it. Not an oversight — the number cannot mean what a reader
+   * would take it to mean. The fetched ensemble is union-joined across member
+   * cadences and padded with NaN, so a member published 6-hourly inside a
+   * 3-hourly run is NaN at every other timestep. A single count therefore
+   * conflates "your download had holes" with "RFS publishes members at
+   * different cadences", and a figure that mixes a problem with normal operation
+   * is worse than no figure.
+   *
+   * It stays because it is asserted against the reference's own `rawNan` in
+   * tests/bias/correctForecast.test.ts, which is how the port is shown to
+   * implement dropna() the way geoglows does. Distinct from `nanKeptRaw`, which
+   * counts values whose MAPPING produced NaN — those had a real input and are
+   * reported, because they are a property of the correction rather than of the
+   * download.
+   */
   rawNonFinite: number
 }
 

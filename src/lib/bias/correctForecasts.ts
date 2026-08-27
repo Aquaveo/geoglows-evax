@@ -227,6 +227,9 @@ export function correctForecasts(
     }
 
     const res = correctForecastRun(run, mapping)
+    // res.rawNonFinite is deliberately NOT accumulated; see its docblock in
+    // correctForecast.ts. It counts NaN padding from the union-joined ensemble
+    // as well as genuine gaps, so one total cannot distinguish them.
     nanKeptRaw += res.nanKeptRaw
     zeroedBelowRange += res.zeroedBelowRange
     negativeClipped += res.negativeClipped
