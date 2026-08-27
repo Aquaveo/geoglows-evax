@@ -108,3 +108,30 @@ describe('a crest with a flat top is still a peak', () => {
     expect(d[0]).toBe(0);
   });
 });
+
+describe('the search is bounded by the data, not by a window', () => {
+  it('measures a peak far later than the old ±72 h window allowed', () => {
+    // The defect: the forecast peak was sought only within ±72 h of the observed
+    // one, so |Δt| could not exceed 72 h. A member cresting on 16 June — 132 h
+    // after the observed peak — had no in-window maximum except at the window's
+    // own edge, and was reported as CENSORED rather than as 5.5 days late.
+    // Dropping it flattered exactly the members that got the event most wrong.
+    const late = (i: number) => 20 + 300 * Math.exp(-((i - 36) ** 2) / 20);
+    const r = computePeakTimingByRun(run(late), eventData);
+    expect(r.values.flat().flat()).toEqual([132]);
+    expect(r.censoredMembers).toBe(0);
+  });
+
+  it('reports a run that cannot reach the observed peak instead of scoring it', () => {
+    // A run ending on the rising limb would score every member as early purely
+    // because it never covered the crest. That is a fact about coverage, so it
+    // is counted rather than turned into a timing number.
+    const short = rt.slice(0, 8);
+    const early: Map<string, ForecastRun> = new Map([
+      ['20240607', { time: short, discharge: [short.map((_, i) => 20 + i * 3)] }],
+    ]);
+    const r = computePeakTimingByRun(early, eventData);
+    expect(r.values.flat().flat()).toHaveLength(0);
+    expect(r.runsNotCoveringPeak).toBe(1);
+  });
+});

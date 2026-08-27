@@ -5,19 +5,6 @@ const DAY_MS = 24 * HOUR_MS;
 
 export type { ForecastRun };
 
-export interface PeakTimingByRunOptions {
-  /**
-   * Half-width, in hours, of the window around the observed peak in which a
-   * forecast peak is looked for. Bounds |Δt| by construction.
-   */
-  searchWindowHours?: number;
-  /**
-   * Minimum relative prominence, (max − min) / max inside the window, for a
-   * member to count as having predicted a peak at all.
-   */
-  minProminence?: number;
-}
-
 export interface PeakTimingByRun {
   /** Whole days between each run's initialization and the day the observed peak fell on. */
   daysBefore: number[];
@@ -27,16 +14,23 @@ export interface PeakTimingByRun {
   values: number[][];
   /** Timestamp of the observed peak, or null when the event series is empty. */
   obsPeak: Date | null;
-  /** Members whose in-window maximum sat on the window edge — peak likely outside it. */
+  /**
+   * Members whose maximum sat on their own first or last finite sample, so the
+   * true peak may lie outside the series and Δt would be a bound.
+   */
   censoredMembers: number;
-  /** Members with no discernible peak in the window: they never predicted the event. */
+  /** Members flat throughout the overlap: they never predicted any peak at all. */
   noPeakMembers: number;
   /** Runs skipped for being initialized after the observed peak had already passed. */
   runsAfterPeak: number;
+  /**
+   * Runs whose overlap with the observed record does not reach the observed
+   * peak, so they cannot time it. Previously these were dropped silently by the
+   * ±72 h window; they are a fact about coverage and are now reported.
+   */
+  runsNotCoveringPeak: number;
   /** Runs left with no usable member, so they contribute no box. */
   emptyRuns: number;
-  /** Half-width actually used, for labelling. */
-  searchWindowHours: number;
 }
 
 /**
@@ -49,33 +43,47 @@ export interface PeakTimingByRun {
  * than an ensemble. Here every box is one model run, and within a run the 51
  * members genuinely are the ensemble — so box height is real forecast spread.
  *
- * Two guards keep the answer meaningful, both learned the hard way:
+ * Three rules keep the answer meaningful, and every one of them turns on a fact
+ * about the data rather than on a tuned number:
  *
- * 1. The forecast peak is sought only within `searchWindowHours` of the observed
- *    peak. Searching a run's whole 15-day horizon means that a run which never
- *    predicted the event — flat baseflow, which is what long-lead runs look like
- *    before the rain enters the initial conditions — yields an argmax at an
- *    arbitrary point, reporting timing errors of hundreds of hours. Bounding the
- *    window caps |Δt| at the half-width.
+ * 1. The run must actually REACH the observed peak. A run whose overlap with the
+ *    uploaded record ends before the peak cannot time it: every member would be
+ *    scored against a crest it never covered, and the argmax of a rising limb is
+ *    always "early", by construction rather than by error. Such runs are counted
+ *    in `runsNotCoveringPeak`, not scored.
+ *
+ *    Within a run that does reach it, the search is UNBOUNDED over the overlap.
+ *    An earlier version sought the forecast peak only within ±72 h of the
+ *    observed one, which capped |Δt| at 72 h by construction: a member that put
+ *    the crest four days late was either censored at the window edge or clipped,
+ *    and the panel could not report a timing error larger than its own window.
+ *    That flattered exactly the members that got the event most wrong. The
+ *    by-lead module bounds itself the same way this now does — by the overlap of
+ *    the two series — so the two panels finally answer the same question.
+ *
+ *    The window was originally justified by flat long-lead runs producing an
+ *    arbitrary argmax hundreds of hours out. Rules 2 and 3 cover that case
+ *    directly and honestly: a genuinely flat member is reported as having
+ *    predicted no peak, and a monotone one is censored. A member with a noisy but
+ *    real shape IS scored, and its scatter is the finding — the model had no peak
+ *    to time — which is the same call the by-lead module makes.
+ *
  * 2. The member must have a DISTINCT maximum. A flat series attains its maximum
  *    at every timestep, so there is no argmax and the tie-break would invent
  *    one. Counted as "no peak predicted" rather than scored — and that count is
  *    the real signal at long lead, not a timing number.
  *
- *    This is a fact about the data, not a tuned threshold. It replaces a
- *    relative-prominence gate that discarded broad crests, since inside a window
- *    centred on the crest the minimum is itself flood flow.
+ * 3. A member whose maximum sits on its OWN first or last finite sample is
+ *    censored: the true peak probably lies outside its series, making Δt a bound
+ *    rather than a measurement.
  *
- * A member whose in-window maximum sits on the window edge is censored too: the
- * true peak probably lies outside, making Δt a bound rather than a measurement.
+ * Callers must report the counts alongside the boxes, or excluding anything at
+ * all becomes survivorship bias.
  */
 export function computePeakTimingByRun(
   forecasts: Map<string, ForecastRun>,
   eventData: TimeSeries,
-  opts: PeakTimingByRunOptions = {},
 ): PeakTimingByRun {
-  const searchWindowHours = opts.searchWindowHours ?? 72;
-
   const empty: PeakTimingByRun = {
     daysBefore: [],
     initDates: [],
@@ -84,8 +92,8 @@ export function computePeakTimingByRun(
     censoredMembers: 0,
     noPeakMembers: 0,
     runsAfterPeak: 0,
+    runsNotCoveringPeak: 0,
     emptyRuns: 0,
-    searchWindowHours,
   };
   if (eventData.time.length === 0 || forecasts.size === 0) return empty;
 
@@ -104,13 +112,18 @@ export function computePeakTimingByRun(
 
   const obsPeakDay = utcDayFloor(obsPeakMs);
 
-  const winLo = obsPeakMs - searchWindowHours * HOUR_MS;
-  const winHi = obsPeakMs + searchWindowHours * HOUR_MS;
+  // Span of the uploaded record. The search is confined to where observations
+  // exist, so both sides of the subtraction look at the same stretch of time —
+  // and a forecast peak beyond the record is not silently compared against a
+  // crest nobody measured.
+  const obsStart = eventData.time[0].getTime();
+  const obsEnd = eventData.time[eventData.time.length - 1].getTime();
 
   const rows: { daysBefore: number; initDate: string; deltas: number[] }[] = [];
   let censoredMembers = 0;
   let noPeakMembers = 0;
   let runsAfterPeak = 0;
+  let runsNotCoveringPeak = 0;
   let emptyRuns = 0;
 
   for (const [dateStr, run] of forecasts) {
@@ -126,13 +139,28 @@ export function computePeakTimingByRun(
       continue;
     }
 
-    // Indices of this run's timesteps that fall inside the search window.
+    // Overlap of this run with the observed record — the same bound the by-lead
+    // module uses, and a fact about the two series rather than a parameter.
+    const lo = Math.max(run.time[0].getTime(), obsStart);
+    const hi = Math.min(run.time[run.time.length - 1].getTime(), obsEnd);
+    if (lo >= hi) {
+      runsNotCoveringPeak++;
+      continue;
+    }
+    // The run has to cover the crest it is being scored against. Without this
+    // test a run ending on the rising limb reports every member as early, which
+    // is a property of the coverage and not of the forecast.
+    if (obsPeakMs < lo || obsPeakMs > hi) {
+      runsNotCoveringPeak++;
+      continue;
+    }
+
     const inWindow: number[] = [];
     for (let i = 0; i < run.time.length; i++) {
       const ms = run.time[i].getTime();
-      if (ms >= winLo && ms <= winHi) inWindow.push(i);
+      if (ms >= lo && ms <= hi) inWindow.push(i);
     }
-    if (inWindow.length < 3) continue; // window not covered by this run
+    if (inWindow.length < 3) continue; // too little overlap to find a shape in
 
     const deltas: number[] = [];
     for (let m = 0; m < run.discharge.length; m++) {
@@ -140,7 +168,7 @@ export function computePeakTimingByRun(
       if (!series) continue;
 
       // The member's OWN finite samples, which is what both tests below have to
-      // key off. Using the window's index bounds instead let a single missing
+      // key off. Using the overlap's index bounds instead let a single missing
       // value at the edge defeat the censoring entirely.
       let firstFinite = -1;
       let lastFinite = -1;
@@ -165,7 +193,7 @@ export function computePeakTimingByRun(
           plateauEnd = i;
         } else if (v === bestVal && prevIdx === plateauEnd) {
           // Extend only when this sample directly follows the plateau's current
-          // end. Without that check an equal value LATER in the window — a
+          // end. Without that check an equal value LATER in the overlap — a
           // second crest the other side of a trough — extended the plateau
           // across the dip, and the midpoint then timed neither crest.
           plateauEnd = i;
@@ -194,14 +222,14 @@ export function computePeakTimingByRun(
       }
 
       // Maximum on the member's own first or last finite sample: the real peak
-      // is probably outside the window, so Δt is a bound rather than a
+      // is probably outside the overlap, so Δt is a bound rather than a
       // measurement.
       //
-      // Compared against the member's finite samples, NOT the window's index
+      // Compared against the member's finite samples, NOT the overlap's index
       // bounds. A single missing value at the edge used to slide the maximum one
       // step inward and defeat this entirely: a strictly rising member was
       // correctly censored when clean, and reported a confident "+66 h late"
-      // once its last in-window sample was NaN.
+      // once its last sample inside the overlap was NaN.
       if (plateauStart === firstFinite || plateauEnd === lastFinite) {
         censoredMembers++;
         continue;
@@ -246,8 +274,8 @@ export function computePeakTimingByRun(
     censoredMembers,
     noPeakMembers,
     runsAfterPeak,
+    runsNotCoveringPeak,
     emptyRuns,
-    searchWindowHours,
   };
 }
 
