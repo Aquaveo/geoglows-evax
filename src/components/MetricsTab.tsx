@@ -365,28 +365,34 @@ function MissingRowsNote({ rows }: { rows: ComparisonRow[] }) {
   const empty = rows.filter((r) => !keys.some((k) => Number.isFinite(r.values[k])));
   if (empty.length === 0) return null;
 
-  const groups: { needs: ComparisonRow['needs']; button: string; metrics: string[] }[] = [
-    { needs: 'accuracy', button: 'Compute accuracy metrics', metrics: [] },
-    { needs: 'crps', button: 'Compute CRPS metrics', metrics: [] },
-    { needs: 'skill', button: 'the skill summary above', metrics: [] },
-  ];
-  for (const r of empty) groups.find((g) => g.needs === r.needs)!.metrics.push(r.metric);
-  const active = groups.filter((g) => g.metrics.length > 0);
+  // Only the probabilistic family still waits for a button. KGE', NSE, r, beta
+  // and gamma all derive from the memoized scoring pass, so an empty row there
+  // means missing DATA, not an unpressed button — and saying "press a button"
+  // would send the reader to one that will not help.
+  const needsButton = empty.filter((r) => r.needs === 'crps').map((r) => r.metric);
+  const needsData = empty.filter((r) => r.needs !== 'crps').map((r) => r.metric);
 
   return (
     <div style={pendingNote}>
       <strong>
         {empty.length} of {rows.length} rows {empty.length === 1 ? 'is' : 'are'} still empty.
       </strong>{' '}
-      Nothing is wrong with your data — this table only summarises results the other blocks have
-      already produced.
+      The dashes run by <em>row</em>, not by column: this table summarises results the other blocks
+      produce, so a metric is either available for every variant or for none.
       <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.2rem' }}>
-        {active.map((g) => (
-          <li key={g.needs}>
-            {g.metrics.join(', ')} — press <strong>{g.button}</strong>
-            {g.needs === 'skill' && ' (this one should not normally be empty)'}
+        {needsButton.length > 0 && (
+          <li>
+            {needsButton.join(', ')} — press <strong>Compute probabilistic metrics</strong> in the
+            block above.
           </li>
-        ))}
+        )}
+        {needsData.length > 0 && (
+          <li>
+            {needsData.join(', ')} — these need no button; they come from the same scoring pass the
+            accuracy charts use. Empty here means the event has too few forecast/observation pairs
+            at this resolution, which the banner at the top of the page quantifies.
+          </li>
+        )}
       </ul>
     </div>
   );
@@ -2444,7 +2450,10 @@ export function MetricsTab() {
           draws TWELVE Plotly figures once the skill bars moved in, and it is
           the drawing that costs, not the numbers. Every value here comes from
           one memoized scoring pass (leadMemberScores) that runs regardless,
-          so this gates rendering only — pressing it computes nothing.
+          so this gates rendering only — pressing it computes nothing. The label
+          still says "Compute" to match the other blocks: the distinction between
+          computing numbers and drawing them is real but internal, and a reader
+          pressing five buttons on one page should not meet two verbs for it.
 
           That is the opposite of what the old "Compute accuracy metrics"
           button did: it gated a computation the skill bars were already doing
@@ -2453,7 +2462,7 @@ export function MetricsTab() {
         */}
         {rawAccuracy && !accuracyCharts && (
           <button onClick={() => setAccuracyCharts(true)} style={btn}>
-            Show accuracy charts
+            Compute accuracy metrics
           </button>
         )}
 
@@ -2682,8 +2691,8 @@ export function MetricsTab() {
             {computingCrps
               ? 'Computing…'
               : app.crpsResults
-                ? 'Re-compute CRPS'
-                : 'Compute CRPS'}
+                ? 'Re-compute probabilistic metrics'
+                : 'Compute probabilistic metrics'}
           </button>
         )}
         {crpsError && <p style={{ color: '#b91c1c' }}>{crpsError}</p>}
@@ -2855,7 +2864,7 @@ export function MetricsTab() {
         */}
         {(correction || globalCorrection) && !biasDiagnostics && (
           <button onClick={() => setBiasDiagnostics(true)} style={btn}>
-            Show bias correction diagnostics
+            Compute bias correction diagnostics
           </button>
         )}
 
