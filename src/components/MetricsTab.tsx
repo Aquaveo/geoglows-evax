@@ -117,6 +117,15 @@ function griddedFor(
 }
 
 
+/** Gates the accuracy distributions apply per member. Module-level so the memos
+ *  that use it have a stable dependency. */
+const GATES: DistributionGates = {
+  minCorrelation: MIN_PAIRS_CORRELATION,
+  minRatio: MIN_PAIRS_RATIO,
+  correlationReason: FEW_PAIRS_REASON,
+  ratioReason: TOO_FEW_FOR_RATIO,
+};
+
 const STAT_OPTIONS: { key: StatKey; label: string }[] = [
   { key: 'median', label: 'Ensemble median' },
   { key: 'mean', label: 'Ensemble mean' },
@@ -617,6 +626,19 @@ export function MetricsTab() {
   const [crossingRp, setCrossingRp] = useState<number>(2);
 
   // Probabilistic (CRPS) state
+  /**
+   * Whether the bias-correction section's figures have been asked for.
+   *
+   * Not a computation flag: nothing is computed by pressing it. The section drew
+   * seven Plotly figures on load while every other block waited for a button,
+   * which is where the "slow to render" came from — the corrections behind it
+   * take about 50 ms.
+   */
+  const [biasDiagnostics, setBiasDiagnostics] = useState(false);
+
+  /** Whether the accuracy block's twelve figures have been asked for. */
+  const [accuracyCharts, setAccuracyCharts] = useState(false);
+
   const [computingCrps, setComputingCrps] = useState(false);
   const [crpsError, setCrpsError] = useState<string | null>(null);
 
@@ -1286,13 +1308,6 @@ export function MetricsTab() {
    * forecast. Deriving both from one scoring pass costs less than the old single
    * path and cannot disagree with itself.
    */
-  const GATES: DistributionGates = {
-    minCorrelation: MIN_PAIRS_CORRELATION,
-    minRatio: MIN_PAIRS_RATIO,
-    correlationReason: FEW_PAIRS_REASON,
-    ratioReason: TOO_FEW_FOR_RATIO,
-  };
-
   const leadScores = useMemo(
     () => (griddedMean ? scoreMembersByLead(griddedMean.buckets, griddedMean.obs, MAX_LEAD) : null),
     [griddedMean],
@@ -2402,7 +2417,7 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Accuracy metrics"
-        description="Kling-Gupta efficiency (KGE') and its decomposition: Pearson correlation r, bias ratio β = μ_f/μ_o, variability ratio γ = CV_f/CV_o (Kling et al., 2012). These compare raw discharge, so a bias-corrected variant is available once historical observations are uploaded."
+        description="How close the forecast came in magnitude and shape. KGE' and its decomposition — Pearson correlation r, bias ratio β = μ_f/μ_o, variability ratio γ = CV_f/CV_o (Kling et al., 2012) — then NSE and KGE' side by side, coloured by performance band, by lead day and by forecast initialization. Every number here comes from one scoring pass over the ensemble, so the box plots and the bars cannot disagree. All compare raw discharge, so a bias-corrected variant is available."
       >
         {!canComputeAccuracy && (
           <p style={{ color: '#555' }}>
@@ -2424,435 +2439,232 @@ export function MetricsTab() {
           </div>
         )}
 
-        {accuracyDisplay.kge && (
-          <div style={subBlock}>
-            <h3 style={h3}>KGE' distribution by lead day</h3>
-            <Plot
-              {...distributionVsLeadFigure(accuracyDisplay.kge!, {
-                metricLabel: "KGE'",
-                title: `KGE' Distribution per Lead Day${riverIdSuffix}`,
-                subtitle:
-                  "1 − √((r−1)² + (β−1)² + (γ−1)²)  |  Kling et al. (2012)  |  51 members (leads 0–15)",
-                yAxisLabel: "KGE'",
-                referenceLines: [
-                  { y: 1, label: "KGE' = 1 (perfect)", color: 'green' },
-                  { y: -0.41, label: "KGE' = -0.41 (mean-flow benchmark)", color: 'red', dash: 'dot' },
-                ],
-                zeroLine: true,
-              })}
-            />
-            <PlotNote>
-              a single score combining correlation, bias and variability, per member. The green
-              line at 1 is perfect. The red line at −0.41 is the benchmark you get by predicting
-              the observed mean flow at every timestep — a box below it means the forecast was
-              worse than a flat average, which is the threshold that matters most here. Because
-              KGE' collapses three error types into one number, use the r, β and γ plots below to
-              see which of them caused a drop.
-            </PlotNote>
-          </div>
-        )}
-
-        {accuracyDisplay.r && (
-          <div style={subBlock}>
-            <h3 style={h3}>Pearson correlation (r) by lead day</h3>
-            <Plot
-              {...distributionVsLeadFigure(accuracyDisplay.r!, {
-                metricLabel: 'r',
-                title: `Pearson Correlation per Lead Day${riverIdSuffix}`,
-                subtitle: 'KGE component  |  51 members (leads 0–15)',
-                yAxisLabel: 'r',
-                referenceLines: [{ y: 1, label: 'r = 1 (perfect)', color: 'green' }],
-                zeroLine: true,
-              })}
-            />
-            <PlotNote>
-              the shape-and-timing component of KGE': how well the rise and fall of the forecast
-              lines up with the observation, ignoring magnitude entirely. A member can score near
-              1 here while being badly wrong in absolute terms — that combination points to a
-              scaling problem, which β and γ below will show. Low r instead means the hydrograph
-              shape or timing itself was wrong, and no bias correction would fix it.
-            </PlotNote>
-          </div>
-        )}
-
-        {accuracyDisplay.beta && (
-          <div style={subBlock}>
-            <h3 style={h3}>Bias ratio (β) by lead day</h3>
-            <Plot
-              {...distributionVsLeadFigure(accuracyDisplay.beta!, {
-                metricLabel: 'β',
-                title: `Bias Ratio per Lead Day${riverIdSuffix}`,
-                subtitle:
-                  'β = μ_forecast / μ_observed  |  β < 1 underestimate, β > 1 overestimate  |  51 members',
-                yAxisLabel: 'β',
-                referenceLines: [{ y: 1, label: 'β = 1 (no bias)', color: 'green' }],
-              })}
-            />
-            <PlotNote>
-              the ratio of mean forecast flow to mean observed flow, so 1 is unbiased, 0.5 means
-              the member forecast half the water that arrived and 2 means twice. Read it as a
-              multiplier, not a difference. A box sitting off 1 by the same factor at every lead
-              day is a systematic bias in the model at this reach rather than a forecast failure
-              — the kind of thing the event-vs-retrospective plot on the Setup tab shows directly.
-            </PlotNote>
-          </div>
-        )}
-
-        {accuracyDisplay.gamma && (
-          <div style={subBlock}>
-            <h3 style={h3}>Variability ratio (γ) by lead day</h3>
-            <Plot
-              {...distributionVsLeadFigure(accuracyDisplay.gamma!, {
-                metricLabel: 'γ',
-                title: `Variability Ratio per Lead Day${riverIdSuffix}`,
-                subtitle:
-                  'γ = CV_forecast / CV_observed (Kling et al., 2012)  |  γ < 1 under-varies, γ > 1 over-varies  |  51 members',
-                yAxisLabel: 'γ',
-                referenceLines: [{ y: 1, label: 'γ = 1 (perfect)', color: 'green' }],
-              })}
-            />
-            <PlotNote>
-              whether the forecast varies as much as the observation does, after removing the
-              bias that β already measures. Below 1 the member's hydrograph is too flat —
-              damped peaks and shallow recessions, the usual signature of a smoothed forecast.
-              Above 1 it swings harder than reality. Together with β this separates "right shape,
-              wrong size" from "wrong shape".
-            </PlotNote>
-          </div>
-        )}
-      </CollapsibleBlock>
-
-      <CollapsibleBlock
-        title="Bias correction"
-        description="What a correction actually does to your forecasts: how far it shifts each lead day, whether KGE′ improved, and one run before and after. Pick which correction with the selector — the local CDF map fitted to your uploaded gauge record, or SABER, fitted centrally per river and month. Diagnostics only, no metric here."
-      >
-        {comparisonReady && (
-          <div style={subBlock}>
-            <h3 style={h3}>Raw against each correction, side by side</h3>
-            <VariantComparisonTable
-              rows={comparison}
-              hasLocal={!!correction}
-              hasGlobal={!!globalCorrection && !globalCorrection.unusable}
-            />
-            <MissingRowsNote rows={comparison} />
-            <PlotNote>
-              every cell is the <strong>median across lead days</strong> of that lead's own median
-              across the 51 members — the same two-level summary the charts in this app plot, so the
-              table cannot disagree with them. It is a summary and hides the lead structure
-              completely; a correction that helps at short lead and hurts at long lead reads as a
-              small change here. The charts below are the record.
-              <br />
-              <br />
-              <strong>Best</strong> names the correction that moved furthest{' '}
-              <em>toward</em> the metric's ideal, which is not the same as furthest up. β and γ are
-              ratios targeting 1 and can miss either way, so 1.4 is as wrong as 0.7 and an
-              over-correction is not an improvement. "neither" means both corrections left that
-              metric worse than raw.
-              <span style={notePara}>
-                A dash means the metric has not been computed yet for any variant — this table
-                reuses the other blocks' results rather than recomputing anything, so the dashes
-                run by <em>row</em>, not by column. The note above says which button fills which.
-              </span>
-            </PlotNote>
-          </div>
-        )}
-
         {/*
-          Each correction is gated on its OWN availability. The section used to
-          be gated on the local map alone, so a user who had not uploaded a
-          historical record was told to go and upload one — and never saw that
-          SABER, which needs no observations at all, was sitting there ready.
+          A button, for the same reason the bias section has one: this block
+          draws TWELVE Plotly figures once the skill bars moved in, and it is
+          the drawing that costs, not the numbers. Every value here comes from
+          one memoized scoring pass (leadMemberScores) that runs regardless,
+          so this gates rendering only — pressing it computes nothing.
+
+          That is the opposite of what the old "Compute accuracy metrics"
+          button did: it gated a computation the skill bars were already doing
+          on render, so it bought nothing and left the comparison table with a
+          blank KGE next to a populated NSE.
         */}
-        {(correctionPending || globalPending) && (
-          <p style={{ color: '#1d4ed8', margin: '0 0 0.45rem' }}>
-            Building {correctionPending && globalPending
-              ? 'both corrections'
-              : correctionPending
-                ? 'the local CDF correction'
-                : 'the SABER transform'}
-            … the panels below appear when it finishes. Deferred deliberately so the page stays
-            usable while it runs.
-          </p>
-        )}
-        {!correction && !correctionPending && (
-          <p style={{ color: '#555', margin: '0 0 0.45rem' }}>
-            <strong>Local CDF correction unavailable</strong> —{' '}
-            {correctedUnavailableReason ?? 'not available yet.'}
-          </p>
-        )}
-        {(!globalCorrection || globalCorrection.unusable) && !globalPending && (
-          <p style={{ color: '#555', margin: '0 0 0.45rem' }}>
-            <strong>SABER unavailable</strong> — {globalUnavailableReason ?? 'not available yet.'}
-          </p>
-        )}
-        {globalCorrection && !globalCorrection.unusable && (
-          <GlobalCorrectionBanner c={globalCorrection} />
+        {rawAccuracy && !accuracyCharts && (
+          <button onClick={() => setAccuracyCharts(true)} style={btn}>
+            Show accuracy charts
+          </button>
         )}
 
-        {correction && <CorrectionBanner c={correction} clampedNegatives={app.historicalClampedNegatives} />}
-
-        {/*
-          One selector for the whole section rather than a pair of panels per
-          diagnostic. Every plot below exists for both corrections, so showing
-          both of each doubled the chart count to say something the reader can
-          get by switching — and made the section long enough that the
-          comparison it was meant to enable happened by scrolling.
-        */}
-        {biasVariantChoices.length > 1 && (
-          <label style={{ ...lbl, marginBottom: '0.4rem' }}>
-            Correction:&nbsp;
-            <select
-              value={activeBiasVariant ?? ''}
-              onChange={(e) => setBiasVariant(e.target.value as 'local' | 'global')}
-              style={sel}
-            >
-              {biasVariantChoices.map((v) => (
-                <option key={v} value={v}>
-                  {v === 'local' ? 'Local CDF' : 'SABER'}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {activeBiasEffect && (
-          <div style={subBlock}>
-            <h3 style={h3}>How much {biasLabel} shifts each lead day</h3>
-            <Plot
-              {...distributionVsLeadFigure(activeBiasEffect, {
-                metricLabel: 'Δ',
-                title: `${biasLabel} — Shift per Lead Day${riverIdSuffix}`,
-                subtitle:
-                  'corrected − raw, m³/s, across ensemble members  |  above zero = inflated',
-                yAxisLabel: 'corrected − raw (m³/s)',
-                valueFormat: '+.2f',
-                zeroLine: true,
-                membersLabel: 'members',
-              })}
-            />
-            <PlotNote>
-              how far the correction moves the forecast at each lead day. Above the dashed zero
-              line it inflated the values, below it deflated them, and a box sitting on zero means
-              the mapping was a no-op for that lead.
-              <br />
-              <br />
-              One caution about reading a trend here, and it applies to both: the mapping is the{' '}
-              <strong>same at every lead</strong>. The local map comes from the retrospective, which
-              has no lead dimension, and SABER's coefficients are fitted per river and calendar
-              month, not per lead. So any lead-dependence you see is not either correction treating
-              long leads differently — it is those leads occupying a different part of one fixed
-              curve. That is also the shared structural limit of both: forecast error grows with
-              lead, and neither correction can know that.
-              <br />
-              <br />
-              Worth switching the selector at the top and comparing: where the two corrections
-              disagree in sign, one is inflating the forecast while the other deflates it, and the
-              metric tabs will disagree about which helped.
-            </PlotNote>
-          </div>
-        )}
-
-        {activeDumbbell && (
+        {accuracyCharts && (
           <>
-            <h3 style={h3}>What {biasLabel} changed, per lead</h3>
-            <Plot
-              {...dumbbellFigure(activeDumbbell, {
-                title: `KGE′ before and after ${biasLabel}${riverIdSuffix}`,
-                metricLabel: 'KGE′',
-                beforeLabel: 'Raw',
-                afterLabel: biasLabel,
-                higherIsBetter: true,
-              })}
-            />
-            <PlotNote>
-              one row per lead day, showing the same KGE′ the bar charts report — grey dot is the
-              raw forecast, orange is corrected, and the connector's length is the size of the
-              change. Green means correction helped at that lead, red that it hurt. This answers
-              "did it work" without asking you to match two overlapping lines across sixteen
-              crossings, and the count in the subtitle says how many leads improved.
-            </PlotNote>
-          </>
-        )}
-
-        {activeBiasRun && app.eventData && (correction || globalCorrection) && (
-          <div style={subBlock}>
-            <h3 style={h3}>One run, before and after</h3>
-            <label style={lbl}>
-              Run:&nbsp;
-              <select
-                value={activeBiasRun}
-                onChange={(e) => setBiasRunDate(e.target.value)}
-                style={sel}
-              >
-                {biasRunDates.map((d) => (
-                  <option key={d} value={d}>
-                    {`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {app.forecasts.get(activeBiasRun) && activeCorrected?.get(activeBiasRun) && (
+          {accuracyDisplay.kge && (
+            <div style={subBlock}>
+              <h3 style={h3}>KGE' distribution by lead day</h3>
               <Plot
-                {...biasHydrographFigure(
-                  app.forecasts.get(activeBiasRun)!,
-                  activeCorrected.get(activeBiasRun)!,
-                  app.eventData,
-                  {
-                    label: `${activeBiasRun.slice(0, 4)}-${activeBiasRun.slice(4, 6)}-${activeBiasRun.slice(6, 8)}`,
-                    correctedLabel: biasLabel,
-                    riverId: app.reach?.riverId ?? undefined,
-                    // Observed thresholds apply to the observed line and to the
-                    // corrected forecast; simulated ones to the raw forecast.
-                    obsRp: app.obsRp,
-                    simRp: app.simRp,
-                  },
-                )}
+                {...distributionVsLeadFigure(accuracyDisplay.kge!, {
+                  metricLabel: "KGE'",
+                  title: `KGE' Distribution per Lead Day${riverIdSuffix}`,
+                  subtitle:
+                    "1 − √((r−1)² + (β−1)² + (γ−1)²)  |  Kling et al. (2012)  |  51 members (leads 0–15)",
+                  yAxisLabel: "KGE'",
+                  referenceLines: [
+                    { y: 1, label: "KGE' = 1 (perfect)", color: 'green' },
+                    { y: -0.41, label: "KGE' = -0.41 (mean-flow benchmark)", color: 'red', dash: 'dot' },
+                  ],
+                  zeroLine: true,
+                })}
               />
-            )}
-            {activeCorrected && !activeCorrected.get(activeBiasRun) && (
-              <p style={{ color: '#8a6d1f', margin: '0.4rem 0' }}>
-                This run was excluded from the <strong>{biasLabel}</strong> correction — the banner
-                above says why. SABER excludes nothing, so switching the correction at the top will
-                show it.
-              </p>
-            )}
-            <PlotNote>
-              the plainest test of whether the correction helped: if the blue corrected line moves
-              toward the black observations relative to the grey raw line, it did. If it overshoots
-              past them, the mapping is over-inflating — which happens when the observed record's
-              upper tail is heavier than the simulated one. Where grey and blue coincide the mapping
-              was undefined and the raw value was kept; the subtitle counts those timesteps.
-              <br />
-              <br />
-              Two return-period sets are available in the legend, because the lines sit on two
-              different scales: the <strong>observed</strong> zones apply to the black observations
-              and to the corrected forecast, while the <strong>simulated</strong> zones are the
-              scale the raw forecast lives on. Each set stays hidden when its 2-year threshold is
-              far above everything plotted — drawing it would stretch the axis and flatten all
-              three lines — so the subtitle reports how close the peak came instead. Click a legend
-              entry to bring the zones in when they are in range.
-              <br />
-              <br />
-              Opens on a run whose horizon actually spans the observed crest, rather than the
-              earliest one available. Runs are fetched from 15 days before the event, so the
-              earliest initialization finishes before the flood begins — its raw and corrected
-              traces sit at baseflow, weeks to the left of anything worth comparing. Drag the
-              selector to watch the correction's effect change as the forecast closes on the event.
-              <br />
-              <br />
-              The run list is the union of both corrections: the local map drops runs whose mapping
-              ran to infinity, while SABER drops none, so a run can be available for one and not
-              the other. If none of the survivors reaches the crest — which happens when the local
-              map excluded exactly the runs that forecast the event — this falls back to the middle
-              of the list, and the selection-bias banner above will be saying why. The title and
-              legend always name which correction is drawn.
-            </PlotNote>
-          </div>
-        )}
-      </CollapsibleBlock>
-
-      <CollapsibleBlock
-        title="Skill summary"
-        description="NSE and KGE' side by side, coloured by performance band — a single glance at where the forecast is usable. One view by lead day, one by forecast initialization. Both compare raw discharge, so a bias-corrected variant is available."
-      >
-        {!skillLead && !skillRun && (
-          <p style={{ color: '#555' }}>
-            Need observed event data and downloaded forecasts before summarising skill.
-          </p>
-        )}
-
-        {(skillLead || skillLeadCorrected) && (
-          <div style={{ marginTop: '0.75rem' }}>
-            <VariantSelect
-              value={skillVariant}
-              onChange={setSkillVariant}
-              disabledReason={skillLeadCorrected ? null : correctedUnavailableReason}
-              globalDisabledReason={globalUnavailableReason}
-            />
-            {skillVariant === 'corrected' && correction && <CorrectionBanner c={correction} clampedNegatives={app.historicalClampedNegatives} />}
-            {skillVariant === 'global' && globalCorrection && (
-              <GlobalCorrectionBanner c={globalCorrection} />
-            )}
-          </div>
-        )}
-
-        {skillDisplay.lead && (
-          <div style={subBlock}>
-            <h3 style={h3}>By lead day</h3>
-            <Plot
-              {...skillBarsFigure(skillDisplay.lead!, {
-                categoryLabel: 'Lead day',
-                title: `Skill by Lead Day${riverIdSuffix}${variantSuffix(skillVariant)}`,
-                subtitle:
-                  'Median across the 51 ensemble members  |  bars coloured by band  |' +
-                  ` dotted = mean-flow benchmark (NSE 0, KGE' ${'−'}0.41), dashed = band edges`,
-              })}
-            />
-            <PlotNote>
-              each row is one lead day scored two ways, and{' '}
-              <strong>each panel is coloured against its own benchmark</strong>. The dotted line is
-              the score of a forecast that just predicts the observed mean flow at every timestep:
-              0 for <strong>NSE</strong>, which is already normalised by the observed variance, and
-              −0.41 for <strong>KGE′</strong>, which is not. Left of that dotted line the forecast
-              is worse than doing nothing. Dashed lines mark the remaining category boundaries at
-              0.75 and 0.50.
-              <br />
-              <br />
-              Categories follow the published KGE′ classification — Good above 0.75, Intermediate
-              0.50–0.75, Poor 0.00–0.50, Very poor −0.41–0.00, Unacceptable at or below −0.41.
-              NSE reuses the names and the upper boundaries but has no Very poor band, because its
-              benchmark <em>is</em> 0: at or below it the forecast is already beaten by the observed
-              mean. That last part is derived from what the benchmark means rather than taken from
-              an NSE paper.
-              <br />
-              <br />
-              <strong>The two panels use different colours on purpose.</strong> They are two
-              classifications, not one — the boundaries differ and KGE′ has a Very poor band that
-              NSE does not — so a shared palette invited reading a colour on one panel as the same
-              verdict on the other. KGE′ keeps green–amber–red, the convention of the scheme it
-              follows; NSE is blue–brown. The legend is split per metric and carries each one's own
-              numeric ranges, which a shared legend could not have done correctly.
-              <br />
-              <br />
-              Colour is a convenience, not the record. Every boundary is also drawn as a line, and
-              each bar names its category in the hover.
-              <br />
-              <br />
-              Read a row straight across: strong on KGE' but weak on NSE usually means the shape
-              was right and the magnitude was not, because NSE punishes squared error on the peak
-              while KGE' spreads the penalty across three components. Bars are the median across
-              members, matching the black median line on the box plots above, and hover gives the
-              pair count behind each row.
-            </PlotNote>
-          </div>
-        )}
-
-        {skillDisplay.run && skillDisplay.run.length > 0 && (
-          <div style={subBlock}>
-            <h3 style={h3}>By forecast initialization</h3>
-            <Plot
-              {...skillBarsFigure(skillDisplay.run!, {
-                categoryLabel: 'Initialized (UTC)',
-                title: `Skill by Forecast Run${riverIdSuffix}${variantSuffix(skillVariant)}`,
-                subtitle:
-                  "Each run scored over its own horizon against the observed event  |  median of 51 members",
-              })}
-            />
-            <PlotNote>
-              the same two scores, but one row per forecast run rather than per lead day — so
-              nothing is stitched together, and each row is a real model run judged against the
-              observations it overlaps. Read top to bottom to replay the event: rows should
-              improve as initialization approaches the event, and the row where colour first turns
-              green is the run that first got the event right.
-              <br />
-              <br />
-              Runs initialized well before the event overlap it only briefly, so they are scored on
-              few pairs and are marked <em>n/a</em> rather than given a misleading number. Because
-              each run covers a different slice of the event, rows here are not strictly comparable
-              with one another the way the lead-day rows are — use this to find when the forecast
-              locked on, and the lead-day view to quantify how skill decays.
-            </PlotNote>
-          </div>
+              <PlotNote>
+                a single score combining correlation, bias and variability, per member. The green
+                line at 1 is perfect. The red line at −0.41 is the benchmark you get by predicting
+                the observed mean flow at every timestep — a box below it means the forecast was
+                worse than a flat average, which is the threshold that matters most here. Because
+                KGE' collapses three error types into one number, use the r, β and γ plots below to
+                see which of them caused a drop.
+              </PlotNote>
+            </div>
+          )}
+  
+          {accuracyDisplay.r && (
+            <div style={subBlock}>
+              <h3 style={h3}>Pearson correlation (r) by lead day</h3>
+              <Plot
+                {...distributionVsLeadFigure(accuracyDisplay.r!, {
+                  metricLabel: 'r',
+                  title: `Pearson Correlation per Lead Day${riverIdSuffix}`,
+                  subtitle: 'KGE component  |  51 members (leads 0–15)',
+                  yAxisLabel: 'r',
+                  referenceLines: [{ y: 1, label: 'r = 1 (perfect)', color: 'green' }],
+                  zeroLine: true,
+                })}
+              />
+              <PlotNote>
+                the shape-and-timing component of KGE': how well the rise and fall of the forecast
+                lines up with the observation, ignoring magnitude entirely. A member can score near
+                1 here while being badly wrong in absolute terms — that combination points to a
+                scaling problem, which β and γ below will show. Low r instead means the hydrograph
+                shape or timing itself was wrong, and no bias correction would fix it.
+              </PlotNote>
+            </div>
+          )}
+  
+          {accuracyDisplay.beta && (
+            <div style={subBlock}>
+              <h3 style={h3}>Bias ratio (β) by lead day</h3>
+              <Plot
+                {...distributionVsLeadFigure(accuracyDisplay.beta!, {
+                  metricLabel: 'β',
+                  title: `Bias Ratio per Lead Day${riverIdSuffix}`,
+                  subtitle:
+                    'β = μ_forecast / μ_observed  |  β < 1 underestimate, β > 1 overestimate  |  51 members',
+                  yAxisLabel: 'β',
+                  referenceLines: [{ y: 1, label: 'β = 1 (no bias)', color: 'green' }],
+                })}
+              />
+              <PlotNote>
+                the ratio of mean forecast flow to mean observed flow, so 1 is unbiased, 0.5 means
+                the member forecast half the water that arrived and 2 means twice. Read it as a
+                multiplier, not a difference. A box sitting off 1 by the same factor at every lead
+                day is a systematic bias in the model at this reach rather than a forecast failure
+                — the kind of thing the event-vs-retrospective plot on the Setup tab shows directly.
+              </PlotNote>
+            </div>
+          )}
+  
+          {accuracyDisplay.gamma && (
+            <div style={subBlock}>
+              <h3 style={h3}>Variability ratio (γ) by lead day</h3>
+              <Plot
+                {...distributionVsLeadFigure(accuracyDisplay.gamma!, {
+                  metricLabel: 'γ',
+                  title: `Variability Ratio per Lead Day${riverIdSuffix}`,
+                  subtitle:
+                    'γ = CV_forecast / CV_observed (Kling et al., 2012)  |  γ < 1 under-varies, γ > 1 over-varies  |  51 members',
+                  yAxisLabel: 'γ',
+                  referenceLines: [{ y: 1, label: 'γ = 1 (perfect)', color: 'green' }],
+                })}
+              />
+              <PlotNote>
+                whether the forecast varies as much as the observation does, after removing the
+                bias that β already measures. Below 1 the member's hydrograph is too flat —
+                damped peaks and shallow recessions, the usual signature of a smoothed forecast.
+                Above 1 it swings harder than reality. Together with β this separates "right shape,
+                wrong size" from "wrong shape".
+              </PlotNote>
+            </div>
+          )}
+  
+          {/*
+            The skill bars were their own section until they and the box plots
+            above were unified onto one scoring pass (leadMemberScores). They
+            answer the same question — how close was the magnitude — from the
+            same numbers, so two sections meant two places to look for one
+            answer, and a reader could see KGE' twice without being told the
+            two were the same quantity.
+          */}
+          <h3 style={h3}>NSE and KGE′ side by side, by band</h3>
+          {!skillLead && !skillRun && (
+            <p style={{ color: '#555' }}>
+              Need observed event data and downloaded forecasts before summarising skill.
+            </p>
+          )}
+  
+          {(skillLead || skillLeadCorrected) && (
+            <div style={{ marginTop: '0.75rem' }}>
+              <VariantSelect
+                value={skillVariant}
+                onChange={setSkillVariant}
+                disabledReason={skillLeadCorrected ? null : correctedUnavailableReason}
+                globalDisabledReason={globalUnavailableReason}
+              />
+              {skillVariant === 'corrected' && correction && <CorrectionBanner c={correction} clampedNegatives={app.historicalClampedNegatives} />}
+              {skillVariant === 'global' && globalCorrection && (
+                <GlobalCorrectionBanner c={globalCorrection} />
+              )}
+            </div>
+          )}
+  
+          {skillDisplay.lead && (
+            <div style={subBlock}>
+              <h3 style={h3}>By lead day</h3>
+              <Plot
+                {...skillBarsFigure(skillDisplay.lead!, {
+                  categoryLabel: 'Lead day',
+                  title: `Skill by Lead Day${riverIdSuffix}${variantSuffix(skillVariant)}`,
+                  subtitle:
+                    'Median across the 51 ensemble members  |  bars coloured by band  |' +
+                    ` dotted = mean-flow benchmark (NSE 0, KGE' ${'−'}0.41), dashed = band edges`,
+                })}
+              />
+              <PlotNote>
+                each row is one lead day scored two ways, and{' '}
+                <strong>each panel is coloured against its own benchmark</strong>. The dotted line is
+                the score of a forecast that just predicts the observed mean flow at every timestep:
+                0 for <strong>NSE</strong>, which is already normalised by the observed variance, and
+                −0.41 for <strong>KGE′</strong>, which is not. Left of that dotted line the forecast
+                is worse than doing nothing. Dashed lines mark the remaining category boundaries at
+                0.75 and 0.50.
+                <br />
+                <br />
+                Categories follow the published KGE′ classification — Good above 0.75, Intermediate
+                0.50–0.75, Poor 0.00–0.50, Very poor −0.41–0.00, Unacceptable at or below −0.41.
+                NSE reuses the names and the upper boundaries but has no Very poor band, because its
+                benchmark <em>is</em> 0: at or below it the forecast is already beaten by the observed
+                mean. That last part is derived from what the benchmark means rather than taken from
+                an NSE paper.
+                <br />
+                <br />
+                <strong>The two panels use different colours on purpose.</strong> They are two
+                classifications, not one — the boundaries differ and KGE′ has a Very poor band that
+                NSE does not — so a shared palette invited reading a colour on one panel as the same
+                verdict on the other. KGE′ keeps green–amber–red, the convention of the scheme it
+                follows; NSE is blue–brown. The legend is split per metric and carries each one's own
+                numeric ranges, which a shared legend could not have done correctly.
+                <br />
+                <br />
+                Colour is a convenience, not the record. Every boundary is also drawn as a line, and
+                each bar names its category in the hover.
+                <br />
+                <br />
+                Read a row straight across: strong on KGE' but weak on NSE usually means the shape
+                was right and the magnitude was not, because NSE punishes squared error on the peak
+                while KGE' spreads the penalty across three components. Bars are the median across
+                members, matching the black median line on the box plots above, and hover gives the
+                pair count behind each row.
+              </PlotNote>
+            </div>
+          )}
+  
+          {skillDisplay.run && skillDisplay.run.length > 0 && (
+            <div style={subBlock}>
+              <h3 style={h3}>By forecast initialization</h3>
+              <Plot
+                {...skillBarsFigure(skillDisplay.run!, {
+                  categoryLabel: 'Initialized (UTC)',
+                  title: `Skill by Forecast Run${riverIdSuffix}${variantSuffix(skillVariant)}`,
+                  subtitle:
+                    "Each run scored over its own horizon against the observed event  |  median of 51 members",
+                })}
+              />
+              <PlotNote>
+                the same two scores, but one row per forecast run rather than per lead day — so
+                nothing is stitched together, and each row is a real model run judged against the
+                observations it overlaps. Read top to bottom to replay the event: rows should
+                improve as initialization approaches the event, and the row where colour first turns
+                green is the run that first got the event right.
+                <br />
+                <br />
+                Runs initialized well before the event overlap it only briefly, so they are scored on
+                few pairs and are marked <em>n/a</em> rather than given a misleading number. Because
+                each run covers a different slice of the event, rows here are not strictly comparable
+                with one another the way the lead-day rows are — use this to find when the forecast
+                locked on, and the lead-day view to quantify how skill decays.
+              </PlotNote>
+            </div>
+          )}
+          </>
         )}
       </CollapsibleBlock>
 
@@ -2947,6 +2759,260 @@ export function MetricsTab() {
               </p>
             )}
           </div>
+        )}
+      </CollapsibleBlock>
+
+      <CollapsibleBlock
+        title="Bias correction"
+        description="What a correction actually does to your forecasts: how far it shifts each lead day, whether KGE′ improved, and one run before and after. Pick which correction with the selector — the local CDF map fitted to your uploaded gauge record, or SABER, fitted centrally per river and month. Diagnostics only, no metric here."
+      >
+        {comparisonReady && (
+          <div style={subBlock}>
+            <h3 style={h3}>Raw against each correction, side by side</h3>
+            <VariantComparisonTable
+              rows={comparison}
+              hasLocal={!!correction}
+              hasGlobal={!!globalCorrection && !globalCorrection.unusable}
+            />
+            <MissingRowsNote rows={comparison} />
+            <PlotNote>
+              every cell is the <strong>median across lead days</strong> of that lead's own median
+              across the 51 members — the same two-level summary the charts in this app plot, so the
+              table cannot disagree with them. It is a summary and hides the lead structure
+              completely; a correction that helps at short lead and hurts at long lead reads as a
+              small change here. The charts below are the record.
+              <br />
+              <br />
+              <strong>Best</strong> names the correction that moved furthest{' '}
+              <em>toward</em> the metric's ideal, which is not the same as furthest up. β and γ are
+              ratios targeting 1 and can miss either way, so 1.4 is as wrong as 0.7 and an
+              over-correction is not an improvement. "neither" means both corrections left that
+              metric worse than raw.
+              <span style={notePara}>
+                A dash means the metric has not been computed yet for any variant — this table
+                reuses the other blocks' results rather than recomputing anything, so the dashes
+                run by <em>row</em>, not by column. The note above says which button fills which.
+              </span>
+            </PlotNote>
+          </div>
+        )}
+
+        {/*
+          Each correction is gated on its OWN availability. The section used to
+          be gated on the local map alone, so a user who had not uploaded a
+          historical record was told to go and upload one — and never saw that
+          SABER, which needs no observations at all, was sitting there ready.
+        */}
+        {(correctionPending || globalPending) && (
+          <p style={{ color: '#1d4ed8', margin: '0 0 0.45rem' }}>
+            Building {correctionPending && globalPending
+              ? 'both corrections'
+              : correctionPending
+                ? 'the local CDF correction'
+                : 'the SABER transform'}
+            … the panels below appear when it finishes. Deferred deliberately so the page stays
+            usable while it runs.
+          </p>
+        )}
+        {!correction && !correctionPending && (
+          <p style={{ color: '#555', margin: '0 0 0.45rem' }}>
+            <strong>Local CDF correction unavailable</strong> —{' '}
+            {correctedUnavailableReason ?? 'not available yet.'}
+          </p>
+        )}
+        {(!globalCorrection || globalCorrection.unusable) && !globalPending && (
+          <p style={{ color: '#555', margin: '0 0 0.45rem' }}>
+            <strong>SABER unavailable</strong> — {globalUnavailableReason ?? 'not available yet.'}
+          </p>
+        )}
+        {globalCorrection && !globalCorrection.unusable && (
+          <GlobalCorrectionBanner c={globalCorrection} />
+        )}
+
+        {correction && <CorrectionBanner c={correction} clampedNegatives={app.historicalClampedNegatives} />}
+
+        {/*
+          One selector for the whole section rather than a pair of panels per
+          diagnostic. Every plot below exists for both corrections, so showing
+          both of each doubled the chart count to say something the reader can
+          get by switching — and made the section long enough that the
+          comparison it was meant to enable happened by scrolling.
+        */}
+
+        {/*
+          A button, like every other metric block has, because this section
+          renders SEVEN Plotly figures and used to render them unbidden. The
+          corrections themselves are cheap — measured ~50 ms each — and stay
+          automatic, because the variant selectors in the blocks above depend
+          on them; gating those behind this button would make every selector
+          read "unavailable" until it was pressed, which is indistinguishable
+          from "your data does not support this". What this gates is the
+          drawing, which is what actually took the time.
+
+          The comparison table above is deliberately OUTSIDE the gate: it draws
+          no figures, and it is the fastest way to see whether either
+          correction helped.
+        */}
+        {(correction || globalCorrection) && !biasDiagnostics && (
+          <button onClick={() => setBiasDiagnostics(true)} style={btn}>
+            Show bias correction diagnostics
+          </button>
+        )}
+
+        {biasDiagnostics && (
+          <>
+          {biasVariantChoices.length > 1 && (
+            <label style={{ ...lbl, marginBottom: '0.4rem' }}>
+              Correction:&nbsp;
+              <select
+                value={activeBiasVariant ?? ''}
+                onChange={(e) => setBiasVariant(e.target.value as 'local' | 'global')}
+                style={sel}
+              >
+                {biasVariantChoices.map((v) => (
+                  <option key={v} value={v}>
+                    {v === 'local' ? 'Local CDF' : 'SABER'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+  
+          {activeBiasEffect && (
+            <div style={subBlock}>
+              <h3 style={h3}>How much {biasLabel} shifts each lead day</h3>
+              <Plot
+                {...distributionVsLeadFigure(activeBiasEffect, {
+                  metricLabel: 'Δ',
+                  title: `${biasLabel} — Shift per Lead Day${riverIdSuffix}`,
+                  subtitle:
+                    'corrected − raw, m³/s, across ensemble members  |  above zero = inflated',
+                  yAxisLabel: 'corrected − raw (m³/s)',
+                  valueFormat: '+.2f',
+                  zeroLine: true,
+                  membersLabel: 'members',
+                })}
+              />
+              <PlotNote>
+                how far the correction moves the forecast at each lead day. Above the dashed zero
+                line it inflated the values, below it deflated them, and a box sitting on zero means
+                the mapping was a no-op for that lead.
+                <br />
+                <br />
+                One caution about reading a trend here, and it applies to both: the mapping is the{' '}
+                <strong>same at every lead</strong>. The local map comes from the retrospective, which
+                has no lead dimension, and SABER's coefficients are fitted per river and calendar
+                month, not per lead. So any lead-dependence you see is not either correction treating
+                long leads differently — it is those leads occupying a different part of one fixed
+                curve. That is also the shared structural limit of both: forecast error grows with
+                lead, and neither correction can know that.
+                <br />
+                <br />
+                Worth switching the selector at the top and comparing: where the two corrections
+                disagree in sign, one is inflating the forecast while the other deflates it, and the
+                metric tabs will disagree about which helped.
+              </PlotNote>
+            </div>
+          )}
+  
+          {activeDumbbell && (
+            <>
+              <h3 style={h3}>What {biasLabel} changed, per lead</h3>
+              <Plot
+                {...dumbbellFigure(activeDumbbell, {
+                  title: `KGE′ before and after ${biasLabel}${riverIdSuffix}`,
+                  metricLabel: 'KGE′',
+                  beforeLabel: 'Raw',
+                  afterLabel: biasLabel,
+                  higherIsBetter: true,
+                })}
+              />
+              <PlotNote>
+                one row per lead day, showing the same KGE′ the bar charts report — grey dot is the
+                raw forecast, orange is corrected, and the connector's length is the size of the
+                change. Green means correction helped at that lead, red that it hurt. This answers
+                "did it work" without asking you to match two overlapping lines across sixteen
+                crossings, and the count in the subtitle says how many leads improved.
+              </PlotNote>
+            </>
+          )}
+  
+          {activeBiasRun && app.eventData && (correction || globalCorrection) && (
+            <div style={subBlock}>
+              <h3 style={h3}>One run, before and after</h3>
+              <label style={lbl}>
+                Run:&nbsp;
+                <select
+                  value={activeBiasRun}
+                  onChange={(e) => setBiasRunDate(e.target.value)}
+                  style={sel}
+                >
+                  {biasRunDates.map((d) => (
+                    <option key={d} value={d}>
+                      {`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {app.forecasts.get(activeBiasRun) && activeCorrected?.get(activeBiasRun) && (
+                <Plot
+                  {...biasHydrographFigure(
+                    app.forecasts.get(activeBiasRun)!,
+                    activeCorrected.get(activeBiasRun)!,
+                    app.eventData,
+                    {
+                      label: `${activeBiasRun.slice(0, 4)}-${activeBiasRun.slice(4, 6)}-${activeBiasRun.slice(6, 8)}`,
+                      correctedLabel: biasLabel,
+                      riverId: app.reach?.riverId ?? undefined,
+                      // Observed thresholds apply to the observed line and to the
+                      // corrected forecast; simulated ones to the raw forecast.
+                      obsRp: app.obsRp,
+                      simRp: app.simRp,
+                    },
+                  )}
+                />
+              )}
+              {activeCorrected && !activeCorrected.get(activeBiasRun) && (
+                <p style={{ color: '#8a6d1f', margin: '0.4rem 0' }}>
+                  This run was excluded from the <strong>{biasLabel}</strong> correction — the banner
+                  above says why. SABER excludes nothing, so switching the correction at the top will
+                  show it.
+                </p>
+              )}
+              <PlotNote>
+                the plainest test of whether the correction helped: if the blue corrected line moves
+                toward the black observations relative to the grey raw line, it did. If it overshoots
+                past them, the mapping is over-inflating — which happens when the observed record's
+                upper tail is heavier than the simulated one. Where grey and blue coincide the mapping
+                was undefined and the raw value was kept; the subtitle counts those timesteps.
+                <br />
+                <br />
+                Two return-period sets are available in the legend, because the lines sit on two
+                different scales: the <strong>observed</strong> zones apply to the black observations
+                and to the corrected forecast, while the <strong>simulated</strong> zones are the
+                scale the raw forecast lives on. Each set stays hidden when its 2-year threshold is
+                far above everything plotted — drawing it would stretch the axis and flatten all
+                three lines — so the subtitle reports how close the peak came instead. Click a legend
+                entry to bring the zones in when they are in range.
+                <br />
+                <br />
+                Opens on a run whose horizon actually spans the observed crest, rather than the
+                earliest one available. Runs are fetched from 15 days before the event, so the
+                earliest initialization finishes before the flood begins — its raw and corrected
+                traces sit at baseflow, weeks to the left of anything worth comparing. Drag the
+                selector to watch the correction's effect change as the forecast closes on the event.
+                <br />
+                <br />
+                The run list is the union of both corrections: the local map drops runs whose mapping
+                ran to infinity, while SABER drops none, so a run can be available for one and not
+                the other. If none of the survivors reaches the crest — which happens when the local
+                map excluded exactly the runs that forecast the event — this falls back to the middle
+                of the list, and the selection-bias banner above will be saying why. The title and
+                legend always name which correction is drawn.
+              </PlotNote>
+            </div>
+          )}
+          </>
         )}
       </CollapsibleBlock>
     </div>
