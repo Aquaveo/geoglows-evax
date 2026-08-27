@@ -978,18 +978,36 @@ export function MetricsTab() {
   }, [correctedAvailable, app.historicalData, app.retro, app.forecasts.size, correction, correctionPending]);
 
   /** Pairs available per lead once both sides are on the grid. */
+  /**
+   * Pairs per lead: the range, not just the best.
+   *
+   * This returned only the maximum, and the banner printed it as "N pairs per
+   * lead day" — which reads as typical. It is not, because an RFS run coarsens
+   * across its horizon: all 51 members share one time axis, but that axis is
+   * 3-hourly early and coarser late. The comparison grid is chosen from lead 1
+   * (the run's finest output), so late leads land on a grid finer than their own
+   * publishing interval and carry proportionally fewer pairs.
+   *
+   * Measured on a run that is 3-hourly for 10 days then 6-hourly for 5: leads
+   * 1-10 give 8 pairs and leads 11-15 give 4, while the banner said 8. That
+   * matters because MIN_PAIRS_CORRELATION gates each lead on its OWN count, so
+   * the late leads can blank out for a reason that is about publishing cadence
+   * rather than forecast quality — and the banner was the one place a reader
+   * could have noticed.
+   */
   const pairsPerLead = useMemo(() => {
     if (!griddedMean) return null;
     const obsKeys = new Set(griddedMean.obs.time.map((d) => d.getTime()));
-    let best = 0;
+    const counts: number[] = [];
     for (let lead = 1; lead <= MAX_LEAD; lead++) {
       const b = griddedMean.buckets[lead];
       if (!b) continue;
       let n = 0;
       for (const t of b.time) if (obsKeys.has(t.getTime())) n++;
-      if (n > best) best = n;
+      if (n > 0) counts.push(n);
     }
-    return best;
+    if (counts.length === 0) return null;
+    return { min: Math.min(...counts), max: Math.max(...counts) };
   }, [griddedMean]);
 
   /**
@@ -1821,8 +1839,20 @@ export function MetricsTab() {
         <p style={gridBanner}>
           Metrics computed at <strong>{grid.label}</strong> resolution
           {grid.limitedBy !== 'equal' && `, limited by the ${grid.limitedBy}`}
-          {pairsPerLead != null && ` — ${pairsPerLead} pairs per lead day`}. See{' '}
-          <em>Temporal resolution</em> on the Overview tab.
+          {pairsPerLead != null &&
+            (pairsPerLead.min === pairsPerLead.max
+              ? ` — ${pairsPerLead.max} pairs per lead day`
+              : ` — ${pairsPerLead.min} to ${pairsPerLead.max} pairs per lead day`)}
+          . See <em>Temporal resolution</em> on the Overview tab.
+          {pairsPerLead != null && pairsPerLead.min < pairsPerLead.max && (
+            <span style={notePara}>
+              The spread is the forecast coarsening across its own horizon: every member shares one
+              time axis, but that axis is finer early than late, so the later leads carry fewer
+              pairs than the earlier ones. That is a publishing interval, not a change in forecast
+              quality — but each lead is gated on its own pair count, so the late leads blank out
+              first.
+            </span>
+          )}
         </p>
       )}
 
