@@ -1788,7 +1788,7 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Categorical metrics"
-        description="Contingency matrix, MCC, and HSS — dual-threshold classification of forecast vs. observed return-period categories."
+        description="Did the forecast put the event in the right severity class? Dual-threshold classification of forecast against observed return-period categories: the contingency matrix, MCC and HSS over all categories at once, RPS and RPSS which are the only scores here that know the categories are ordered, the two-by-two scores per exceedance threshold (POD, FAR, CSI, frequency bias), and CSI by lead day in its own panel. All are left raw — the dual thresholds absorb magnitude bias by construction, so correcting the forecasts too would apply the same adjustment twice."
       >
         {!canCompute && (
           <p style={{ color: '#555' }}>
@@ -2233,7 +2233,7 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Timing metrics"
-        description="Peak timing error (Δt_peak) and first-ascending threshold crossing error (Δt_RP), per ensemble member, by lead day."
+        description="Did the forecast get the timing right, independently of magnitude? Peak timing error (Δt_peak) grouped two ways — by lead day, and by forecast initialization — plus first-ascending threshold crossing error (Δt_RP), the warning-time error, per ensemble member. Members are excluded only on facts about their own shape: flat throughout, or a maximum sitting on their first or last sample. The counts are reported beneath each chart, because excluding anything without saying so is survivorship bias."
       >
         {!canComputeTiming && (
           <p style={{ color: '#555' }}>
@@ -2572,8 +2572,13 @@ export function MetricsTab() {
             same numbers, so two sections meant two places to look for one
             answer, and a reader could see KGE' twice without being told the
             two were the same quantity.
+
+            Their two headings were "By lead day" and "By forecast
+            initialization", which read fine under a section called Skill
+            summary and are meaningless as peers of the four distribution
+            headings above. Both now name their own subject, so no wrapper
+            heading is needed here.
           */}
-          <h3 style={h3}>NSE and KGE′ side by side, by band</h3>
           {!skillLead && !skillRun && (
             <p style={{ color: '#555' }}>
               Need observed event data and downloaded forecasts before summarising skill.
@@ -2597,7 +2602,7 @@ export function MetricsTab() {
   
           {skillDisplay.lead && (
             <div style={subBlock}>
-              <h3 style={h3}>By lead day</h3>
+              <h3 style={h3}>NSE and KGE′ by lead day, coloured by band</h3>
               <Plot
                 {...skillBarsFigure(skillDisplay.lead!, {
                   categoryLabel: 'Lead day',
@@ -2648,7 +2653,7 @@ export function MetricsTab() {
   
           {skillDisplay.run && skillDisplay.run.length > 0 && (
             <div style={subBlock}>
-              <h3 style={h3}>By forecast initialization</h3>
+              <h3 style={h3}>NSE and KGE′ by forecast initialization</h3>
               <Plot
                 {...skillBarsFigure(skillDisplay.run!, {
                   categoryLabel: 'Initialized (UTC)',
@@ -2773,7 +2778,7 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Bias correction"
-        description="What a correction actually does to your forecasts: how far it shifts each lead day, whether KGE′ improved, and one run before and after. Pick which correction with the selector — the local CDF map fitted to your uploaded gauge record, or SABER, fitted centrally per river and month. Diagnostics only, no metric here."
+        description="Whether either correction helped, and what it did to get there. Opens with raw against both corrections on every affected metric at once; below that, how far the chosen correction shifts each lead day and one run before and after. Pick which correction with the selector — the local CDF map fitted to your uploaded gauge record, or SABER, fitted centrally per river and month. Last on the page because the table summarises the blocks above it."
       >
         {comparisonReady && (
           <div style={subBlock}>
