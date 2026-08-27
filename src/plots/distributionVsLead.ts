@@ -17,6 +17,22 @@ export interface PerLeadDistribution {
    * rendered on the plot — a gap with no explanation reads as a bug.
    */
   skipped?: (string | null)[];
+  /**
+   * Timing resolution at each lead, in hours — the spacing of the samples the
+   * value was measured on, index-aligned with `leads`.
+   *
+   * Only meaningful for metrics measured in time. An RFS run changes spacing
+   * across its horizon: all 51 members share one time index, but that index is
+   * finer early than late. So a Δt smaller than the lead's own spacing is not a
+   * measurement of anything — it is the argmax landing on the nearest available
+   * sample.
+   *
+   * Measured on a PERFECT forecast against 3-hourly observations, with the run
+   * coarsening to 6-hourly after day 7: Δt reads 0.0 h at leads 1–7 and −3.0 h
+   * at leads 8–15, unanimously across members. A tight box at exactly one step,
+   * which reads as real early bias and is not.
+   */
+  resolutionHours?: (number | null)[];
 }
 
 export interface DistributionFigureOptions {
@@ -212,9 +228,48 @@ export function distributionVsLeadFigure(
     hovertemplate: `<b>${xPrefix}%{customdata}</b><br>Min: %{y:${fmt}}<extra></extra>`,
   });
 
-  // 9) Optional zero reference (dashed grey).
   const xMin = allLeads.length > 0 ? Math.min(...allLeads) - 0.5 : -0.5;
   const xMax = allLeads.length > 0 ? Math.max(...allLeads) + 0.5 : 15.5;
+
+  // 8b) Within-resolution band, where each lead carries its own timing
+  // resolution.
+  //
+  // Drawn BEFORE the zero line and stepped per lead rather than as one flat
+  // ribbon, because the resolution is not constant: an RFS run publishes
+  // 3-hourly early and coarser late, so the band widens exactly where the
+  // forecast gets sparser. A Δt inside it is the argmax landing on the nearest
+  // available sample, not a measurement — on a perfect forecast the band covers
+  // the whole apparent −3 h "bias" that appears at the cadence break.
+  const res = d.resolutionHours;
+  if (res && res.some((r) => r != null && r > 0)) {
+    const stepX: number[] = [];
+    const stepHi: number[] = [];
+    const stepLo: number[] = [];
+    for (let i = 0; i < d.leads.length; i++) {
+      const r = res[i];
+      if (r == null || !(r > 0)) continue;
+      // Two points per lead so the edge is a step, not a slope between leads.
+      stepX.push(d.leads[i] - 0.5, d.leads[i] + 0.5);
+      stepHi.push(r, r);
+      stepLo.push(-r, -r);
+    }
+    if (stepX.length > 0) {
+      data.push({
+        type: 'scatter',
+        mode: 'lines',
+        x: [...stepX, ...stepX.slice().reverse()],
+        y: [...stepHi, ...stepLo.slice().reverse()],
+        fill: 'toself',
+        fillcolor: 'rgba(120,120,120,0.13)',
+        line: { width: 0 },
+        name: 'within resolution',
+        hoverinfo: 'skip',
+        showlegend: true,
+      } as Data);
+    }
+  }
+
+  // 9) Optional zero reference (dashed grey).
   if (opts.zeroLine) {
     data.push({
       type: 'scatter',

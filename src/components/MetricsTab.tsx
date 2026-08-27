@@ -1217,8 +1217,35 @@ export function MetricsTab() {
         const buckets = griddedAgg.buckets;
         const eventData = griddedAgg.obs;
 
+        /**
+         * Each lead's own timing resolution, in hours.
+         *
+         * A run coarsens across its horizon — every member shares one time
+         * index, but that index is finer early than late — so the argmax at a
+         * coarse lead can only land on a coarse sample. Measured on a PERFECT
+         * forecast against 3-hourly observations, with the break after day 7:
+         * Δt reads 0.0 h at leads 1–7 and −3.0 h at leads 8–15, unanimous across
+         * members. That is not bias, it is the true peak falling between two
+         * available samples, and without this the panel presents it as a finding.
+         *
+         * Read off the GRIDDED bucket, which is what the argmax actually sees:
+         * aggregateBucket drops bins no member reaches, so a 6-hourly lead on a
+         * 3-hourly grid comes back 6-hourly.
+         */
+        const resolutionHours: (number | null)[] = [];
+        for (let lead = 0; lead <= MAX_LEAD; lead++) {
+          const b = buckets[lead];
+          const c = b ? bucketCadence(b) : null;
+          resolutionHours.push(c ? c.stepMs / 3600e3 : null);
+        }
+
         // Peak timing distribution
-        const peakDist: PerLeadDistribution = { leads: [], values: [], pairs: [] };
+        const peakDist: PerLeadDistribution = {
+          leads: [],
+          values: [],
+          pairs: [],
+          resolutionHours,
+        };
         // Members yielding no timing, per lead, and why. Without these the
         // exclusions would be survivorship bias: a narrow box at long lead means
         // nothing if it rests on nine members out of 51.
@@ -1255,7 +1282,16 @@ export function MetricsTab() {
           for (const rp of RP_LEVELS) {
             const obsThr = app.obsRp[rp];
             const simThr = app.simRp[rp];
-            const dist: PerLeadDistribution = { leads: [], values: [], pairs: [] };
+            // Same resolution band as peak timing: Δt_RP is an argmax-style
+            // difference on the same lattice, and the audit measured it as
+            // one-sided LATE at the coarse leads (never early) for exactly that
+            // reason — a crossing can only be detected on a sample that exists.
+            const dist: PerLeadDistribution = {
+              leads: [],
+              values: [],
+              pairs: [],
+              resolutionHours,
+            };
             const det: CrossingDetection = {
               leads: [],
               nCrossed: [],
@@ -1717,15 +1753,29 @@ export function MetricsTab() {
             (noPeak > 0 ? `, ${noPeak} flat` : '') +
             (atEdge > 0 ? `, ${atEdge} peaked at the window edge` : '')
           : '';
+      // A median no larger than this lead's own sample spacing is not a timing
+      // measurement — the argmax can only land on a sample that exists, and a
+      // run publishes coarser samples at long lead. Flagged rather than hidden,
+      // so the step at the cadence break is still visible as a step.
+      const resH = app.peakTimingDistribution?.resolutionHours?.[i] ?? null;
+      const median = q(0.5);
+      const within = resH != null && resH > 0 && Math.abs(median) <= resH;
       return {
         label: `Lead ${lead}`,
-        value: q(0.5),
+        value: median,
         q1: q(0.25),
         q3: q(0.75),
         lo: sorted[0],
         hi: sorted[sorted.length - 1],
         n: vals.length,
-        detail: `, ${pairs} pairs${excluded}`,
+        withinResolution: within,
+        detail:
+          `, ${pairs} pairs${excluded}` +
+          (resH != null && resH > 0
+            ? `; samples ${resH}h apart at this lead${
+                within ? ', so this median is within one step of zero' : ''
+              }`
+            : ''),
       };
     });
   }, [app.peakTimingDistribution, peakNoPeak, peakAtEdge]);
@@ -1735,6 +1785,7 @@ export function MetricsTab() {
     if (!peakByRun || peakByRun.initDates.length === 0) return null;
     return peakByRun.initDates.map((date, i) => {
       const vals = (peakByRun.values[i] ?? []).filter(Number.isFinite);
+      const resH = peakByRun.resolutionHours?.[i] ?? null;
       if (vals.length === 0) {
         return { label: date, value: Number.NaN, n: 0, detail: 'no member timed a peak' };
       }
@@ -1745,15 +1796,26 @@ export function MetricsTab() {
         const hi = Math.ceil(h);
         return lo === hi ? sorted[lo] : sorted[lo] + (h - lo) * (sorted[hi] - sorted[lo]);
       };
+      const median = q(0.5);
+      // Same rule as the by-lead panel. This one had no grid escape at all: it
+      // reads raw run.time, so a run whose overlap sits late in its own horizon
+      // is searched on that run's coarse samples.
+      const within = resH != null && resH > 0 && Math.abs(median) <= resH;
       return {
         label: date,
-        value: q(0.5),
+        value: median,
         q1: q(0.25),
         q3: q(0.75),
         lo: sorted[0],
         hi: sorted[sorted.length - 1],
         n: vals.length,
-        detail: '',
+        withinResolution: within,
+        detail:
+          resH != null && resH > 0
+            ? `samples ${resH}h apart in the searched span${
+                within ? ', so this median is within one step of zero' : ''
+              }`
+            : '',
       };
     });
   }, [peakByRun]);
@@ -2377,6 +2439,18 @@ export function MetricsTab() {
               the bulk of members agreed on the sign, and whether <em>any</em> member got it right.
               <br />
               <br />
+              <strong>The grey band is the lead's own sampling resolution.</strong> A run does not
+              publish at one spacing: all 51 members share a single time index, but that index is
+              finer early than late — typically 3-hourly for the first week, coarser after. The
+              argmax can only land on a sample that exists, so a Δt inside the band is the peak
+              falling between two available instants, not a timing error. On a <em>perfect</em>
+              forecast against 3-hourly observations, a run coarsening after day 7 reports Δt = 0
+              through lead 7 and then a unanimous one-step offset at leads 8–15 — a tight box that
+              reads as real early bias and is entirely the lattice. Bars in the companion chart are
+              drawn <strong>hollow</strong> under the same rule, so the step is still visible as a
+              step without being read as a measurement.
+              <br />
+              <br />
               <strong>Check the member count in the hover before reading a box.</strong> A member
               is excluded only when it has no timing to report — its maximum is attained at every
               timestep, so there is no peak, or the maximum sits on its own first or last sample,
@@ -2429,7 +2503,10 @@ export function MetricsTab() {
               clipped at the axis with a <strong>›</strong> where it continues. Colour is
               redundant with side on purpose — the
               axis already answers the question, so nothing is lost in greyscale or to
-              colour-blindness.
+              colour-blindness. A <strong>hollow</strong> bar sits within its own run's sampling
+              resolution: the run publishes coarser samples late in its horizon, so a peak placed
+              on the nearest available instant produces an offset of one step that is not a timing
+              error. The hover gives the spacing for each row.
               {peakByRun && (
                 <>
                   <br />
@@ -2522,7 +2599,10 @@ export function MetricsTab() {
             </div>
             <PlotNote>
               hours between the forecast first crossing the selected threshold on the way up and
-              the observation doing the same — the warning-time error. Below zero the forecast
+              the observation doing the same — the warning-time error. The grey band is the lead's
+              own sampling resolution, and it matters more here than for peak timing: a crossing can
+              only be detected on a sample that exists, so at the coarse leads the error is biased
+              <em>late</em> in one direction rather than scattering both ways. Below zero the forecast
               warned early, above zero late. Only members that crossed the threshold in{' '}
               <em>both</em> forecast and observation can contribute, so check the detection table
               below before trusting a box: a tight box built from three members is a small

@@ -9,6 +9,17 @@ export interface DivergingRow {
   /** Sample size behind the value, for the hover. */
   n?: number;
   /**
+   * True when |value| is no larger than the row's own measurement resolution,
+   * so the bar is indistinguishable from zero.
+   *
+   * For timing, an RFS run coarsens across its horizon, so a Δt of one step at a
+   * lead published at that step is the argmax landing on the nearest available
+   * sample — not a measurement. Measured on a perfect forecast, every lead past
+   * the cadence break reported a unanimous one-step "bias" this way. Drawn
+   * hollow so the step is still visible as a step, rather than suppressed.
+   */
+  withinResolution?: boolean;
+  /**
    * Interquartile range across members, drawn as an error bar.
    *
    * Carrying the spread here is what lets one chart replace a bar chart plus a
@@ -110,8 +121,18 @@ export function divergingBarsFigure(
       x: scored.map((r) => r.value),
       y: scored.map((r) => r.label),
       marker: {
-        color: scored.map((r) => (r.value < 0 ? COLOR_NEG : COLOR_POS)),
-        line: { color: '#fcfcfb', width: 1 },
+        // Hollow where the value sits inside the row's own resolution: the bar
+        // still shows, because a reader needs to see that the step exists, but
+        // it is visibly not a measurement.
+        color: scored.map((r) =>
+          r.withinResolution ? 'rgba(0,0,0,0)' : r.value < 0 ? COLOR_NEG : COLOR_POS,
+        ),
+        line: {
+          color: scored.map((r) =>
+            r.withinResolution ? (r.value < 0 ? COLOR_NEG : COLOR_POS) : '#fcfcfb',
+          ) as unknown as string,
+          width: 1,
+        },
       },
       showlegend: false,
       // Asymmetric error bars: the IQR is not centred on the median in general,

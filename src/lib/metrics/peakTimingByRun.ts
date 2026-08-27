@@ -12,6 +12,20 @@ export interface PeakTimingByRun {
   initDates: string[];
   /** values[i] = Δt_peak in hours for each member of run i. Negative = forecast early. */
   values: number[][];
+  /**
+   * Sample spacing, in hours, of the part of run i that was searched.
+   *
+   * A run coarsens across its horizon — every member shares one time index, but
+   * that index is finer early than late — so a run whose overlap sits late in
+   * its own horizon can only place a peak on a coarse sample. A |Δt| no larger
+   * than this is the argmax landing on the nearest available instant rather than
+   * a measurement, and on a perfect forecast that is exactly what produces an
+   * apparent one-step bias.
+   *
+   * Read from the searched region, not the whole run, because the two differ:
+   * that is the whole point.
+   */
+  resolutionHours: (number | null)[];
   /** Timestamp of the observed peak, or null when the event series is empty. */
   obsPeak: Date | null;
   /**
@@ -102,6 +116,7 @@ export function computePeakTimingByRun(
     daysBefore: [],
     initDates: [],
     values: [],
+    resolutionHours: [],
     obsPeak: null,
     censoredMembers: 0,
     noPeakMembers: 0,
@@ -135,7 +150,12 @@ export function computePeakTimingByRun(
   const obsStart = eventData.time[0].getTime();
   const obsEnd = eventData.time[eventData.time.length - 1].getTime();
 
-  const rows: { daysBefore: number; initDate: string; deltas: number[] }[] = [];
+  const rows: {
+    daysBefore: number;
+    initDate: string;
+    deltas: number[];
+    resolution: number | null;
+  }[] = [];
   let censoredMembers = 0;
   let noPeakMembers = 0;
   let runsAfterPeak = 0;
@@ -186,6 +206,21 @@ export function computePeakTimingByRun(
       // above, so it is counted rather than dropped silently.
       unusableRuns++;
       continue;
+    }
+
+    // Median spacing of the samples actually searched, so the caller can tell a
+    // real Δt from one step of the lattice this run publishes.
+    let rowResolution: number | null = null;
+    if (inWindow.length >= 2) {
+      const gaps: number[] = [];
+      for (let k = 1; k < inWindow.length; k++) {
+        const g = run.time[inWindow[k]].getTime() - run.time[inWindow[k - 1]].getTime();
+        if (g > 0) gaps.push(g / HOUR_MS);
+      }
+      if (gaps.length > 0) {
+        gaps.sort((a, b) => a - b);
+        rowResolution = gaps[Math.floor(gaps.length / 2)];
+      }
     }
 
     const deltas: number[] = [];
@@ -298,6 +333,7 @@ export function computePeakTimingByRun(
       daysBefore,
       initDate: `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`,
       deltas,
+      resolution: rowResolution,
     });
   }
 
@@ -308,6 +344,7 @@ export function computePeakTimingByRun(
     daysBefore: rows.map((r) => r.daysBefore),
     initDates: rows.map((r) => r.initDate),
     values: rows.map((r) => r.deltas),
+    resolutionHours: rows.map((r) => r.resolution),
     obsPeak: new Date(obsPeakMs),
     censoredMembers,
     noPeakMembers,
