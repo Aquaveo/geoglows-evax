@@ -10,6 +10,7 @@ export interface GlobalCorrection {
   n: number;
   /** Inputs above the month's fitted maximum, clipped before transforming. */
   clippedToQmax: number;
+  clippedToQmin: number;
   /** Percentile clamped to 0 — mapped onto the month's maximum discharge. */
   atCeiling: number;
   /** Percentile clamped to 100 — mapped onto the month's minimum discharge. */
@@ -58,6 +59,7 @@ export function correctForecastsGlobal(
   const saturation: Record<number, MonthSaturation> = {};
   let n = 0;
   let clippedToQmax = 0;
+  let clippedToQmin = 0;
   let atCeiling = 0;
   let atFloor = 0;
   let negativeClamped = 0;
@@ -69,6 +71,7 @@ export function correctForecastsGlobal(
       const r = transformSeries(run.time, series, fits);
       n += r.diagnostics.n;
       clippedToQmax += r.diagnostics.clippedToQmax;
+      clippedToQmin += r.diagnostics.clippedToQmin;
       atCeiling += r.diagnostics.atCeiling;
       atFloor += r.diagnostics.atFloor;
       negativeClamped += r.diagnostics.negativeClamped;
@@ -134,6 +137,7 @@ export function correctForecastsGlobal(
     forecasts: out,
     n,
     clippedToQmax,
+    clippedToQmin,
     atCeiling,
     atFloor,
     negativeClamped,

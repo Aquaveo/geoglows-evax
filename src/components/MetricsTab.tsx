@@ -474,15 +474,37 @@ function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
             </strong>{' '}
             and were mapped onto a single value for their month. Where that happens the corrected
             series cannot tell two different forecasts apart.
+            {/*
+              Both ends, named separately. The probe used to return one region
+              found by walking discharge upward, which met the LOW end first —
+              so a month clamping at both reported only the floor, and this
+              banner never mentioned the ceiling, the end that flattens floods.
+            */}
             {c.months
-              .filter((m) => c.saturation[m]?.fromDischarge != null)
-              .map((m) => (
-                <div key={m} style={{ fontSize: '0.85em', color: '#666' }}>
-                  month {m}: every discharge above{' '}
-                  {c.saturation[m]!.fromDischarge!.toFixed(1)} m³/s maps to{' '}
-                  {c.saturation[m]!.toValue!.toFixed(1)} m³/s
-                </div>
-              ))}
+              .filter((m) => c.saturation[m]?.ceiling || c.saturation[m]?.floor)
+              .map((m) => {
+                const sat = c.saturation[m]!;
+                return (
+                  <div key={m} style={{ fontSize: '0.85em', color: '#666' }}>
+                    month {m}:{' '}
+                    {sat.ceiling && (
+                      <>
+                        every discharge <strong>at or above</strong>{' '}
+                        {sat.ceiling.atDischarge.toFixed(1)} m³/s maps to{' '}
+                        {sat.ceiling.toValue.toFixed(1)} m³/s
+                      </>
+                    )}
+                    {sat.ceiling && sat.floor && '; '}
+                    {sat.floor && (
+                      <>
+                        every discharge <strong>at or below</strong>{' '}
+                        {sat.floor.atDischarge.toFixed(1)} m³/s maps to{' '}
+                        {sat.floor.toValue.toFixed(1)} m³/s
+                      </>
+                    )}
+                  </div>
+                );
+              })}
           </li>
         )}
         {nonMonotonic.length > 0 && (
@@ -499,6 +521,14 @@ function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
           <li>
             {c.clippedToQmax.toLocaleString()} values ({pct(c.clippedToQmax)}%) exceeded the fitted
             maximum for their month and were clipped to it before transforming.
+          </li>
+        )}
+        {c.clippedToQmin > 0 && (
+          <li>
+            {c.clippedToQmin.toLocaleString()} values ({pct(c.clippedToQmin)}%) fell below the
+            fitted minimum for their month and were clipped up to it before transforming. Counted
+            because the high end was already counted, and a value clipped up is just as much
+            information lost.
           </li>
         )}
         {c.negativeClamped > 0 && (

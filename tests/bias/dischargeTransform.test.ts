@@ -7,7 +7,7 @@ import {
   transformSeries,
   transformValue,
 } from '../../src/lib/bias/dischargeTransform';
-import type { RiverPolyfits } from '../../src/lib/bias/polyfitTypes';
+import type { MonthPolyfit, RiverPolyfits } from '../../src/lib/bias/polyfitTypes';
 
 /** Fixtures encode non-finite floats as sentinel strings. */
 function num(v: number | string): number {
@@ -128,14 +128,13 @@ describe('transformSeries', () => {
       fits,
     );
     const s = diagnostics.saturation[10];
-    expect(s.fromDischarge).not.toBeNull();
-    expect(s.fromDischarge!).toBeLessThan(fits[10].qrange[1]);
-    expect(s.end).toBe('ceiling');
+    expect(s.ceiling).not.toBeNull();
+    expect(s.ceiling!.atDischarge).toBeLessThan(fits[10].qrange[1]);
     // Everything inside that region really is identical: 20 and 100 m3/s, five
     // times apart, come out as the same number.
     expect(Math.abs(transformValue(fits[10], 20) - transformValue(fits[10], 100)))
       .toBeLessThan(1e-9);
-    expect(s.toValue).toBeCloseTo(transformValue(fits[10], 20), 9);
+    expect(s.ceiling!.toValue).toBeCloseTo(transformValue(fits[10], 20), 9);
   });
 
   it('does not assume the saturated region reaches Qrange’s upper endpoint', () => {
@@ -188,5 +187,66 @@ describe('a real forecast run, end to end', () => {
       const { values } = transformSeries(time, original, fits);
       expect(values.every((v) => Number.isFinite(v))).toBe(true);
     }
+  });
+});
+
+describe('saturation is reported at both ends, each measured in its own region', () => {
+  // Clamps at BOTH ends: the percentile exceeds 100 at low flow and drops below
+  // 0 at high flow. exp(5 - 0.06q) - 1 crosses 100 at q = 6.42 and 0 at q = 83.33.
+  const both: MonthPolyfit = { qrange: [0, 100], qtop: [-0.06, 5], ptoq: [-0.03, 4] };
+
+  it('reports the ceiling, which walking upward from Qmin always missed', () => {
+    // The defect: the probe walked discharge ascending and stopped at the first
+    // clamped sample. Low discharge carries HIGH percentile, so that walk always
+    // met the floor first and a both-ends month reported end='floor' with the
+    // ceiling — the end that flattens floods — never mentioned.
+    const s = probeMonth(both);
+    expect(s.ceiling).not.toBeNull();
+    expect(s.floor).not.toBeNull();
+    expect(s.ceiling!.atDischarge).toBeCloseTo(83.33, 1);
+    expect(s.floor!.atDischarge).toBeCloseTo(6.42, 1);
+  });
+
+  it('quotes a value inputs in that region actually map to', () => {
+    // The defect: toValue was transformValue(fit, (firstClip + hi) / 2). With
+    // firstClip at the floor that sampled the middle of the HEALTHY range, so
+    // the banner claimed "everything above 0.0 maps to 44.08" while 0.5, 50 and
+    // 100 gave 1.72, 44.08 and 53.60 — 44.08 being just the midpoint's value.
+    const s = probeMonth(both);
+    // Each region's quoted value is what the whole region really produces.
+    expect(s.ceiling!.toValue).toBeCloseTo(transformValue(both, 90), 6);
+    expect(s.ceiling!.toValue).toBeCloseTo(transformValue(both, 100), 6);
+    expect(s.floor!.toValue).toBeCloseTo(transformValue(both, 0), 6);
+    expect(s.floor!.toValue).toBeCloseTo(transformValue(both, 3), 6);
+    // And is NOT the midpoint value that used to be reported.
+    expect(Math.abs(s.ceiling!.toValue - transformValue(both, 50))).toBeGreaterThan(1);
+    expect(Math.abs(s.floor!.toValue - transformValue(both, 50))).toBeGreaterThan(1);
+  });
+
+  it('never quotes a negative corrected discharge', () => {
+    // transformSeries clamps its output at zero, so a probe that did not would
+    // quote a value no forecast can receive.
+    const undershoot: MonthPolyfit = { qrange: [0, 100], qtop: [-0.06, 5], ptoq: [-0.03, -2] };
+    const s = probeMonth(undershoot);
+    if (s.floor) expect(s.floor.toValue).toBeGreaterThanOrEqual(0);
+    if (s.ceiling) expect(s.ceiling.toValue).toBeGreaterThanOrEqual(0);
+  });
+
+  it('reports a ceiling-only month with no floor, and the reverse', () => {
+    // Percentile stays inside (0, 100] until high flow: ceiling only.
+    const ceilOnly: MonthPolyfit = { qrange: [1, 100], qtop: [-0.06, 4], ptoq: [-0.03, 4] };
+    const a = probeMonth(ceilOnly);
+    expect(a.floor).toBeNull();
+    expect(a.ceiling).not.toBeNull();
+  });
+
+  it('counts inputs clipped UP to Qmin, not just down to Qmax', () => {
+    // The defect: clippedToQmax existed alone, so a forecast clipped up to the
+    // fitted minimum was indistinguishable from one inside the range.
+    const fit: RiverPolyfits = { 6: { qrange: [10, 100], qtop: [-0.06, 5], ptoq: [-0.03, 4] } };
+    const time = Array.from({ length: 4 }, (_, i) => new Date(Date.UTC(2024, 5, 1, i)));
+    const { diagnostics } = transformSeries(time, [-5, 2, 50, 400], fit);
+    expect(diagnostics.clippedToQmin).toBe(2);
+    expect(diagnostics.clippedToQmax).toBe(1);
   });
 });

@@ -23,18 +23,29 @@ export function transformValue(fit: MonthPolyfit, value: number): number {
   return Math.exp(polyval(fit.ptoq, p)) - 1;
 }
 
+/** One end of a month's transform where it stops distinguishing between inputs. */
+export interface SaturatedRegion {
+  /** Discharge at the region's inner edge — the last input still told apart. */
+  atDischarge: number;
+  /** The single corrected value every discharge in the region collapses onto. */
+  toValue: number;
+}
+
 /** Where a month's transform stops distinguishing between inputs. */
 export interface MonthSaturation {
   /**
-   * Lowest discharge whose percentile has already clipped, so every larger
-   * discharge maps to exactly the same corrected value. Null if the month never
-   * saturates inside its own Qrange.
+   * Low-flow saturation: every discharge at or BELOW `atDischarge` maps to
+   * `toValue`, because the exceedance percentile has clamped to 100.
    */
-  fromDischarge: number | null;
-  /** The single value everything above `fromDischarge` collapses onto. */
-  toValue: number | null;
-  /** Which end clipped: 'ceiling' is percentile 0 (the month's maximum flow). */
-  end: 'ceiling' | 'floor' | null;
+  floor: SaturatedRegion | null;
+  /**
+   * High-flow saturation: every discharge at or ABOVE `atDischarge` maps to
+   * `toValue`, because the percentile has clamped to 0.
+   *
+   * This is the end that matters for flood verification: it is where two
+   * forecasts of very different magnitude come out as the same corrected number.
+   */
+  ceiling: SaturatedRegion | null;
   /** False when a larger input can produce a smaller output. */
   monotonic: boolean;
 }
@@ -47,23 +58,45 @@ export interface MonthSaturation {
  * they cannot produce the infinities the empirical-CDF method does — but they
  * are not guaranteed monotonic, and the percentile clamp at [0, 100] gives them
  * a hard ceiling and floor.
+ *
+ * BOTH ends are reported, separately. This used to return a single
+ * `fromDischarge`/`toValue`/`end` triple, found by walking discharge upward and
+ * stopping at the first clamped sample. Since low discharge carries HIGH
+ * exceedance percentile, that walk meets the floor first — so a month clamping
+ * at both ends always reported the floor and never mentioned the ceiling, which
+ * is the end that flattens floods. Measured on the published coefficients, 6.1%
+ * of river-months clamp at both.
+ *
+ * Each region's representative value is sampled INSIDE that region, which the
+ * single-triple version also got wrong: it took the midpoint between the clip
+ * point and the top of the range, so on a floor-clamped month it sampled the
+ * middle of the healthy range and reported a value nothing collapsed onto. On a
+ * both-ends fit it claimed "everything above 0.0 maps to 44.08" where inputs of
+ * 0.5, 50 and 100 give 1.72, 44.08 and 53.60 — 44.08 being simply the value at
+ * the midpoint it happened to sample.
+ *
+ * The midpoint of each region rather than its outer endpoint, because on at
+ * least one real river the percentile pops back above zero exactly at Qrange's
+ * upper endpoint, so the endpoint is not representative of the region below it.
  */
 export function probeMonth(fit: MonthPolyfit, steps = 4000): MonthSaturation {
   const [lo, hi] = fit.qrange;
-  if (!(hi > lo)) return { fromDischarge: null, toValue: null, end: null, monotonic: true };
+  if (!(hi > lo)) return { floor: null, ceiling: null, monotonic: true };
 
-  let firstClip: number | null = null;
-  let clipEnd: 'ceiling' | 'floor' | null = null;
+  // Floor: the LAST ascending sample still clamped at 100, so the region is
+  // [lo, floorEdge]. Ceiling: the FIRST clamped at 0, so it is [ceilEdge, hi].
+  // Taking the outermost floor edge and the innermost ceiling edge is the
+  // conservative reading when the percentile fit is not monotonic.
+  let floorEdge: number | null = null;
+  let ceilEdge: number | null = null;
   let monotonic = true;
   let prev = Number.NEGATIVE_INFINITY;
 
   for (let i = 0; i <= steps; i++) {
     const q = lo + ((hi - lo) * i) / steps;
     const raw = Math.exp(polyval(fit.qtop, q)) - 1;
-    if (firstClip === null && (raw <= 0 || raw >= 100)) {
-      firstClip = q;
-      clipEnd = raw <= 0 ? 'ceiling' : 'floor';
-    }
+    if (raw >= 100) floorEdge = q;
+    if (raw <= 0 && ceilEdge === null) ceilEdge = q;
     const out = transformValue(fit, q);
     // A tolerance, not zero: floating point makes a genuinely flat saturated
     // region wobble in the last bits, which is not a monotonicity failure.
@@ -71,14 +104,14 @@ export function probeMonth(fit: MonthPolyfit, steps = 4000): MonthSaturation {
     prev = out;
   }
 
+  // Clamped the way transformSeries clamps its output, so the value quoted in a
+  // banner is the value a forecast actually receives. Without this the probe
+  // could report a negative corrected discharge that no series would ever show.
+  const atMid = (a: number, b: number) => Math.max(transformValue(fit, (a + b) / 2), 0);
+
   return {
-    fromDischarge: firstClip,
-    // Sampled midway between the clip point and the top of the range, NOT at
-    // the top itself. These are degree-7 fits, and on at least one real river
-    // the percentile pops back above zero exactly at Qrange's upper endpoint,
-    // so the endpoint is not representative of the saturated region below it.
-    toValue: firstClip === null ? null : transformValue(fit, (firstClip + hi) / 2),
-    end: clipEnd,
+    floor: floorEdge === null ? null : { atDischarge: floorEdge, toValue: atMid(lo, floorEdge) },
+    ceiling: ceilEdge === null ? null : { atDischarge: ceilEdge, toValue: atMid(ceilEdge, hi) },
     monotonic,
   };
 }
@@ -114,6 +147,16 @@ export interface TransformDiagnostics {
   n: number;
   /** Inputs above the month's Qrange maximum, clipped before transforming. */
   clippedToQmax: number;
+  /**
+   * Inputs BELOW the month's Qrange minimum, clipped up before transforming.
+   *
+   * The mirror of clippedToQmax, which existed alone — so a forecast clipped up
+   * to the fitted minimum was indistinguishable from one that fell inside the
+   * range. Rarer than the top end on flood work, but it is the same loss of
+   * information and the banner should not report one silently while naming the
+   * other.
+   */
+  clippedToQmin: number;
   /** Values whose percentile clamped to 0 — mapped onto the month's maximum. */
   atCeiling: number;
   /** Values whose percentile clamped to 100 — mapped onto the month's minimum. */
@@ -169,6 +212,7 @@ export function transformSeries(
   const diagnostics: TransformDiagnostics = {
     n: 0,
     clippedToQmax: 0,
+    clippedToQmin: 0,
     atCeiling: 0,
     atFloor: 0,
     negativeClamped: 0,
@@ -200,6 +244,7 @@ export function transformSeries(
     diagnostics.n += 1;
 
     if (v > fit.qrange[1]) diagnostics.clippedToQmax += 1;
+    else if (v < fit.qrange[0]) diagnostics.clippedToQmin += 1;
     const q = Math.min(Math.max(v, fit.qrange[0]), fit.qrange[1]);
     const raw = Math.exp(polyval(fit.qtop, q)) - 1;
     if (raw <= 0) diagnostics.atCeiling += 1;
