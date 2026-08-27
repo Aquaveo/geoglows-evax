@@ -3275,6 +3275,17 @@ function leadOptions(): number[] {
   return out;
 }
 
+/**
+ * Reading measure for every prose block on this page.
+ *
+ * Was applied to some and not others, so a block's intro ran to the window edge
+ * — past 1600px on a wide screen — while the notes below it wrapped at 46rem.
+ * Left edges aligned, right edges did not, and the intro was the least readable
+ * text on the page despite being the first thing read. The three banners had the
+ * same gap.
+ */
+const PROSE_MAX = '46rem';
+
 const feasibilityBanner: React.CSSProperties = {
   margin: '0 0 1rem',
   padding: '0.7rem 1rem',
@@ -3286,6 +3297,7 @@ const feasibilityBanner: React.CSSProperties = {
   color: '#4a3a12',
 };
 const gridBanner: React.CSSProperties = {
+  maxWidth: PROSE_MAX,
   margin: '0 0 1.25rem',
   padding: '0.5rem 0.85rem',
   border: '1px solid #bfdbfe',
@@ -3329,6 +3341,8 @@ const blockBody: React.CSSProperties = {
   padding: '1.25rem 1.5rem',
 };
 const blockIntro: React.CSSProperties = {
+  maxWidth: PROSE_MAX,
+  lineHeight: 1.55,
   color: '#555',
   margin: '0 0 1rem',
   fontSize: '0.95rem',
@@ -3376,6 +3390,7 @@ const btn: React.CSSProperties = {
   cursor: 'pointer',
 };
 const correctionBanner: React.CSSProperties = {
+  maxWidth: PROSE_MAX,
   margin: '0.75rem 0 1rem',
   padding: '0.6rem 0.9rem',
   border: '1px solid #fcd34d',
@@ -3395,7 +3410,7 @@ const noCategoriesAlert: React.CSSProperties = {
   color: '#5c3d16',
   fontSize: '0.9rem',
   lineHeight: 1.55,
-  maxWidth: '52rem',
+  maxWidth: PROSE_MAX,
 };
 const aggImpactWarn: React.CSSProperties = {
   fontSize: '0.85rem',
@@ -3406,13 +3421,13 @@ const aggImpactWarn: React.CSSProperties = {
   borderRadius: 4,
   padding: '0.55rem 0.7rem',
   lineHeight: 1.55,
-  maxWidth: '46rem',
+  maxWidth: PROSE_MAX,
 };
 const aggNote: React.CSSProperties = {
   fontSize: '0.85rem',
   color: '#444',
   lineHeight: 1.55,
-  maxWidth: '46rem',
+  maxWidth: PROSE_MAX,
 };
 /**
  * A second paragraph inside a note, banner or list item.
@@ -3434,7 +3449,7 @@ const pendingNote: React.CSSProperties = {
   padding: '0.6rem 0.8rem',
   margin: '0.6rem 0 0',
   lineHeight: 1.55,
-  maxWidth: '46rem',
+  maxWidth: PROSE_MAX,
 };
 
 /**
@@ -3453,7 +3468,7 @@ const variantNote: React.CSSProperties = {
   borderRadius: 4,
   padding: '0.4rem 0.55rem',
   lineHeight: 1.5,
-  maxWidth: '46rem',
+  maxWidth: PROSE_MAX,
 };
 const sel: React.CSSProperties = { padding: '0.3rem 0.5rem', fontSize: '0.95rem' };
 const cmth: React.CSSProperties = {
