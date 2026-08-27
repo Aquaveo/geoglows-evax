@@ -733,7 +733,7 @@ export function MetricsTab() {
   }, [app.eventData, rawBuckets, grid, categoricalAgg]);
 
   const griddedMean = gridded?.mean ?? null;
-  const griddedMax = gridded?.categorical ?? null;
+  const griddedAgg = gridded?.categorical ?? null;
 
   // --- Bias correction ------------------------------------------------------
   // Correction runs on RAW forecast values, upstream of lead-bucketing and grid
@@ -866,7 +866,16 @@ export function MetricsTab() {
     if (polyfitLoading) return 'loading transformers…';
     if (polyfitError) return polyfitError;
     if (!polyfits) return 'transformers unavailable';
-    if (globalCorrection?.unusable) return 'transform saturates — see the banner';
+    // The actual reason, not a guess at it. This used to read "transform
+    // saturates" for every unusable case, including a river whose published
+    // coefficients for one of the event's months are not numbers — a different
+    // failure with a different remedy. It also pointed at a banner the user
+    // cannot open: the banner renders only once SABER is SELECTED, and this
+    // reason is what disables that option, so the explanation was unreachable
+    // exactly when it was needed. globalCorrection.unusable already carries a
+    // full sentence, and this note renders as page text rather than as a
+    // tooltip, so it fits here.
+    if (globalCorrection?.unusable) return globalCorrection.unusable;
     if (globalAvailable) return null;
     if (app.forecasts.size === 0) return 'download forecasts first';
     return 'unavailable';
@@ -925,15 +934,21 @@ export function MetricsTab() {
 
   function computeCategoricalMetrics() {
     setError(null);
-    if (!app.eventData || !app.obsRp || !app.simRp || !griddedMax) return;
+    if (!app.eventData || !app.obsRp || !app.simRp || !griddedAgg) return;
     setComputing(true);
     setTimeout(() => {
       try {
         if (rawBuckets && !app.leadBuckets) app.setLeadBuckets(rawBuckets);
-        // Threshold questions use bin maxima: a bin mean can fall below a return
-        // period the actual flow crossed, erasing the exceedance.
-        const buckets = griddedMax.buckets;
-        const eventData = griddedMax.obs;
+        // Threshold questions use the bin summary the user chose — median by
+        // default, see `categoricalAgg`. It was fixed at the bin MAXIMUM on the
+        // reasoning that a bin mean can fall below a return period the actual
+        // flow crossed, erasing the exceedance. True, but the converse is also
+        // true: on a bin with realistic within-day shape the maximum crosses a
+        // 10-year level 7.2x as often as the mean, inflating the count. Neither
+        // is safe in general, so the choice is the user's and
+        // `aggregationImpact` warns when it changes the event's return period.
+        const buckets = griddedAgg.buckets;
+        const eventData = griddedAgg.obs;
 
         const eventRp = determineEventReturnPeriod(eventData, app.obsRp!);
         app.setEventReturnPeriod(eventRp);
@@ -1010,13 +1025,15 @@ export function MetricsTab() {
           // RPS is a proper score and is still reported; only RPSS is withheld,
           // with its reason.
           //
-          // Aggregated the same way the scored observations were. RPS
-          // categorises `griddedMax.obs` — bin MAXIMA at the comparison grid —
-          // so a reference built from raw sub-daily readings is answering a
-          // different question: most readings within a day sit below that day's
-          // maximum, so it drastically understates how often exceedance happens
-          // and is far too easy to beat. Measured on a 15-minute record, the
-          // matched reference expects exceedance 96x more often than the raw one.
+          // Aggregated the same way the scored observations were: RPS
+          // categorises `griddedAgg.obs`, so the reference passes through the
+          // same `categoricalAgg` summary at the same grid. A reference built
+          // from raw sub-daily readings answers a different question — most
+          // readings within a day sit below that day's summary value, so it
+          // understates how often exceedance happens and is far too easy to
+          // beat. Measured on a 15-minute record with the summary at bin
+          // maxima, the matched reference expected exceedance 96x more often
+          // than the raw one; the gap narrows at median but does not close.
           const clim =
             app.historicalData && grid
               ? seasonalClimatology(
@@ -1081,15 +1098,18 @@ export function MetricsTab() {
 
   function computeTimingMetrics() {
     setTimingError(null);
-    if (!app.eventData || !griddedMax) return;
+    if (!app.eventData || !griddedAgg) return;
     setComputingTiming(true);
     setTimeout(() => {
       try {
         if (rawBuckets && !app.leadBuckets) app.setLeadBuckets(rawBuckets);
         // Peaks and threshold crossings are both about how high the flow got, so
-        // these use bin maxima rather than bin means.
-        const buckets = griddedMax.buckets;
-        const eventData = griddedMax.obs;
+        // these follow the same chosen bin summary as the categorical family
+        // rather than the mean grid the error metrics use. Note this means the
+        // selector labelled for the categorical block also moves every timing
+        // number.
+        const buckets = griddedAgg.buckets;
+        const eventData = griddedAgg.obs;
 
         // Peak timing distribution
         const peakDist: PerLeadDistribution = { leads: [], values: [], pairs: [] };
@@ -1669,24 +1689,24 @@ export function MetricsTab() {
 
   // Recompute the contingency matrix on lead/series selection change.
   const contingency = useMemo<ContingencyResult | null>(() => {
-    if (!griddedMax || !app.obsRp || !app.simRp || app.eventReturnPeriod == null) {
+    if (!griddedAgg || !app.obsRp || !app.simRp || app.eventReturnPeriod == null) {
       return null;
     }
     // Same gridded, max-aggregated inputs the MCC/HSS distributions use, so the
     // table, the graph beside it and the box plots can never disagree.
-    const bucket = griddedMax.buckets[matrixLead];
+    const bucket = griddedAgg.buckets[matrixLead];
     if (!bucket) return null;
     const series = resolveSeries(bucket, matrixSeriesKey);
     if (!series) return null;
     return buildContingencyMatrix(
       series,
-      griddedMax.obs,
+      griddedAgg.obs,
       app.obsRp,
       app.simRp,
       app.eventReturnPeriod,
     );
   }, [
-    griddedMax,
+    griddedAgg,
     app.obsRp,
     app.simRp,
     app.eventReturnPeriod,
@@ -2015,8 +2035,8 @@ export function MetricsTab() {
               Compare <strong>RPSS</strong> across events, not RPS. Raw RPS is a mean over
               timesteps, so a longer window full of quiet days drags it toward zero whatever the
               skill — but the climatology reference absorbs the same easy steps, so the ratio
-              barely moves. Measured drift is about 0.01 across an 800-fold increase in window
-              length, against 0.37 for MCC.
+              barely moves. Measured across an 800-fold increase in window length: CSI 0.003,
+              RPSS 0.028, MCC 0.070, HSS 0.074.
             </PlotNote>
           </div>
         )}
@@ -2247,8 +2267,8 @@ export function MetricsTab() {
               <br />
               <strong>Check the member count in the hover before reading a box.</strong> A member
               is excluded only when it has no timing to report — its maximum is attained at every
-              timestep, so there is no peak, or the maximum sits on the window edge where the true
-              peak is probably outside. Nothing is dropped for being a poor forecast: a member that
+              timestep, so there is no peak, or the maximum sits on its own first or last sample,
+              where the true peak is probably outside the series. Nothing is dropped for being a poor forecast: a member that
               runs 55% low but times the crest perfectly still scores 0, which is the property that
               makes this worth reading separately from KGE′. Members with a noisy, incoherent shape
               are scored too, and their scatter is the finding rather than something to hide — so a
@@ -2298,6 +2318,39 @@ export function MetricsTab() {
               redundant with side on purpose — the
               axis already answers the question, so nothing is lost in greyscale or to
               colour-blindness.
+              {peakByRun && (
+                <>
+                  <br />
+                  <br />
+                  <strong>What is not in these boxes.</strong> Of the member-slots this panel could
+                  have scored, {peakByRun.noPeakMembers.toLocaleString()} predicted no peak at all
+                  (flat throughout, so there is no argmax to time) and{' '}
+                  {peakByRun.censoredMembers.toLocaleString()} were censored for putting their
+                  maximum on their own first or last sample, where the true peak is probably outside
+                  the series and Δt would be a bound rather than a measurement.{' '}
+                  {peakByRun.runsNotCoveringPeak > 0 && (
+                    <>
+                      {peakByRun.runsNotCoveringPeak.toLocaleString()} run
+                      {peakByRun.runsNotCoveringPeak === 1 ? '' : 's'} never reached the observed
+                      peak within the uploaded record, so there was nothing to time against.{' '}
+                    </>
+                  )}
+                  {peakByRun.runsAfterPeak > 0 && (
+                    <>
+                      {peakByRun.runsAfterPeak.toLocaleString()} were initialized after the peak had
+                      already passed.{' '}
+                    </>
+                  )}
+                  Nothing is dropped for being a <em>poor</em> forecast — both exclusions are facts
+                  about the shape of the series, not judgements about its quality, so a member that
+                  timed the crest badly is still in the box.
+                  <br />
+                  <br />
+                  The search is unbounded over each run's overlap with the record. An earlier
+                  version looked only within ±72 h of the observed peak, which capped |Δt| at 72 h
+                  by construction and quietly censored the members that got the timing most wrong.
+                </>
+              )}
             </PlotNote>
           </>
         )}

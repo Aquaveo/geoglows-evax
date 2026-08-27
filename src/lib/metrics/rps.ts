@@ -157,8 +157,11 @@ export interface RpsOptions {
  * Report RPSS rather than RPS when comparing across events. Raw RPS is a mean
  * over timesteps, so padding a window with quiet days drives it toward zero
  * regardless of skill. RPSS is far more stable, because the reference absorbs
- * the same easy timesteps — measured drift is about 0.01 across an 800-fold
- * increase in window length, against 0.37 for MCC over comparable padding.
+ * the same easy timesteps. Measured across an 800-fold increase in window
+ * length: CSI 0.003, RPSS 0.028, MCC 0.070, HSS 0.074 — so RPSS drifts roughly a
+ * third as much as the chance-corrected scores, though it is not the
+ * window-invariant one. Only scores that omit the correct-negative cell are
+ * that, and CSI is the one given its own panel.
  */
 export function rpsByLead(
   buckets: Record<number, LeadBucket | undefined>,
