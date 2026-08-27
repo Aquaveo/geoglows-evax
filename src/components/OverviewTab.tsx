@@ -225,12 +225,24 @@ export function OverviewTab() {
         ) : (
           <p style={p}>
             Upload an event CSV (Setup tab) and download forecasts (Forecast tab); detected
-            resolutions and comparison grid appear here. This panel reads the forecast cadence off
-            one whole run, while the metrics read it off a single lead day's pooled timestamps — a
-            run that is 3-hourly early and coarser later has no single cadence, so the two can
-            disagree. Where they do, trust the resolution notice shown beside the metrics.
+            resolutions and comparison grid appear here.
           </p>
         )}
+        {/*
+          OUTSIDE the conditional, deliberately. This caveat used to sit in the
+          `else` branch, so it rendered only while there was no data and vanished
+          the moment the data it warns about was loaded — the one state in which
+          it was useless was the only state that showed it.
+        */}
+        <p style={p}>
+          <strong>Why this panel can disagree with the metrics page.</strong> It reads the forecast
+          cadence off one <em>whole</em> run and reports the median spacing; the metrics read it off
+          lead 1, the densest day a run publishes. An RFS run changes spacing across its horizon —
+          all 51 members share one time index, but that index is finer early than late — so a run
+          that is 3-hourly for a week and 6-hourly after has no single cadence, and the two readings
+          legitimately differ. Where they do, the resolution notice shown beside the metrics is the
+          one the metrics actually used.
+        </p>
       </section>
 
       <section style={sectionStyle}>

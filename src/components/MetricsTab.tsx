@@ -787,7 +787,13 @@ export function MetricsTab() {
 
   const fcstCadence = useMemo(() => {
     if (!rawBuckets) return null;
-    // Lead 1 is representative: a full day of the run's native output.
+    // Lead 1 deliberately, and it is the FINEST day of the run, not a
+    // representative one — a run coarsens across its horizon, so lead 1 is the
+    // densest output it publishes. That is the intent: the comparison grid is
+    // set by the best resolution available, and the later leads land on a grid
+    // finer than their own publishing interval, carrying fewer pairs. The
+    // alternative — a grid per lead — trades this for a timing artefact at every
+    // lead, which is worse. See the pairsPerLead docblock for what it costs.
     for (let lead = 1; lead <= MAX_LEAD; lead++) {
       const c = bucketCadence(rawBuckets[lead]);
       if (c) return c;
@@ -1820,17 +1826,32 @@ export function MetricsTab() {
       {feasibility && !feasibility.enough && grid && (
         <p style={feasibilityBanner}>
           <strong>This event cannot support the correlation-based scores.</strong> At{' '}
-          {grid.label} resolution the longest lead day reaches only{' '}
+          {grid.label} resolution the <em>best-sampled</em> lead day reaches only{' '}
           <strong>{feasibility.achievable}</strong> forecast/observation pair
           {feasibility.achievable === 1 ? '' : 's'}, and r, γ, KGE′, NSE, MCC and HSS need at
           least {MIN_PAIRS_CORRELATION} to mean anything — so they are reported as
-          <em> n/a</em> throughout rather than as confident-looking noise.
+          <em> n/a</em> throughout rather than as confident-looking noise. This said "the longest
+          lead day", which names the wrong one: a run coarsens across its horizon, so the longest
+          lead is the <em>worst</em>-sampled, and the number here is the best any lead achieves.
           <span style={notePara}>
           The limit is arithmetic, not data quality: pairs per lead are capped by the number of{' '}
           {grid.label === 'daily' ? 'days' : 'grid intervals'} your event spans, because the
-          coarser series sets the comparison resolution. To get these metrics you need either a
-          longer event window or observations at a finer cadence. β and the CRPS family survive
-          small samples and are still reported.
+          coarser series sets the comparison resolution.{' '}
+          {grid.limitedBy === 'forecasts' ? (
+            <>
+              The <strong>forecasts</strong> are the coarser side here, so uploading a finer gauge
+              record cannot add a single pair — the comparison grid takes the coarser of the two.
+              What helps is a longer event window, which pools more initializations into every lead
+              bucket. (This used to advise finer observations regardless of which side was
+              limiting.)
+            </>
+          ) : (
+            <>
+              The <strong>observations</strong> are the coarser side, so either a longer event
+              window or a finer gauge record will help.
+            </>
+          )}{' '}
+          β and the CRPS family survive small samples and are still reported.
           </span>
         </p>
       )}
@@ -2430,6 +2451,28 @@ export function MetricsTab() {
                     <>
                       {peakByRun.runsAfterPeak.toLocaleString()} were initialized after the peak had
                       already passed.{' '}
+                    </>
+                  )}
+                  {peakByRun.unusableRuns > 0 && (
+                    <>
+                      {peakByRun.unusableRuns.toLocaleString()} run
+                      {peakByRun.unusableRuns === 1 ? '' : 's'} had too little overlap with the
+                      record to find a shape in — under three samples — or no usable
+                      initialization date.{' '}
+                    </>
+                  )}
+                  {peakByRun.emptyRuns > 0 && (
+                    <>
+                      {peakByRun.emptyRuns.toLocaleString()} run
+                      {peakByRun.emptyRuns === 1 ? '' : 's'} had every member excluded, so they
+                      contribute no box at all rather than an empty one.{' '}
+                    </>
+                  )}
+                  {peakByRun.unusableMembers > 0 && (
+                    <>
+                      {peakByRun.unusableMembers.toLocaleString()} member slot
+                      {peakByRun.unusableMembers === 1 ? '' : 's'} held no finite value inside the
+                      overlap.{' '}
                     </>
                   )}
                   Nothing is dropped for being a <em>poor</em> forecast — both exclusions are facts
