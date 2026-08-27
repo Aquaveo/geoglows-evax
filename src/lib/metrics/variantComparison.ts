@@ -29,6 +29,15 @@ export interface ComparisonRow {
   values: Record<VariantKey, number>;
   /** Decimal places for display. */
   digits: number;
+  /**
+   * Which computation feeds this row, so the UI can name the button that fills
+   * it rather than showing a dash and leaving the reader to guess.
+   *
+   * 'skill' is derived on every render and always present; 'accuracy' and 'crps'
+   * each sit behind their own Compute button, which is why this table could
+   * appear with one populated row and six empty ones.
+   */
+  needs: 'skill' | 'accuracy' | 'crps';
 }
 
 /** Median of the finite values, or NaN. */
@@ -68,10 +77,20 @@ export function variantComparison(inputs: ComparisonInputs): ComparisonRow[] {
       ideal: '1',
       lowerIsBetter: false,
       digits: 3,
-      values: per((k) => acrossLeads(inputs.accuracy[k]?.kge)),
+      needs: 'skill',
+      // From the SKILL rows, not the accuracy distributions, for two reasons.
+      // It is available without pressing anything, so this row no longer sat
+      // empty beside a populated NSE computed from the very same kge() call.
+      // And it shares NSE's gate: skillByLead drops a member on its OWN aligned
+      // count, accuracyDistributions drops all members on a lead-level count, so
+      // the two can rest on different member sets. The Overview tells the reader
+      // to read KGE' and NSE across a row, which is only sound when both were
+      // scored over the same members.
+      values: per((k) => acrossLeadRows(inputs.skill[k], (r) => r.kge)),
     },
     {
       metric: 'NSE',
+      needs: 'skill',
       ideal: '1',
       lowerIsBetter: false,
       digits: 3,
@@ -79,6 +98,7 @@ export function variantComparison(inputs: ComparisonInputs): ComparisonRow[] {
     },
     {
       metric: 'Correlation r',
+      needs: 'accuracy',
       ideal: '1',
       lowerIsBetter: false,
       digits: 3,
@@ -86,6 +106,7 @@ export function variantComparison(inputs: ComparisonInputs): ComparisonRow[] {
     },
     {
       metric: 'Bias ratio β',
+      needs: 'accuracy',
       ideal: '1',
       lowerIsBetter: false,
       digits: 3,
@@ -93,6 +114,7 @@ export function variantComparison(inputs: ComparisonInputs): ComparisonRow[] {
     },
     {
       metric: 'Variability ratio γ',
+      needs: 'accuracy',
       ideal: '1',
       lowerIsBetter: false,
       digits: 3,
@@ -100,6 +122,7 @@ export function variantComparison(inputs: ComparisonInputs): ComparisonRow[] {
     },
     {
       metric: 'CRPS (m³/s)',
+      needs: 'crps',
       ideal: '0',
       lowerIsBetter: true,
       digits: 2,
@@ -107,6 +130,7 @@ export function variantComparison(inputs: ComparisonInputs): ComparisonRow[] {
     },
     {
       metric: 'CRPSS',
+      needs: 'crps',
       ideal: '1',
       lowerIsBetter: false,
       digits: 3,

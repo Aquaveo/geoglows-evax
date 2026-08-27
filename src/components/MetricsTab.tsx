@@ -407,6 +407,47 @@ function VariantComparisonTable({
 }
 
 /**
+ * Names the button that fills each empty row of the comparison table.
+ *
+ * KGE' and NSE are derived on render, but r, beta, gamma come from the Accuracy
+ * block and CRPS/CRPSS from the Probabilistic one, each behind its own Compute
+ * button. So the table can legitimately render with two populated rows and five
+ * dashes, which reads as broken rather than as pending — the previous note said
+ * only "that variant was not computed", and the dashes actually run by row.
+ */
+function MissingRowsNote({ rows }: { rows: ComparisonRow[] }) {
+  const keys: VariantKey[] = ['raw', 'local', 'global'];
+  const empty = rows.filter((r) => !keys.some((k) => Number.isFinite(r.values[k])));
+  if (empty.length === 0) return null;
+
+  const groups: { needs: ComparisonRow['needs']; button: string; metrics: string[] }[] = [
+    { needs: 'accuracy', button: 'Compute accuracy metrics', metrics: [] },
+    { needs: 'crps', button: 'Compute CRPS metrics', metrics: [] },
+    { needs: 'skill', button: 'the skill summary above', metrics: [] },
+  ];
+  for (const r of empty) groups.find((g) => g.needs === r.needs)!.metrics.push(r.metric);
+  const active = groups.filter((g) => g.metrics.length > 0);
+
+  return (
+    <div style={pendingNote}>
+      <strong>
+        {empty.length} of {rows.length} rows {empty.length === 1 ? 'is' : 'are'} still empty.
+      </strong>{' '}
+      Nothing is wrong with your data — this table only summarises results the other blocks have
+      already produced.
+      <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.2rem' }}>
+        {active.map((g) => (
+          <li key={g.needs}>
+            {g.metrics.join(', ')} — press <strong>{g.button}</strong>
+            {g.needs === 'skill' && ' (this one should not normally be empty)'}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
  * One side's exceedance counts under all three bin summaries.
  *
  * States the no-difference case explicitly rather than printing three equal
@@ -2599,6 +2640,7 @@ export function MetricsTab() {
               hasLocal={!!correction}
               hasGlobal={!!globalCorrection && !globalCorrection.unusable}
             />
+            <MissingRowsNote rows={comparison} />
             <PlotNote>
               every cell is the <strong>median across lead days</strong> of that lead's own median
               across the 51 members — the same two-level summary the charts in this app plot, so the
@@ -2612,10 +2654,11 @@ export function MetricsTab() {
               ratios targeting 1 and can miss either way, so 1.4 is as wrong as 0.7 and an
               over-correction is not an improvement. "neither" means both corrections left that
               metric worse than raw.
-              <br />
-              <br />
-              A dash means that variant was not computed — press the Compute buttons in the blocks
-              above, since this table reuses their results rather than recomputing anything.
+              <span style={notePara}>
+                A dash means the metric has not been computed yet for any variant — this table
+                reuses the other blocks' results rather than recomputing anything, so the dashes
+                run by <em>row</em>, not by column. The note above says which button fills which.
+              </span>
             </PlotNote>
           </div>
         )}
@@ -3337,6 +3380,18 @@ const aggNote: React.CSSProperties = {
  * <p> is invalid and the browser silently closes the outer one.
  */
 const notePara: React.CSSProperties = { display: 'block', marginTop: '0.5rem' };
+/** A "this is pending, not broken" note. */
+const pendingNote: React.CSSProperties = {
+  fontSize: '0.85rem',
+  color: '#1e3a5f',
+  background: '#eff6ff',
+  border: '1px solid #bfdbfe',
+  borderRadius: 6,
+  padding: '0.6rem 0.8rem',
+  margin: '0.6rem 0 0',
+  lineHeight: 1.55,
+  maxWidth: '46rem',
+};
 
 /**
  * Paragraphs inside an aggNote block.
