@@ -11,6 +11,11 @@ import {
 import { computeMcc } from '../lib/metrics/mcc';
 import { computeHss } from '../lib/metrics/hss';
 import { orderedThresholds, rpsByLead, type RpsResult } from '../lib/metrics/rps';
+import {
+  scoreMembersByLead,
+  distributionsFrom,
+  type DistributionGates,
+} from '../lib/metrics/leadMemberScores';
 import { thresholdScores, type ThresholdScores } from '../lib/metrics/thresholdScores';
 import { rpsPerLeadFigure } from '../plots/rpsPerLead';
 import { categoricalCombinedFigure } from '../plots/categoricalCombined';
@@ -19,7 +24,6 @@ import { csiByLead, type CsiByLead } from '../lib/metrics/csiByLead';
 import { computePeakTiming } from '../lib/metrics/peakTiming';
 import { computePeakTimingByRun } from '../lib/metrics/peakTimingByRun';
 import { computeThresholdCrossing } from '../lib/metrics/thresholdCrossing';
-import { kge } from '../lib/metrics/kge';
 import { computeCrpsByLead, type CrpsPerLead } from '../lib/metrics/crps';
 import {
   categoricalReference,
@@ -35,7 +39,7 @@ import { crpsPerLeadFigure } from '../plots/crpsPerLead';
 import { crpssPerLeadFigure } from '../plots/crpssPerLead';
 import { contingencySeriesFigure } from '../plots/contingencySeries';
 import { skillBarsFigure } from '../plots/skillBars';
-import { skillByLead, skillByRun } from '../lib/metrics/skillSummary';
+import { skillByRun, skillRowsFrom } from '../lib/metrics/skillSummary';
 import { correctForecasts } from '../lib/bias/correctForecasts';
 import { correctForecastsGlobal, type GlobalCorrection } from '../lib/bias/globalCorrection';
 import { getPolyfits } from '../lib/bias/polyfits';
@@ -112,74 +116,6 @@ function griddedFor(
   return { obs, buckets: out };
 }
 
-export interface AccuracyDistributions {
-  kge: PerLeadDistribution;
-  r: PerLeadDistribution;
-  beta: PerLeadDistribution;
-  gamma: PerLeadDistribution;
-}
-
-/**
- * KGE' and its components per lead, across ensemble members.
- *
- * Pure so that the raw and bias-corrected variants are computed by the same
- * code — anything that diverged between them would be indistinguishable from a
- * real difference in the forecasts.
- */
-function accuracyDistributions(
-  buckets: LeadBuckets,
-  eventData: TimeSeries,
-): AccuracyDistributions {
-  const mk = (): PerLeadDistribution => ({ leads: [], values: [], pairs: [], skipped: [] });
-  const kgeDist = mk();
-  const rDist = mk();
-  const betaDist = mk();
-  const gammaDist = mk();
-
-  for (let lead = 0; lead <= MAX_LEAD; lead++) {
-    kgeDist.leads.push(lead);
-    rDist.leads.push(lead);
-    betaDist.leads.push(lead);
-    gammaDist.leads.push(lead);
-
-    const kVals: number[] = [];
-    const rVals: number[] = [];
-    const bVals: number[] = [];
-    const gVals: number[] = [];
-
-    const bucket = buckets[lead];
-    const pairs = countPairs(bucket, eventData);
-    for (const dist of [kgeDist, rDist, betaDist, gammaDist]) dist.pairs!.push(pairs);
-
-    // r, γ and KGE' are joint moments and need a real sample. β is a ratio of
-    // means and survives a much smaller one, so it is guarded separately rather
-    // than being suppressed alongside them.
-    const tooFewForCorrelation = pairs < MIN_PAIRS_CORRELATION;
-    const tooFewForRatio = pairs < MIN_PAIRS_RATIO;
-    kgeDist.skipped!.push(tooFewForCorrelation ? FEW_PAIRS_REASON : null);
-    rDist.skipped!.push(tooFewForCorrelation ? FEW_PAIRS_REASON : null);
-    gammaDist.skipped!.push(tooFewForCorrelation ? FEW_PAIRS_REASON : null);
-    betaDist.skipped!.push(tooFewForRatio ? TOO_FEW_FOR_RATIO : null);
-
-    if (bucket && bucket.time.length > 0) {
-      for (let m = 0; m < MEMBER_COUNT; m++) {
-        const result = kge(memberSeries(bucket, m), eventData);
-        if (!tooFewForCorrelation) {
-          if (Number.isFinite(result.kge)) kVals.push(result.kge);
-          if (Number.isFinite(result.r)) rVals.push(result.r);
-          if (Number.isFinite(result.gamma)) gVals.push(result.gamma);
-        }
-        if (!tooFewForRatio && Number.isFinite(result.beta)) bVals.push(result.beta);
-      }
-    }
-    kgeDist.values.push(kVals);
-    rDist.values.push(rVals);
-    betaDist.values.push(bVals);
-    gammaDist.values.push(gVals);
-  }
-
-  return { kge: kgeDist, r: rDist, beta: betaDist, gamma: gammaDist };
-}
 
 const STAT_OPTIONS: { key: StatKey; label: string }[] = [
   { key: 'median', label: 'Ensemble median' },
@@ -680,10 +616,6 @@ export function MetricsTab() {
   const [timingError, setTimingError] = useState<string | null>(null);
   const [crossingRp, setCrossingRp] = useState<number>(2);
 
-  // Accuracy metrics state
-  const [computingAccuracy, setComputingAccuracy] = useState(false);
-  const [accuracyError, setAccuracyError] = useState<string | null>(null);
-
   // Probabilistic (CRPS) state
   const [computingCrps, setComputingCrps] = useState(false);
   const [crpsError, setCrpsError] = useState<string | null>(null);
@@ -691,9 +623,7 @@ export function MetricsTab() {
   // Bias-corrected variants. Local state rather than AppContext: app.leadBuckets
   // must keep meaning *raw* for ForecastTab, and the context's dependency array
   // is manual and already long.
-  const [correctedAccuracy, setCorrectedAccuracy] = useState<AccuracyDistributions | null>(null);
   const [correctedCrps, setCorrectedCrps] = useState<CrpsPerLead | null>(null);
-  const [globalAccuracy, setGlobalAccuracy] = useState<AccuracyDistributions | null>(null);
   const [globalCrps, setGlobalCrps] = useState<CrpsPerLead | null>(null);
   // Local rather than in AppContext: only this tab reads it, and the context's
   // dependency array is maintained by hand and already long.
@@ -1293,39 +1223,6 @@ export function MetricsTab() {
     }, 0);
   }
 
-  function computeAccuracyMetrics() {
-    setAccuracyError(null);
-    if (!app.eventData || !griddedMean) return;
-    setComputingAccuracy(true);
-    setTimeout(() => {
-      try {
-        if (rawBuckets && !app.leadBuckets) app.setLeadBuckets(rawBuckets);
-        // Bin means: KGE and its components are about volume and shape, so a
-        // within-bin average is the right summary.
-        const buckets = griddedMean.buckets;
-        const eventData = griddedMean.obs;
-
-        const dists = accuracyDistributions(buckets, eventData);
-        const { kge: kgeDist, r: rDist, beta: betaDist, gamma: gammaDist } = dists;
-        setCorrectedAccuracy(
-          griddedCorrected ? accuracyDistributions(griddedCorrected.buckets, griddedCorrected.obs) : null,
-        );
-        setGlobalAccuracy(
-          griddedGlobal ? accuracyDistributions(griddedGlobal.buckets, griddedGlobal.obs) : null,
-        );
-
-        app.setKgeDistribution(kgeDist);
-        app.setRDistribution(rDist);
-        app.setBetaDistribution(betaDist);
-        app.setGammaDistribution(gammaDist);
-      } catch (e) {
-        setAccuracyError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setComputingAccuracy(false);
-      }
-    }, 0);
-  }
-
   function computeCrpsMetrics() {
     setCrpsError(null);
     if (!app.eventData || !griddedMean) return;
@@ -1379,15 +1276,56 @@ export function MetricsTab() {
 
   // Skill summary bars. Cheap enough to derive on render — one KGE per member
   // per row — so no button or stored state.
-  const skillLead = useMemo(
-    () =>
-      griddedMean
-        ? skillByLead(griddedMean.buckets, griddedMean.obs, {
-            minPairs: MIN_PAIRS_CORRELATION,
-            maxLead: MAX_LEAD,
-          })
-        : null,
+  /**
+   * Every member's KGE at every lead, for each variant — computed ONCE.
+   *
+   * The accuracy box plots and the skill bars are two views of this. They used
+   * to be two computations behind two different triggers: the bars derived on
+   * render, the boxes sat behind a Compute button, and the two gated members
+   * differently, so the app could show two different KGE' values for the same
+   * forecast. Deriving both from one scoring pass costs less than the old single
+   * path and cannot disagree with itself.
+   */
+  const GATES: DistributionGates = {
+    minCorrelation: MIN_PAIRS_CORRELATION,
+    minRatio: MIN_PAIRS_RATIO,
+    correlationReason: FEW_PAIRS_REASON,
+    ratioReason: TOO_FEW_FOR_RATIO,
+  };
+
+  const leadScores = useMemo(
+    () => (griddedMean ? scoreMembersByLead(griddedMean.buckets, griddedMean.obs, MAX_LEAD) : null),
     [griddedMean],
+  );
+  const leadScoresCorrected = useMemo(
+    () =>
+      griddedCorrected
+        ? scoreMembersByLead(griddedCorrected.buckets, griddedCorrected.obs, MAX_LEAD)
+        : null,
+    [griddedCorrected],
+  );
+  const leadScoresGlobal = useMemo(
+    () =>
+      griddedGlobal ? scoreMembersByLead(griddedGlobal.buckets, griddedGlobal.obs, MAX_LEAD) : null,
+    [griddedGlobal],
+  );
+
+  const rawAccuracy = useMemo(
+    () => (leadScores ? distributionsFrom(leadScores, GATES) : null),
+    [leadScores],
+  );
+  const correctedAccuracy = useMemo(
+    () => (leadScoresCorrected ? distributionsFrom(leadScoresCorrected, GATES) : null),
+    [leadScoresCorrected],
+  );
+  const globalAccuracy = useMemo(
+    () => (leadScoresGlobal ? distributionsFrom(leadScoresGlobal, GATES) : null),
+    [leadScoresGlobal],
+  );
+
+  const skillLead = useMemo(
+    () => (leadScores ? skillRowsFrom(leadScores, MIN_PAIRS_CORRELATION) : null),
+    [leadScores],
   );
 
   const skillRun = useMemo(() => {
@@ -1416,34 +1354,20 @@ export function MetricsTab() {
       return correctedAccuracy;
     }
     return {
-      kge: app.kgeDistribution,
-      r: app.rDistribution,
-      beta: app.betaDistribution,
-      gamma: app.gammaDistribution,
+      kge: rawAccuracy?.kge ?? null,
+      r: rawAccuracy?.r ?? null,
+      beta: rawAccuracy?.beta ?? null,
+      gamma: rawAccuracy?.gamma ?? null,
     };
-  }, [
-    accuracyVariant,
-    correctedAccuracy,
-    globalAccuracy,
-    app.kgeDistribution,
-    app.rDistribution,
-    app.betaDistribution,
-    app.gammaDistribution,
-  ]);
+  }, [accuracyVariant, correctedAccuracy, globalAccuracy, rawAccuracy]);
 
   /** Appended to plot titles so a screenshot always says which variant it is. */
   const variantSuffix = (v: MetricVariant) =>
     v === 'corrected' ? ' (bias-corrected, local CDF)' : v === 'global' ? ' (bias-corrected, SABER)' : '';
 
   const skillLeadCorrected = useMemo(
-    () =>
-      griddedCorrected
-        ? skillByLead(griddedCorrected.buckets, griddedCorrected.obs, {
-            minPairs: MIN_PAIRS_CORRELATION,
-            maxLead: MAX_LEAD,
-          })
-        : null,
-    [griddedCorrected],
+    () => (leadScoresCorrected ? skillRowsFrom(leadScoresCorrected, MIN_PAIRS_CORRELATION) : null),
+    [leadScoresCorrected],
   );
 
   const skillRunCorrected = useMemo(() => {
@@ -1476,14 +1400,8 @@ export function MetricsTab() {
   }, [app.eventData, correction, grid]);
 
   const skillLeadGlobal = useMemo(
-    () =>
-      griddedGlobal
-        ? skillByLead(griddedGlobal.buckets, griddedGlobal.obs, {
-            minPairs: MIN_PAIRS_CORRELATION,
-            maxLead: MAX_LEAD,
-          })
-        : null,
-    [griddedGlobal],
+    () => (leadScoresGlobal ? skillRowsFrom(leadScoresGlobal, MIN_PAIRS_CORRELATION) : null),
+    [leadScoresGlobal],
   );
 
   const skillRunGlobal = useMemo(() => {
@@ -1614,25 +1532,12 @@ export function MetricsTab() {
   const comparison = useMemo(
     () =>
       variantComparison({
-        accuracy: {
-          raw:
-            app.kgeDistribution && app.rDistribution && app.betaDistribution && app.gammaDistribution
-              ? {
-                  kge: app.kgeDistribution,
-                  r: app.rDistribution,
-                  beta: app.betaDistribution,
-                  gamma: app.gammaDistribution,
-                }
-              : null,
-          local: correctedAccuracy,
-          global: globalAccuracy,
-        },
+        accuracy: { raw: rawAccuracy, local: correctedAccuracy, global: globalAccuracy },
         skill: { raw: skillLead, local: skillLeadCorrected, global: skillLeadGlobal },
         crps: { raw: app.crpsResults, local: correctedCrps, global: globalCrps },
       }),
     [
-      app.kgeDistribution, app.rDistribution, app.betaDistribution, app.gammaDistribution,
-      correctedAccuracy, globalAccuracy,
+      rawAccuracy, correctedAccuracy, globalAccuracy,
       skillLead, skillLeadCorrected, skillLeadGlobal,
       app.crpsResults, correctedCrps, globalCrps,
     ],
@@ -2504,18 +2409,7 @@ export function MetricsTab() {
             Need observed event data and downloaded forecasts before computing accuracy metrics.
           </p>
         )}
-        {canComputeAccuracy && (
-          <button onClick={computeAccuracyMetrics} disabled={computingAccuracy} style={btn}>
-            {computingAccuracy
-              ? 'Computing…'
-              : app.kgeDistribution
-                ? 'Re-compute accuracy metrics'
-                : 'Compute accuracy metrics'}
-          </button>
-        )}
-        {accuracyError && <p style={{ color: '#b91c1c' }}>{accuracyError}</p>}
-
-        {app.kgeDistribution && (
+        {rawAccuracy && (
           <div style={{ marginTop: '0.75rem' }}>
             <VariantSelect
               value={accuracyVariant}

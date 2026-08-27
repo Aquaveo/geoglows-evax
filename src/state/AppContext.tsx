@@ -61,18 +61,6 @@ interface AppState {
   peakTimingDistribution: PerLeadDistribution | null;
   setPeakTimingDistribution: (d: PerLeadDistribution | null) => void;
 
-  kgeDistribution: PerLeadDistribution | null;
-  setKgeDistribution: (d: PerLeadDistribution | null) => void;
-
-  rDistribution: PerLeadDistribution | null;
-  setRDistribution: (d: PerLeadDistribution | null) => void;
-
-  betaDistribution: PerLeadDistribution | null;
-  setBetaDistribution: (d: PerLeadDistribution | null) => void;
-
-  gammaDistribution: PerLeadDistribution | null;
-  setGammaDistribution: (d: PerLeadDistribution | null) => void;
-
   /** Per-RP distribution of Δt crossing across ensemble members. */
   crossingDistributions: Record<number, PerLeadDistribution> | null;
   setCrossingDistributions: (d: Record<number, PerLeadDistribution> | null) => void;
@@ -120,10 +108,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [mccDistribution, setMccDistribution] = useState<PerLeadDistribution | null>(null);
   const [hssDistribution, setHssDistribution] = useState<PerLeadDistribution | null>(null);
   const [peakTimingDistribution, setPeakTimingDistribution] = useState<PerLeadDistribution | null>(null);
-  const [kgeDistribution, setKgeDistribution] = useState<PerLeadDistribution | null>(null);
-  const [rDistribution, setRDistribution] = useState<PerLeadDistribution | null>(null);
-  const [betaDistribution, setBetaDistribution] = useState<PerLeadDistribution | null>(null);
-  const [gammaDistribution, setGammaDistribution] = useState<PerLeadDistribution | null>(null);
   const [crossingDistributions, setCrossingDistributions] = useState<
     Record<number, PerLeadDistribution> | null
   >(null);
@@ -150,16 +134,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       mccDistribution, setMccDistribution,
       hssDistribution, setHssDistribution,
       peakTimingDistribution, setPeakTimingDistribution,
-      kgeDistribution, setKgeDistribution,
-      rDistribution, setRDistribution,
-      betaDistribution, setBetaDistribution,
-      gammaDistribution, setGammaDistribution,
       crossingDistributions, setCrossingDistributions,
       crossingDetections, setCrossingDetections,
       eventReturnPeriod, setEventReturnPeriod,
       crpsResults, setCrpsResults,
     }),
-    [riverId, reach, retro, simRp, eventData, historicalData, historicalClampedNegatives, obsRp, forecasts, forecastProgress, selectedDate, leadBuckets, mccDistribution, hssDistribution, peakTimingDistribution, kgeDistribution, rDistribution, betaDistribution, gammaDistribution, crossingDistributions, crossingDetections, eventReturnPeriod, crpsResults],
+    [riverId, reach, retro, simRp, eventData, historicalData, historicalClampedNegatives, obsRp, forecasts, forecastProgress, selectedDate, leadBuckets, mccDistribution, hssDistribution, peakTimingDistribution, crossingDistributions, crossingDetections, eventReturnPeriod, crpsResults],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

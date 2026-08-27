@@ -1,7 +1,7 @@
 import type { ForecastRun, LeadBuckets, TimeSeries } from '../types';
-import { memberSeries } from '../leadBuckets';
 import { countAlignedPairs } from '../alignment';
 import { kge } from './kge';
+import { scoreMembersByLead, type LeadScores } from './leadMemberScores';
 
 /** One bar row: a lead day or a forecast run, scored on NSE and KGE'. */
 export interface SkillRow {
@@ -41,6 +41,10 @@ export interface SkillSummaryOptions {
  *
  * The median rather than the ensemble-median *series*: it matches the black
  * median line on the box plots above, so a bar and its box tell the same story.
+ *
+ * Derived from `scoreMembersByLead` rather than scoring members itself, so the
+ * skill bars and the accuracy box plots are two views of ONE computation. See
+ * that module for why they used to disagree.
  */
 export function skillByLead(
   buckets: LeadBuckets,
@@ -49,12 +53,20 @@ export function skillByLead(
 ): SkillRow[] {
   const minPairs = opts.minPairs ?? 10;
   const maxLead = opts.maxLead ?? 15;
-  const rows: SkillRow[] = [];
+  return skillRowsFrom(scoreMembersByLead(buckets, observed, maxLead), minPairs);
+}
 
-  for (let lead = 0; lead <= maxLead; lead++) {
-    const bucket = buckets[lead];
-    const label = `Lead ${lead}`;
-    if (!bucket || bucket.time.length === 0) {
+/**
+ * The skill bars' rows, from already-scored members.
+ *
+ * Split out so a caller that already holds the scores — the metrics page, which
+ * needs the distributions too — pays for them once.
+ */
+export function skillRowsFrom(scores: LeadScores[], minPairs = 10): SkillRow[] {
+  const rows: SkillRow[] = [];
+  for (const lead of scores) {
+    const { label, pairs, bestMemberPairs } = lead;
+    if (lead.members.length === 0) {
       rows.push({
         label, nse: NaN, kge: NaN, pairs: 0,
         members: 0, nseMembers: 0, kgeMembers: 0,
@@ -63,18 +75,9 @@ export function skillByLead(
       continue;
     }
 
-    const memberCount = bucket.members[0]?.length ?? 0;
     const nseVals: number[] = [];
     const kgeVals: number[] = [];
-    // Member-independent: individual members can each be missing different
-    // timesteps (the fetched ensemble is union-joined across cadences and padded
-    // with NaN), so no single member's count describes the lead.
-    const pairs = countAlignedPairs(bucket.time, observed);
-    let bestMemberPairs = 0;
-
-    for (let m = 0; m < memberCount; m++) {
-      const res = kge(memberSeries(bucket, m), observed);
-      if (res.n > bestMemberPairs) bestMemberPairs = res.n;
+    for (const res of lead.members) {
       // Score only members with their own adequate sample. A member with four
       // aligned points yields a wild-but-finite score that would otherwise enter
       // the median beside members with thirty.
