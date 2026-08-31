@@ -109,113 +109,121 @@ export function OverviewTab() {
 
         <h3 style={h3}>The rule</h3>
         <p style={p}>
-          Uploaded observations arrive at any interval — 15-minute, hourly, 3-hourly, daily;
-          forecasts at whatever interval RFS publishes. Every metric therefore compares series that
-          may not share a clock:
+          Uploaded observations arrive at any interval — 15-minute, hourly, 3-hourly, daily; RFS
+          publishes at its own. Every metric therefore compares two series that may not share a
+          clock:
         </p>
         <p style={{ ...p, fontWeight: 600, color: '#1f2937' }}>
           Comparison happens at the coarser resolution: the finer series is aggregated down, the
           coarser never interpolated up.
         </p>
         <p style={p}>
-          Interpolating upward manufactures data: a daily record stretched to hourly invents 23
+          Interpolating upward manufactures data. A daily record stretched to hourly invents 23
           values per real measurement, all counted as independent samples — inflating sample size
-          roughly 24-fold, smoothing the hydrograph, and quantising peak timing to the daily
-          value's hour while still reporting hours. Aggregating down loses detail instead — honest,
-          and pairs still equal real observations.
+          roughly 24-fold, smoothing the hydrograph, and quantising peak timing to the daily value's
+          hour while still reporting hours. Aggregating down loses detail instead, which is honest,
+          and every pair still rests on a real observation.
         </p>
+
+        <h3 style={h3}>The forecast is not one resolution</h3>
+        <p style={p}>
+          A single RFS run changes spacing across its own horizon — typically 3-hourly for the first
+          week, coarser after. All 51 members share one time index, so they never disagree with each
+          other; the index itself is simply denser at short lead than long. Three consequences run
+          through everything below.
+        </p>
+        <ul style={ul}>
+          <li>
+            <strong>The comparison grid comes from lead 1</strong>, the densest day a run publishes.
+            That is deliberate — it keeps the near field at full resolution — but it means the later
+            leads sit on a grid finer than their own publishing interval.
+          </li>
+          <li>
+            <strong>Later leads carry fewer pairs.</strong> Not because the forecast is worse there,
+            but because fewer values were published. The banner above the metrics reports the range
+            rather than a single figure for this reason, and each lead is gated on its own count, so
+            the long leads blank out first.
+          </li>
+          <li>
+            <strong>Timing numbers are quantised differently by lead.</strong> A peak can only be
+            placed on a sample that exists, so at a coarse lead the nearest available instant may be
+            hours from the true crest. The timing panels shade that resolution as a band, and draw a
+            bar hollow when its median falls inside — see <em>Peak timing</em> below.
+          </li>
+        </ul>
 
         <h3 style={h3}>How a bin is summarised</h3>
         <p style={p}>
           When several timesteps fall in one grid bin they have to become one number, and that
-          choice is not cosmetic — it decides how often the flow is counted as crossing a threshold.
+          choice decides how often the flow counts as crossing a threshold.
         </p>
         <ul style={ul}>
           <li>
-            <strong>Bin mean</strong>, always, for the error and distribution metrics (CRPS, CRPSS,
-            KGE′ and its components). These are about volume and shape, and the mean is what
-            preserves them.
+            <strong>Bin mean, always</strong>, for the error and distribution metrics — CRPS, CRPSS,
+            NSE, KGE′ and its components. These are about volume and shape, which the mean
+            preserves.
           </li>
           <li>
-            <strong>Your choice</strong> for the categorical and threshold families, defaulting to
-            the <strong>median</strong>. The selector sits above the Compute button in the
-            Categorical block, and also governs the reference RPSS is scored against.
+            <strong>Your choice</strong>, defaulting to the <strong>median</strong>, for the
+            categorical family <em>and the timing family</em>. The selector sits in the Categorical
+            block but reaches both, and also governs the reference RPSS is scored against.
           </li>
         </ul>
         <p style={p}>
-          <strong>Why it is a choice rather than a fixed answer.</strong> A threshold can only be
-          compared against a quantity of the same kind, and these thresholds inherit whatever you
-          uploaded: <code>returnPeriodsFromSeries</code> fits Gumbel-I to annual maxima taken at the
-          record's <em>native</em> resolution. A daily-values upload — which for most gauge services
-          means daily <em>mean</em> discharge — therefore produces a threshold on daily means. A
-          15-minute upload produces one on instantaneous peaks. Same code, two different kinds of
-          threshold, and only you know which you have.
+          <strong>Why it is a choice.</strong> A threshold can only be compared against a quantity
+          of its own kind, and these thresholds inherit whatever you uploaded:{' '}
+          <code>returnPeriodsFromSeries</code> fits Gumbel-I to annual maxima at the record's{' '}
+          <em>native</em> resolution. A daily upload — which for most gauge services means daily{' '}
+          <em>mean</em> discharge — gives a threshold on daily means; a 15-minute upload gives one on
+          instantaneous peaks. Same code, two different kinds of threshold, and only you know which
+          you have. That inheritance applies to the <em>observed</em> thresholds only: the simulated
+          set is always fitted to the daily retrospective, so on a sub-daily upload the two halves of
+          the dual threshold are not fitted at the same resolution.
         </p>
         <p style={p}>
-          That inheritance applies to the <em>observed</em> thresholds only. The simulated set is
-          always fitted to the daily retrospective the app downloads, whatever you uploaded — so on
-          a sub-daily upload the two halves of the dual threshold are not fitted at the same
-          resolution, and the forecast side is the daily one.
+          <strong>And no summary is safe in general — they fail in opposite directions.</strong> On
+          a bin with realistic within-day shape the maximum crosses a 10-year-ish level{' '}
+          <strong>7.2×</strong> as often as the mean, inflating the exceedance count. But on a
+          flashy event a 280 m³/s peak 1.2 hours wide, binned to 3 hours, survives the maximum and
+          is reported as 204 by the median and 190 by the mean — erasing an exceedance that
+          genuinely occurred.
         </p>
         <p style={p}>
-          The three differ sharply where it matters most, and <strong>not always in the same
-          direction</strong>. On a bin with realistic within-day shape the maximum crosses a
-          10-year-ish level <strong>7.2×</strong> as often as the mean, so it inflates the
-          exceedance count. But on a flashy event the opposite happens: a 280 m³/s peak only 1.2
-          hours wide, binned to 3 hours, is kept intact by the maximum and reported as 204 by the
-          median and 190 by the mean — erasing an exceedance that genuinely occurred.
+          The median is the default for <strong>comparability</strong>, not for being
+          least-distorting. Only the finer side is summarised, and a value reported at a coarser
+          resolution already represents something typical of its period rather than an instantaneous
+          peak — so taking the median of the finer side puts the same kind of quantity on both
+          sides, which neither the mean nor the maximum reliably does. Which is <em>right</em>
+          depends on how flashy your event is relative to the grid, so the app checks rather than
+          assuming: where the choice would change the event's return-period classification, the
+          Categorical block says so and shows the peak each summary gives.
         </p>
         <p style={p}>
-          So neither is safe in general. The median is the default for a reason about{' '}
-          <strong>comparability</strong> rather than distortion: only the finer side is summarised,
-          and a value reported at a coarser resolution — a daily gauge reading, a daily
-          retrospective value — generally already represents something typical of its period rather
-          than an instantaneous peak. Taking the median of the finer side therefore puts the same
-          kind of quantity on both sides of the comparison, which neither the mean nor the maximum
-          reliably does. That it is also the least distorting of the three is a secondary
-          advantage. Which one is right depends
-          on how flashy your event is relative to the grid, which is a property of your data rather
-          than of the method. The app therefore checks: if the choice would change the event's
-          return-period classification, the Categorical block says so, with the peak and
-          classification each summary gives. That is the point at which it stops being a preference
-          and starts deciding what the metrics measure.
-        </p>
-        <p style={p}>
-          Note this is aggregation over <em>time</em>, applied to each ensemble member separately.
-          It never combines members — a 51-member ensemble stays 51 trajectories through every one
-          of these paths.
-        </p>
-        <p style={p}>
-          Combining members is a <em>separate</em> choice, made in the Contingency matrix block,
-          which classifies one representative series per lead. That defaults to the ensemble{' '}
-          <strong>median</strong> and offers the mean, individual members and the ensemble maximum.
-          An ensemble maximum there asks "did <em>any</em> member cross", which with 51 members
-          crosses far more readily than the median does — a different question, not a stricter
-          version of the same one. Every other categorical score reads all 51 members.
-        </p>
-        <p style={p}>
-          It only bites when your data is finer than the comparison grid. With a daily gauge on a
-          daily grid every bin holds one value and all three choices give the same number.
+          Finally, this is aggregation over <em>time</em>, applied to each member separately — a
+          51-member ensemble stays 51 trajectories throughout. Combining members is a different
+          choice, made in the Contingency matrix block and described there. And none of it bites
+          unless your data is finer than the grid: with a daily gauge on a daily grid every bin
+          holds one value and all three choices agree.
         </p>
 
         <h3 style={h3}>Consequences</h3>
         <ul style={ul}>
           <li>
-            Aggregation snaps timestamps onto exact bin boundaries; matching previously required
-            millisecond equality, so a gauge reporting five past the hour matched nothing and
-            metrics silently returned zero pairs.
+            Timestamps are matched on exact bin boundaries, so a gauge reporting five past the hour
+            still pairs correctly once aggregated.
           </li>
           <li>
-            Gaps stay gaps: an empty bin yields no forecast/observation pair, not a filled value.
+            Gaps stay gaps: an empty bin yields no forecast/observation pair, not a filled value. A
+            bin no member reaches is dropped rather than counted.
           </li>
           <li>
-            Coarse observations mean few pairs: a four-day event at daily resolution gives four per
-            lead day, too few for any of the paired scores — r, γ, KGE′, NSE, MCC, HSS and RPS are
-            gated on the same minimum — however confident the box plots look.
+            Coarse observations mean few pairs. A four-day event at daily resolution gives four per
+            lead day — too few for any paired score, since r, γ, KGE′, NSE, MCC, HSS and RPS share
+            one minimum — however confident the box plots look.
           </li>
           <li>
-            Peak timing resolves only to the grid interval: on daily data, Δt<sub>peak</sub> answers
-            "which day", not "which hour".
+            Peak timing resolves only to the grid interval, and that interval is not the same at
+            every lead. On daily data Δt<sub>peak</sub> answers "which day", not "which hour".
           </li>
         </ul>
 
@@ -615,6 +623,16 @@ export function OverviewTab() {
           A perfect forecast is non-zero only on the diagonal; following the WMO/WWRP framework and
           Hewson (2007), all off-diagonal elements count as errors — a binary table's "misses +
           false alarms".
+        </p>
+        <p style={p}>
+          <strong>This is the one panel that reduces the ensemble to a single series</strong>, since
+          a K×K table needs one forecast category per timestep. The{' '}
+          <em>Forecast series</em> selector chooses how: the ensemble median by default, or its mean,
+          p25, p75, min, max, or any individual member. Reducing to the{' '}
+          <strong>maximum</strong> asks "did <em>any</em> member cross", which with 51 members
+          crosses far more readily than the median — a different question, not a stricter version of
+          the same one. Every other categorical score on this page reads all 51 members, so this
+          selector moves the matrix and nothing else.
         </p>
 
         <h3 style={h3}>Categorical — Matthews Correlation Coefficient (MCC)</h3>

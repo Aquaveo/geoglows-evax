@@ -444,6 +444,8 @@ const btn: React.CSSProperties = {
   padding: '0.4rem 0.8rem',
   fontSize: '1rem',
   cursor: 'pointer',
+  /** Sized to its label, so a flex column's default `stretch` cannot widen it. */
+  alignSelf: 'flex-start',
 };
 const th: React.CSSProperties = { textAlign: 'left', borderBottom: '1px solid #ccc', padding: '4px 8px' };
 const td: React.CSSProperties = { borderBottom: '1px solid #eee', padding: '4px 8px' };

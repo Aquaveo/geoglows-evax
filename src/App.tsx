@@ -20,7 +20,15 @@ function App() {
   const [tab, setTab] = useState<TabId>('overview');
   return (
     <AppProvider>
-      <main style={{ maxWidth: 1800, margin: '0 auto', padding: '1.5rem 2rem' }}>
+      {/*
+        1120, not 1800.
+        At 1800 a section box stretched the full screen while the prose inside it
+        wrapped at its reading measure of 46rem — text filling 43% of its own
+        container, which reads as a broken layout rather than a text column. The
+        plots are all width:100%, so they simply follow. 1120 puts prose at about
+        70% of the box, which is what a normal document column looks like.
+      */}
+      <main style={{ maxWidth: 1120, margin: '0 auto', padding: '1.5rem 2rem' }}>
         <header style={{ marginBottom: '1rem' }}>
           <h1 style={{ margin: 0, fontSize: '1.4rem' }}>GEOGLOWS Evaluation App</h1>
           <p style={{ color: '#666', margin: '0.25rem 0 0' }}>

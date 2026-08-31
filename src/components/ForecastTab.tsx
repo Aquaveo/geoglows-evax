@@ -405,6 +405,8 @@ const btn: React.CSSProperties = {
   padding: '0.4rem 0.8rem',
   fontSize: '1rem',
   cursor: 'pointer',
+  /** Sized to its label, so a flex column's default `stretch` cannot widen it. */
+  alignSelf: 'flex-start',
 };
 const dateLabel: React.CSSProperties = {
   display: 'flex',

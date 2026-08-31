@@ -3511,6 +3511,11 @@ const btn: React.CSSProperties = {
   padding: '0.4rem 0.8rem',
   fontSize: '1rem',
   cursor: 'pointer',
+  // Sized to its label. Several of these sit in flex columns, whose default
+  // align-items is `stretch`, so a Compute button was rendering as a
+  // full-width bar across the whole block — the widest element on the page,
+  // for the smallest action on it.
+  alignSelf: 'flex-start',
 };
 const correctionBanner: React.CSSProperties = {
   maxWidth: PROSE_MAX,
