@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
+import { PROSE_MAX } from '../prose';
 import type { TimeSeries } from '../lib/types';
-import { parseDischargeCsv } from '../lib/ingest/parseCsv';
+import { parseDischargeCsv, type DateOrder } from '../lib/ingest/parseCsv';
 import { fetchCsvText } from '../lib/ingest/fetchCsv';
 
 interface CsvUploaderProps {
@@ -30,6 +31,7 @@ export function CsvUploader({ label, onParsed }: CsvUploaderProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [dateWarning, setDateWarning] = useState<string | null>(null);
   const [source, setSource] = useState<'file' | 'url'>('file');
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
@@ -41,14 +43,33 @@ export function CsvUploader({ label, onParsed }: CsvUploaderProps) {
     valueColumn: string,
     skipped: number,
     clampedNegatives: number,
+    dateOrder: DateOrder,
+    dateOrderAmbiguous: boolean,
   ) {
     onParsed(series, { fileName: name, skipped, clampedNegatives, timeColumn, valueColumn });
     setFailed(false);
+    const first = series.time[0];
+    const last = series.time[series.time.length - 1];
+    const span = `${first.toISOString().slice(0, 10)} to ${last.toISOString().slice(0, 10)}`;
     setStatus(
       `${name}: ${series.time.length.toLocaleString()} rows (cols: ${timeColumn}, ${valueColumn}` +
         (skipped > 0 ? `; skipped ${skipped}` : '') +
         (clampedNegatives > 0 ? `; ${clampedNegatives} negative reading${clampedNegatives === 1 ? '' : 's'} clamped to 0` : '') +
+        `; ${span}` +
         ')',
+    );
+    // Slash dates that could be read either way. The series loads — the user can
+    // see from the span whether it looks right — but this cannot be silent: a
+    // record read D/M instead of M/D is not visibly broken, it just misdates
+    // every value, which moves the season a climatology is built from and the
+    // window an event is scored over.
+    setDateWarning(
+      dateOrderAmbiguous
+        ? `Dates in this file are written like 8/1/1977 and nothing in it settles whether that ` +
+          `means 1 August or 8 January. Read as ${
+            dateOrder === 'mdy' ? 'month/day/year' : 'day/month/year'
+          }, giving ${span}. If that is wrong, re-save the file with ISO dates (1977-08-01).`
+        : null,
     );
   }
 
@@ -58,9 +79,9 @@ export function CsvUploader({ label, onParsed }: CsvUploaderProps) {
     setStatus(`Parsing ${file.name}…`);
     setFailed(false);
     try {
-      const { series, timeColumn, valueColumn, skipped, clampedNegatives } =
-        await parseDischargeCsv(file);
-      accept(series, file.name, timeColumn, valueColumn, skipped, clampedNegatives);
+      const p = await parseDischargeCsv(file);
+      accept(p.series, file.name, p.timeColumn, p.valueColumn, p.skipped, p.clampedNegatives,
+        p.dateOrder, p.dateOrderAmbiguous);
     } catch (err) {
       setFailed(true);
       setStatus(err instanceof Error ? err.message : String(err));
@@ -73,18 +94,19 @@ export function CsvUploader({ label, onParsed }: CsvUploaderProps) {
     setStatus('Fetching…');
     try {
       const { text, bytes } = await fetchCsvText(url);
-      const { series, timeColumn, valueColumn, skipped, clampedNegatives } =
-        await parseDischargeCsv(text);
+      const p2 = await parseDischargeCsv(text);
       // Name it by the object key, not the whole URL — a presigned URL carries a
       // signature that should not be pinned to the screen.
       const name = url.split('?')[0].split('/').pop() || 'remote.csv';
       accept(
-        series,
+        p2.series,
         `${name} (${(bytes / 1024).toFixed(0)} KB)`,
-        timeColumn,
-        valueColumn,
-        skipped,
-        clampedNegatives,
+        p2.timeColumn,
+        p2.valueColumn,
+        p2.skipped,
+        p2.clampedNegatives,
+        p2.dateOrder,
+        p2.dateOrderAmbiguous,
       );
     } catch (err) {
       setFailed(true);
@@ -181,6 +203,24 @@ export function CsvUploader({ label, onParsed }: CsvUploaderProps) {
           }}
         >
           {status}
+        </div>
+      )}
+      {dateWarning && (
+        <div
+          style={{
+            fontSize: '0.85rem',
+            marginTop: '0.4rem',
+            padding: '0.55rem 0.7rem',
+            border: '1px solid #e0b88a',
+            borderLeft: '4px solid #d97706',
+            borderRadius: 4,
+            background: '#fff8ef',
+            color: '#5c3d16',
+            lineHeight: 1.55,
+            maxWidth: PROSE_MAX,
+          }}
+        >
+          <strong>Check the dates.</strong> {dateWarning}
         </div>
       )}
     </div>
