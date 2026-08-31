@@ -40,13 +40,20 @@ export function OverviewTab() {
         <ul style={ul}>
           <li>
             Some metrics evaluate <strong>each member independently</strong> as a deterministic
-            forecast, then summarise those 51 scores — MCC, HSS, CSI, NSE, KGE′, peak timing error.
+            forecast, then summarise those 51 scores — MCC, HSS, NSE, KGE′, peak timing error.
           </li>
           <li>
             Others evaluate the <strong>ensemble as a collective distribution</strong> — CRPS, and
             RPS, which reads the fraction of members in each severity category as a probability. A
             spread that straddles the truth is rewarded over confident error, which no per-member
             score can express.
+          </li>
+          <li>
+            <strong>CSI does neither.</strong> All 51 members are pooled into one contingency table
+            per lead and scored once. Taking the median of 51 separate CSIs collapses at the high
+            thresholds, where most members produce the same degenerate table — its ability to rank a
+            known-better forecast measured 0.576 on a single event, a coin flip. See its own section
+            below.
           </li>
           <li>Spread is itself informative — a wide spread at the right time is desirable.</li>
         </ul>
@@ -62,10 +69,10 @@ export function OverviewTab() {
           Two families are also affected by something other than forecast error: RFS is global and
           can run systematically high or low at a single reach — one running 40% low scores badly
           on magnitude however well it caught the event's shape and timing.{' '}
-          <strong>Bias correction</strong> separates the two: the metrics section's Accuracy,
-          Probabilistic and Skill-summary blocks each offer a raw view plus up to two corrected
-          ones — one fitted to your uploaded record, one from centrally published per-river
-          coefficients. Both are conditional and often unavailable; each says why on the selector.
+          <strong>Bias correction</strong> separates the two: the metrics section's Accuracy and
+          Probabilistic blocks each offer a raw view plus up to two corrected ones — one fitted to
+          your uploaded record, one from centrally published per-river coefficients. Both are
+          conditional and often unavailable; each says why on the selector.
           Detailed in the <em>Bias correction</em> section below. Categorical and Timing need none:
           their dual-threshold design absorbs magnitude bias by construction, as their own section
           explains.
@@ -333,35 +340,34 @@ export function OverviewTab() {
           producing extreme values — see below.
         </p>
 
-        <h3 style={h3}>Where the published method and the code disagree</h3>
+        <h3 style={h3}>What the published evaluation does and does not cover</h3>
         <p style={p}>
-          This matters for reading everything below, so it is worth stating plainly. The app is a
-          faithful port of what <code>geoglows</code> does. <code>geoglows</code> is not a faithful
-          implementation of what its own authors published.
+          <strong>This app does not depart from anything.</strong> It reproduces{' '}
+          <code>geoglows.bias.correct_forecast</code> bit for bit — 19 cases assert exact
+          floating-point equality against outputs generated from <strong>geoglows 2.2.0</strong>
+          (numpy 2.2.3, scipy 1.15.2, pandas 2.3.0) — because reproducing it exactly is the only way
+          to evaluate it. Everything in the two subsections after this is behaviour of the
+          published method, not a choice made here.
         </p>
         <p style={p}>
-          The method's authors <em>do</em> prescribe a rule for forecasts outside the fitted range:
-          clamp the value to the historical range, apply the correction, then multiply by a
-          deviation factor to restore the excess. It appears in the 2023 BYU dissertation that
-          documents the method. <code>geoglows.bias.correct_forecast</code> implements none of it —
-          it is six lines with no range test, no clamp and no flag. A guard did exist in versions
-          1.0 through 1.8.3 (<code>np.clip(func(x), 0, 1)</code>) and was removed in 2.0.0 with no
-          mention in the release notes, so pinning the current version gets the <em>less</em> guarded
-          code. The package's newer routines do guard their tails;{' '}
-          <code>correct_forecast</code> was never brought along.
+          Those fixtures are what make the next claim first-hand rather than hearsay: the delivered
+          code carries <strong>no guard</strong> for forecasts outside the fitted range, and the
+          reference's own outputs include the infinities. Measured, forecasts of 178, 324, 810, 3,239 and 161,950 m³/s on a realistic June pair all came
+          out at the same corrected value, and some above-range inputs return{' '}
+          <em>+Infinity</em> instead. That is what the ceiling subsection below describes.
         </p>
         <p style={p}>
-          Nor does the published evaluation reach this regime. The 2025 paper scores the{' '}
-          <em>continuous retrospective simulation</em> at 15,586 gauges by KGE distributions — a
-          setting where an above-range forecast cannot arise at all, and where KGE is nearly blind
-          to the upper tail. Its supplement contains no discussion of extrapolation, tails, extremes
-          or return periods.
+          <strong>And the published evaluation does not reach that regime.</strong> Sanchez Lozano et
+          al. (2025) scores the <em>continuous retrospective simulation</em> against gauge records by
+          KGE — a setting where a forecast above the simulated maximum cannot arise, since there is
+          no forecast. So the paper's evidence that MFDC-QM works does not extend to the
+          above-range case, and KGE is in any event weakly sensitive to the upper tail. This is not a
+          criticism of the paper: it evaluated what it set out to evaluate. It is a caution against
+          reading its result as validation of the behaviour you will see here on a flood.
         </p>
         <p style={p}>
-          So the app reports the ceiling rather than working around it. Verifying what the delivered
-          code produces is the point; substituting the published rule would measure a method nobody
-          is actually running. The consequences are the two subsections below, and both are counted
-          in the banner above the corrected metrics rather than silently absorbed.
+          Longer notes on the method's history and its documentation live in the repository rather
+          than here, since parts of that trail we could not verify from primary sources directly.
         </p>
 
         <h3 style={h3}>The local FDC mapping, in detail</h3>
@@ -464,6 +470,15 @@ export function OverviewTab() {
 
         <h3 style={h3}>SABER's own limits</h3>
         <p style={p}>
+          <strong>Where these come from.</strong> Not from the literature. Every limit below was
+          read from <code>discharge_transform</code>'s arithmetic or measured by probing the
+          published coefficients directly — the app inspects each month's transform across its own
+          valid range before trusting any corrected number. Hales et al. (2022) describes the
+          clustering and fitting method; it is not a source for how the fitted transforms behave at
+          their edges, and we did not find one. Treat these as properties of the delivered
+          coefficients that the app measures and reports, not as published caveats.
+        </p>
+        <p style={p}>
           SABER cannot produce an infinity — its transforms are smooth polynomial fits rather than
           empirical steps — but it saturates for a different reason. The exceedance percentile is
           clamped to [0, 100], and once it clamps, every discharge beyond that point maps to one
@@ -480,9 +495,10 @@ export function OverviewTab() {
         </p>
         <ul style={ul}>
           <li>
-            <strong>Not guaranteed monotonic.</strong> Nothing constrains a polynomial fit to
-            preserve order, so a larger forecast can transform to a smaller corrected value. The
-            banner names the months where it happens.
+            <strong>Not guaranteed monotonic.</strong> Nothing in a polynomial fit constrains it
+            to preserve order, so a larger forecast <em>can</em> transform to a smaller corrected
+            value. The app tests each month across its range and the banner names any where it
+            occurs — so this is checked on your river rather than assumed either way.
           </li>
           <li>
             <strong>Inputs outside the fitted range are clipped before transforming</strong> — down
@@ -742,10 +758,9 @@ export function OverviewTab() {
           <p style={{ maxWidth: PROSE_MAX, margin: 0 }}>
             <strong>Both scores move with the length of the uploaded window.</strong> Quiet
             timesteps pile into the "both below the lowest threshold" cell and dominate the
-            marginals. At fixed forecast skill, padding with quiet days lifts a forecast that
-            captures the event from MCC 0.45 to 0.82, and one{' '}
-            <em>systematically one category low</em> throughout from −0.50 to +0.35 — correctly
-            damning to apparently skilful. Slow-rising events suffer most: long limbs below
+            marginals. At fixed forecast skill, padding with quiet days lifts both scores
+            substantially — enough to carry a forecast that is <em>systematically one category
+            low</em> throughout from correctly damning to apparently skilful. Slow-rising events suffer most: long limbs below
             threshold while the river is plainly doing something. Read these alongside the pair
             count and base rate, never as headline numbers, never across events of different window
             length.
@@ -784,9 +799,10 @@ export function OverviewTab() {
           <p style={{ maxWidth: PROSE_MAX, margin: 0 }}>
             <strong>Their order is fixed by the sign, not by where the skill came from.</strong>{' '}
             MCC's denominator is never larger than HSS's, so any forecast better than chance has
-            MCC ≥ HSS necessarily, and any forecast worse than chance has MCC ≤ HSS. Across 60,000
-            contingency matrices this held without exception, and MCC fell below HSS while both
-            were positive in zero cases. So "MCC much lower than HSS" cannot indicate skill earned
+            MCC ≥ HSS necessarily, and any forecast worse than chance has MCC ≤ HSS. Across
+            60,000 contingency matrices it held without exception, and MCC fell below HSS while both
+            were positive in zero cases — a deterministic sweep kept as a test in this repository, so
+            the figure is reproducible rather than remembered. So "MCC much lower than HSS" cannot indicate skill earned
             on normal flow rather than the extreme — it cannot happen at all unless the forecast is
             already worse than chance, where MCC simply reports the failure more sharply.
           </p>
@@ -820,8 +836,9 @@ export function OverviewTab() {
         <p style={p}>
           Report <strong>RPSS</strong> when comparing across events. Raw RPS is a mean over
           timesteps, so quiet days drag it toward zero whatever the skill — but the climatological
-          reference absorbs the same easy timesteps, so the ratio moves far less. Measured across
-          an 800-fold increase in window length: CSI 0.003, RPSS 0.028, MCC 0.070, HSS 0.074.
+          reference absorbs the same easy timesteps, so the ratio moves far less. It is still not
+          window-invariant: only the scores that omit the correct-negative cell are, as{' '}
+          <em>Scores per exceedance threshold</em> sets out below.
         </p>
         <p style={p}>
           <strong>What the reference is, exactly.</strong> RPSS and CRPSS are both skill scores —
@@ -838,9 +855,9 @@ export function OverviewTab() {
             average of those days — a filter: every individual reading from every year whose day of
             year falls in that window, pooled into one distribution. A whole-record baseline would
             have to predict a wet-season flood from the dry season's distribution, so beating it
-            would partly reward the forecast for knowing what month it is. Measured on a seasonal
-            record, the two disagree fourfold on how often the 2-year threshold is crossed
-            (0.0102 whole-record against 0.0419 in season). The window wraps across New Year.
+  would partly reward the forecast for knowing what month it is. On a strongly
+            seasonal record the two baselines can disagree by several-fold on how often the 2-year
+            threshold is crossed. The window wraps across New Year.
           </li>
           <li>
             <strong>Aggregated the same way the scored observations are.</strong> Whatever bin
@@ -877,17 +894,26 @@ export function OverviewTab() {
           number hides.
         </p>
         <p style={p}>
-          <strong>None of the four uses d</strong>, the correct-negative cell, so all are exactly
-          invariant to window length — adding 100,000 quiet timesteps leaves every value unchanged
-          to twelve decimals, while MCC and HSS drift substantially. They are the antidote to the
-          window sensitivity described above.
+          <strong>None of the four uses d</strong>, the correct-negative cell, so all four are
+          exactly invariant to window length: adding 100,000 quiet timesteps leaves every value
+          unchanged to twelve decimals, while MCC and HSS drift substantially. They are the antidote
+          to the window sensitivity described above.
+        </p>
+        <p style={p}>
+          <strong>Exactly invariant to padding, not to re-windowing.</strong> Those are different
+          experiments and the distinction matters. Adding pure quiet timesteps cannot move a score
+          that ignores the correct-negative cell — that is algebra, not measurement. Genuinely
+          <em>extending</em> a window adds timesteps that get classified, some as hits or false
+          alarms, so these scores do move a little. Measured across an 800-fold increase in window
+          length: <strong>CSI 0.003, RPSS 0.028, MCC 0.070, HSS 0.074</strong>. This is the only
+          place those figures are quoted; the RPS and CSI sections refer back here.
         </p>
         <p style={p}>
           <strong>Frequency bias is not a skill score</strong>, and that is what makes it useful.
           It is how many exceedances were forecast divided by how many occurred, so 1.0 means the
           right <em>number</em> of warnings whether or not they landed on the right days. It is also
           what the gap between MCC and HSS measures indirectly: matched category frequencies make
-          those two scores identical, and the correlation between their gap and |log bias| is 0.72.
+          those two scores identical, and skewed ones separate them.
         </p>
         <p style={p}>
           <strong>Read it as a warning-count check, not a magnitude-bias detector.</strong> Under a
@@ -907,21 +933,21 @@ export function OverviewTab() {
 
         <h3 style={h3}>Categorical — CSI by lead day</h3>
         <p style={p}>
-          CSI gets a panel of its own, with a threshold selector, because it is the only score here
-          that is <strong>essentially exactly invariant</strong> to how long a window you uploaded.
-          Padding an event with quiet days adds only correct negatives, and a/(a+b+c) never touches
-          that cell. Measured across an 800-fold increase in window length: CSI moves 0.003, RPSS
-          0.028, MCC 0.070, HSS 0.074. If the chance-corrected scores look healthier than this one,
-          quiet timesteps are flattering them.
+          CSI gets a panel of its own, with a threshold selector, because it is the{' '}
+          <strong>window-invariant</strong> score given a by-lead view. Padding an event with quiet
+          days adds only correct negatives, and a/(a+b+c) never touches that cell. POD, FAR and
+          frequency bias share that property — see <em>Scores per exceedance threshold</em> — but
+          CSI is the one that combines hits, misses and false alarms into a single number, which is
+          what makes it worth plotting against lead. If the chance-corrected scores look healthier
+          than this one, quiet timesteps are flattering them.
         </p>
         <p style={p}>
           It sits apart rather than on the MCC/HSS axis because it is a different kind of quantity.
           CSI is <strong>only defined on a two-by-two table</strong> — there is no accepted
           multi-category version, and the standard practice is one value per exceedance threshold,
           which is what the selector chooses. MCC and HSS grade all K categories at once. Collapsing
-          to "at or above the 2-year level" is an easier question, and on a severe event CSI reads
-          about 0.08 to 0.12 higher for that reason alone, so sharing an axis invited a false
-          comparison. Every line in its own panel is the same kind of quantity, so that axis is fair.
+          to "at or above the 2-year level" is an easier question, and CSI reads higher for that
+          reason alone, so sharing an axis invited a false comparison. Every line in its own panel is the same kind of quantity, so that axis is fair.
         </p>
         <p style={p}>
           Scored on the 51 members <strong>pooled into one table per lead</strong>, not as the median
@@ -943,8 +969,48 @@ export function OverviewTab() {
           Δt<sub>peak</sub> &lt; 0 is an early forecast peak, &gt; 0 a late one.{' '}
           <strong>It is independent of magnitude</strong>: Δt = 0 for a member with correct timing
           and far-off magnitude. Take the median Δt across members as the headline statistic, the
-          IQR as ensemble timing spread. An early bias is often preferable
-          operationally — more preparation time for communities.
+          IQR as ensemble timing spread. An early bias is often preferable operationally — more
+          preparation time for communities.
+        </p>
+        <p style={p}>
+          <strong>Read the resolution band before reading a bias.</strong> A peak can only be placed
+          on a sample that exists, and a run publishes coarser samples at long lead, so at those
+          leads the nearest available instant may be hours from the true crest. The panels shade
+          that spacing as a grey band and draw a bar hollow when its median falls inside. This is not
+          a theoretical caveat: on a <em>perfect</em> forecast against 3-hourly observations, a run
+          coarsening after day 7 reports Δt = 0 through lead 7 and then a unanimous three-hour
+          offset at leads 8–15. Tight box, clean step, entirely the lattice.
+        </p>
+        <p style={p}>
+          <strong>Which members are excluded, and why it is never about quality.</strong> A member
+          contributes no Δt in exactly two cases, both facts about the shape of its own series:
+        </p>
+        <ul style={ul}>
+          <li>
+            <strong>Flat throughout</strong> — the series attains its maximum at every timestep, so
+            there is no argmax to time. Counted as "predicted no peak" rather than scored, and at
+            long lead that count is the finding, not a timing number.
+          </li>
+          <li>
+            <strong>Maximum on its own first or last sample</strong> — the real peak is probably
+            outside the series, so Δt would be a bound rather than a measurement. Censored.
+          </li>
+        </ul>
+        <p style={p}>
+          Nothing is dropped for forecasting badly. A member that runs 55% low but times the crest
+          perfectly still scores 0, which is exactly what makes this worth reading separately from
+          KGE′. A member with a noisy, incoherent shape <em>is</em> scored, and its scatter is the
+          finding rather than something to hide — so a wide band at long lead usually means the
+          ensemble had no peak to agree on. The counts travel with every chart, because excluding
+          anything without saying so is survivorship bias.
+        </p>
+        <p style={p}>
+          A crest with a flat top is timed at its <strong>first</strong> sample, not its midpoint.
+          Time-to-peak is when the flow reaches its maximum; the rest of the plateau is the crest
+          holding rather than arriving. It also has to match the other side of the subtraction, since
+          the observed peak keeps the first of any ties — timing the forecast at a plateau's midpoint
+          would bias every such Δt late by half the plateau's width, an offset produced by the
+          estimator rather than the forecast.
         </p>
 
         <h3 style={h3}>Timing — Threshold crossing</h3>
@@ -1011,6 +1077,16 @@ export function OverviewTab() {
         </ul>
         <p style={p}>
           The dominant error source is the component furthest from 1.
+        </p>
+        <p style={p}>
+          <strong>Each component is guarded on what it alone needs</strong>, which is why a member
+          can appear in the β panel and not the KGE′ one. A forecast that is flat — every timestep
+          the same value — still has a real mean, so β is reported; it has no variability, so γ reads
+          0; and correlation is undefined, so r and KGE′ are withheld rather than filled in. That
+          case is not hypothetical: transform saturation maps a whole range of discharges onto one
+          number, and the negative clamp maps to exactly zero, so flat members are what the corrected
+          variants produce. The bars carry their own member counts for this reason — the NSE and KGE′
+          medians on one row can rest on different member sets.
         </p>
 
         <h3 style={h3}>Accuracy — Nash–Sutcliffe Efficiency (NSE)</h3>
@@ -1090,9 +1166,8 @@ export function OverviewTab() {
         </p>
         <p style={caution}>
           A real seasonal climatology is a different and generally better forecast, and its own score
-          climbs steeply with window length — on a constructed 30-year record it measured KGE′ −0.11
-          across ±5 days of the crest, −0.05 over 21 days, and +0.67 over the whole record. The
-          −0.41 line never moves. So read "below the benchmark" as{' '}
+          depends on the window it is scored over — narrow windows around a crest score far worse
+          than the whole record does. The −0.41 line never moves. So read "below the benchmark" as{' '}
           <strong>worse than a flat line</strong>, which is what it means, rather than "worse than
           climatology", which does not follow. Band names shift with the window you chose for the
           same reason: the observed variability these scores normalise by is the window's, not the
@@ -1124,13 +1199,27 @@ export function OverviewTab() {
           </li>
         </ul>
         <p style={p}>
-          <strong>CRPSS</strong> uses the same climatological reference rule as RPSS, set out under
-          Ranked probability score above: observed rather than modelled, restricted to ±15 days of
-          the event's calendar days, aggregated the way the scored observations are, and withheld
-          rather than estimated when there is no record or too little of it falls in season. The two
-          skill scores used to be built differently — CRPSS season-restricted and refused to guess,
-          RPSS did neither — so the same app made two claims about what a fair baseline is. They now
-          share one implementation.
+          <strong>CRPSS</strong> follows the reference rules set out under Ranked probability score
+          above — observed rather than modelled, restricted to ±15 days of the event's calendar days,
+          and withheld rather than estimated — and shares one implementation with RPSS for the
+          season filter and the 30-value minimum, so those cannot drift apart again.
+        </p>
+        <p style={p}>
+          <strong>The two references are not identical, and should not be.</strong> The rule both
+          follow is that a reference is aggregated the same way as the observations it will be scored
+          against — which makes them differ, because those observations differ. RPS categorises the
+          chosen-summary grid, so its reference uses your bin summary; CRPS is an error magnitude
+          scored on the bin-<em>mean</em> grid, so its reference uses the mean. Same grid step, same
+          season, same minimum; different summary, because forcing one on both would break the rule
+          for whichever metric lost.
+        </p>
+        <p style={p}>
+          One correction, since an earlier version of this page said the two "share one
+          implementation" without qualification: they share the season rule, not the aggregation. The
+          CRPSS reference was also being floored at daily resolution while CRPS itself was scored on
+          the sub-daily grid — a narrower reference is easier to beat, and that inflated CRPSS by up
+          to 0.09 near the climatological median, most where the verdict is marginal. Fixed, and
+          both references now live in one module.
         </p>
       </section>
     </div>
