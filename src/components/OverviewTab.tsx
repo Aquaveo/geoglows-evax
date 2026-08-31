@@ -405,71 +405,133 @@ export function OverviewTab() {
           climatological baseline.
         </p>
 
-        <h3 style={h3}>Limits worth knowing</h3>
+        <h3 style={h3}>The ceiling: extreme forecasts stop being distinguishable</h3>
+        <p style={p}>
+          The histogram bins deliberately extend past the data, so each CDF's top step is flat and
+          cannot be inverted. Above the simulated monthly maximum the forward map has zero slope, and
+          every forecast above it collapses onto the <em>same</em> corrected flow however far above
+          it sits. Measured on a realistic June pair, forecasts of 178, 324, 810, 3,239 and{' '}
+          <strong>161,950</strong> m³/s all came out at 277.09.
+        </p>
+        <p style={p}>
+          Whether the inverse returns that ceiling or <em>+Infinity</em> is decided by floating-point
+          luck — whether two cumulative sums finished on the same last bits — so both outcomes occur
+          for the same kind of input. The infinities drop out of every metric the way a gap would,
+          since a non-finite pair never aligns. The finite ceilings do not: they are scored as though
+          the correction had produced a real number.
+        </p>
+        <p style={p}>
+          <strong>Nothing is discarded for it</strong>, and that is deliberate. The reference keeps
+          these values, and it has no notion of a "run" to drop — it takes one forecast frame and
+          returns one frame — so excluding them would be this app's invention rather than the
+          method's behaviour. It would also be the worst possible selection: a forecast only exceeds
+          the simulated maximum when it predicts something extreme, so dropping those runs
+          preferentially deletes the ones that saw the event coming, leaving a corrected score
+          computed mostly from the runs that missed it. The banner counts them instead, which matters
+          most when the runs landing on the ceiling are the runs that forecast your flood.
+        </p>
+
+        <h3 style={h3}>Low flows: two different outcomes, decided by your record</h3>
+        <p style={p}>
+          Below the simulated monthly minimum the mapping extrapolates off the bottom of the observed
+          distribution, and what happens next depends on whether the observed month has anything in
+          its lowest histogram bin.
+        </p>
         <ul style={ul}>
           <li>
-            <strong>Extreme forecasts hit a ceiling.</strong> Bins deliberately extend past the
-            data, so each CDF's top is flat and un-invertible. Above the simulated monthly maximum
-            the forward map has zero slope, and every forecast above it collapses onto the same
-            corrected flow however far above it sits — measured on a realistic June pair, forecasts
-            of 178, 324, 810, 3,239 and 161,950 m³/s all came out at 277.09. Whether the inverse
-            returns that ceiling or <em>+Infinity</em> depends on whether two cumulative sums
-            finished on the same last bits, so both outcomes occur for the same kind of input.
-            <span style={notePara}>
-            Nothing is discarded for it. This app exists to evaluate the geoglows method, so
-            dropping what the reference keeps would mean evaluating a different one — and the
-            reference has no notion of a run to drop, taking one forecast frame and returning one
-            frame. The banner counts these instead. Infinities fall out of every metric as a gap
-            would, since a non-finite pair is not aligned; the finite ceilings are counted as
-            though the correction had produced a real number, which is worth knowing when the runs
-            that land there are the ones that forecast the event.
-            </span>
+            <strong>Empty lowest bin</strong> — the inverse slope divides by zero, the result is NaN,
+            and the reference keeps the <em>raw</em> value. The forecast passes through uncorrected.
           </li>
           <li>
-            <strong>Low flows are handled two different ways, decided by your record.</strong>{' '}
-            Below the simulated monthly minimum the mapping extrapolates off the bottom of the
-            observed distribution, and what happens next depends on whether the observed month has
-            anything in its lowest histogram bin. If it is empty, the inverse slope divides by zero,
-            the result is NaN, and the reference keeps the <em>raw</em> value. If it holds even one
-            value, the slope is finite and the flow maps at or below zero, so the clip at 0 turns a
-            real low flow into <strong>exactly 0</strong>. A single 0 in your record flips every
-            sub-minimum timestep between the two — and a clamped negative gauge reading is exactly
-            such a value. This is what the reference does and the app matches it bit for bit, so the
-            banner counts both outcomes rather than changing either.
-            <span style={notePara}>
-            Whether the zeros are <em>right</em> depends on the river. An intermittent one genuinely
-            reads 0, its observed distribution genuinely has mass there, and mapping the lowest
-            forecasts onto it is the correction working. A perennial one reads negative only from
-            backwater, ice or a drifting sensor — and those are clamped up to 0 on upload, so the
-            zeros are manufactured and the correction inherits them. The banner reports how many
-            negative readings your record had clamped, which is the number that separates the two
-            cases.
-            </span>
+            <strong>Any value in it</strong> — the slope is finite, the flow maps at or below zero,
+            and the clip at 0 turns a real low flow into <strong>exactly 0</strong>.
+          </li>
+        </ul>
+        <p style={p}>
+          A single 0 anywhere in your record flips every sub-minimum timestep from the first outcome
+          to the second — and a clamped negative gauge reading is exactly such a value. The app
+          matches the reference bit for bit here and counts both outcomes rather than changing
+          either.
+        </p>
+        <p style={p}>
+          Whether the zeros are <em>right</em> depends on the river. An intermittent one genuinely
+          reads 0, its observed distribution genuinely has mass there, and mapping the lowest
+          forecasts onto it is the correction working. A perennial one reads negative only from
+          backwater, ice or a drifting sensor — and those are clamped up to 0 on upload, so the zeros
+          are manufactured and the correction inherits them. The banner reports how many negative
+          readings your record had clamped, which is the number that separates the two cases.
+        </p>
+
+        <h3 style={h3}>SABER's own limits</h3>
+        <p style={p}>
+          SABER cannot produce an infinity — its transforms are smooth polynomial fits rather than
+          empirical steps — but it saturates for a different reason. The exceedance percentile is
+          clamped to [0, 100], and once it clamps, every discharge beyond that point maps to one
+          value. Flood magnitudes stop being distinguishable exactly as they do under the local
+          ceiling.
+        </p>
+        <p style={p}>
+          <strong>It saturates at both ends, and the banner reports each separately.</strong> The
+          low-flow end clamps at percentile 100, the high-flow end at 0, and a month can do both.
+          The high end is the one that matters for flood verification, so it is named explicitly —
+          "every discharge at or above X maps to Y" — alongside the low end rather than instead of
+          it. Each figure is measured inside its own saturated region, so the value quoted is one
+          that inputs there really produce.
+        </p>
+        <ul style={ul}>
+          <li>
+            <strong>Not guaranteed monotonic.</strong> Nothing constrains a polynomial fit to
+            preserve order, so a larger forecast can transform to a smaller corrected value. The
+            banner names the months where it happens.
           </li>
           <li>
-            <strong>The distributions are daily.</strong> Forecasts are typically sub-daily, so
-            their peaks compress toward the observed daily maximum: β and KGE′ can improve while
-            peak magnitude degrades.
+            <strong>Inputs outside the fitted range are clipped before transforming</strong> — down
+            to the monthly maximum, or up to the monthly minimum. Both are counted, because a value
+            clipped up has lost just as much information as one clipped down.
           </li>
           <li>
-            <strong>A short observed record lowers the ceiling:</strong> the mapping cannot produce
-            a flow larger than the record holds that month, so a few years of data visibly
+            <strong>Withheld, not degraded, when it cannot apply.</strong> A river with no published
+            transformer fails the lookup rather than falling back to an identity. A river whose
+            published coefficients for one of your event's months are not numbers withholds the
+            variant <em>entirely</em>, with no tolerance threshold — correcting only the remaining
+            months would score those metrics on a different stretch of the event than the raw ones
+            sitting beside them in the table. And it is withheld when essentially everything clamps,
+            since a corrected series that is constant carries no magnitude information at all.
+          </li>
+        </ul>
+
+        <h3 style={h3}>Limits that apply to both</h3>
+        <ul style={ul}>
+          <li>
+            <strong>The distributions are daily.</strong> Forecasts are typically sub-daily, so their
+            peaks compress toward the observed daily maximum: β and KGE′ can improve while peak
+            magnitude degrades.
+          </li>
+          <li>
+            <strong>A short observed record lowers the ceiling.</strong> The local mapping cannot
+            produce a flow larger than the record holds that month, so a few years of data visibly
             flattens extreme forecasts.
           </li>
           <li>
-            <strong>The correction is in-sample:</strong> your observed record almost certainly
-            contains the event verified, so corrected scores are optimistic by an unquantified
+            <strong>The correction is in-sample.</strong> Your observed record almost certainly
+            contains the event being verified, so corrected scores are optimistic by an unquantified
             amount.
           </li>
           <li>
             <strong>A dry month collapses the mapping.</strong> An all-zero observed month drives
             every corrected value to almost zero; the banner flags a flat record.
           </li>
+          <li>
+            <strong>Values already missing in the download pass through uncorrected.</strong> Every
+            member of a run shares one time index, so a gap is a genuine gap rather than members
+            being published on different clocks. The banner counts these, because they explain holes
+            in a corrected series that the mapping did not cause.
+          </li>
         </ul>
         <p style={p}>
-          Bias correction fixes magnitude, not skill: wrong timing or hydrograph shape — visible
-          as low r — is beyond it, so distrust a corrected score that improves sharply while r
-          stays poor.
+          Bias correction fixes magnitude, not skill: wrong timing or hydrograph shape — visible as
+          low r — is beyond it, so distrust a corrected score that improves sharply while r stays
+          poor.
         </p>
       </section>
 
@@ -1093,8 +1155,6 @@ const caution: React.CSSProperties = { maxWidth: PROSE_MAX,
   lineHeight: 1.6,
   color: '#713f12',
 };
-/** A second paragraph inside a list item; see the note in MetricsTab. */
-const notePara: React.CSSProperties = { display: 'block', marginTop: '0.5rem' };
 const link: React.CSSProperties = { color: '#1d4ed8', textDecoration: 'underline' };
 const h3: React.CSSProperties = { marginTop: '1.25rem', marginBottom: '0.4rem', fontSize: '1rem' };
 const p: React.CSSProperties = { maxWidth: PROSE_MAX, margin: '0.5rem 0', lineHeight: 1.55, color: '#222' };
