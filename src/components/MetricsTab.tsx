@@ -2147,8 +2147,10 @@ export function MetricsTab() {
                   under-forecasting. Hover one to see which categories it confused.
                   <br />
                   <br />
-                  The coloured bands are the return-period zones a value gets sorted into — yellow
-                  for 2-year through purple for the rarest category in play. Classification is
+                  The coloured bands are the return-period zones a value gets sorted into, running
+                  yellow at the 2-year level through orange and red and then purple at 50 and 100
+                  years. Only the levels this event reached are drawn, so on a 10-year event the
+                  topmost band is red rather than purple. Classification is
                   dual-threshold, so there are two sets: <strong>observed</strong> zones are shown
                   by default because they classify the black line, and{' '}
                   <strong>simulated</strong> zones start hidden — click that legend entry to swap
@@ -2435,16 +2437,17 @@ export function MetricsTab() {
               the bulk of members agreed on the sign, and whether <em>any</em> member got it right.
               <br />
               <br />
-              <strong>The grey band is the lead's own sampling resolution.</strong> A run does not
-              publish at one spacing: all 51 members share a single time index, but that index is
-              finer early than late — typically 3-hourly for the first week, coarser after. The
-              argmax can only land on a sample that exists, so a Δt inside the band is the peak
-              falling between two available instants, not a timing error. On a <em>perfect</em>
-              forecast against 3-hourly observations, a run coarsening after day 7 reports Δt = 0
-              through lead 7 and then a unanimous one-step offset at leads 8–15 — a tight box that
-              reads as real early bias and is entirely the lattice. Bars in the companion chart are
-              drawn <strong>hollow</strong> under the same rule, so the step is still visible as a
-              step without being read as a measurement.
+              <strong>A hollow bar sits inside that lead's own sampling resolution.</strong> A run
+              does not publish at one spacing: all 51 members share a single time index, but that
+              index is finer early than late, switching partway through the horizon. A peak can
+              only be placed on a sample that exists, so a median no larger than that spacing is the
+              crest falling between two available instants, not a timing error. On a{' '}
+              <em>perfect</em> forecast against 3-hourly observations, a run that drops to 6-hourly
+              partway along reports Δt = 0 while it is fine and then a unanimous three-hour offset
+              at every coarser lead — a tight, clean step that reads as real early bias and is
+              entirely the lattice. The hover gives the spacing behind each row. Peak timing
+              is drawn as bars rather than boxes, so hollow is the whole signal here; the threshold
+              crossing panel below, which is a box plot, shades the same quantity as a grey band.
               <br />
               <br />
               <strong>Check the member count in the hover before reading a box.</strong> A member
@@ -2703,7 +2706,16 @@ export function MetricsTab() {
                 lines up with the observation, ignoring magnitude entirely. A member can score near
                 1 here while being badly wrong in absolute terms — that combination points to a
                 scaling problem, which β and γ below will show. Low r instead means the hydrograph
-                shape or timing itself was wrong, and no bias correction would fix it.
+                shape or timing itself was wrong.
+                <br />
+                <br />
+                This panel <em>is</em> re-scored under each correction — quantile mapping is a
+                per-month transform, so it does move r — but it cannot re-time a hydrograph, so a
+                correction will not rescue a genuinely mistimed forecast. Where a correction
+                saturates a member flat, r stops existing for that member rather than improving:
+                correlation is undefined without variability, so the member drops out of this box
+                instead of scoring badly in it. Check the member count in the hover before reading a
+                corrected variant as an improvement.
               </PlotNote>
             </div>
           )}
@@ -2811,12 +2823,15 @@ export function MetricsTab() {
                 0.75 and 0.50.
                 <br />
                 <br />
-                Categories follow the published KGE′ classification — Good above 0.75, Intermediate
-                0.50–0.75, Poor 0.00–0.50, Very poor −0.41–0.00, Unacceptable at or below −0.41.
-                NSE reuses the names and the upper boundaries but has no Very poor band, because its
-                benchmark <em>is</em> 0: at or below it the forecast is already beaten by the observed
-                mean. That last part is derived from what the benchmark means rather than taken from
-                an NSE paper.
+                Categories follow the KGE′ classification of Thiemig et al. (2015, citing Kling
+                2012) — Good above 0.75, Intermediate 0.50–0.75, Poor 0.00–0.50 — whose bottom band
+                is a single <em>Very poor</em> at or below 0. Splitting that at −0.41 into Very poor
+                and Unacceptable is this app's own extension, grafting the mean-flow benchmark onto
+                Thiemig's scheme; no source publishes 0.75/0.50 together with a −0.41 floor. NSE
+                reuses the names and the upper boundaries but has no Very poor band, because its
+                benchmark <em>is</em> 0: at or below it the forecast is already beaten by the
+                observed mean. Both of those last two points are derived from what the benchmarks
+                mean rather than taken from a paper.
                 <br />
                 <br />
                 <strong>The two panels use different colours on purpose.</strong> They are two
@@ -2988,7 +3003,7 @@ export function MetricsTab() {
               <br />
               <strong>Best</strong> names the correction that moved furthest{' '}
               <em>toward</em> the metric's ideal, which is not the same as furthest up. β and γ are
-              ratios targeting 1 and can miss either way, so 1.4 is as wrong as 0.7 and an
+              ratios targeting 1 and can miss either way, so 1.4 is worse than 1.0 and so is 0.7 and an
               over-correction is not an improvement. "neither" means both corrections left that
               metric worse than raw.
               <span style={notePara}>
@@ -3206,12 +3221,17 @@ export function MetricsTab() {
                 selector to watch the correction's effect change as the forecast closes on the event.
                 <br />
                 <br />
-                The run list is the union of both corrections: the local map drops runs whose mapping
-                ran to infinity, while SABER drops none, so a run can be available for one and not
-                the other. If none of the survivors reaches the crest — which happens when the local
-                map excluded exactly the runs that forecast the event — this falls back to the middle
-                of the list, and the selection-bias banner above will be saying why. The title and
+                The run list is the union of both corrections. The local map drops a run only when
+                it has no timesteps or when its calendar month has no usable mapping; SABER drops
+                none. So a run can be available for one correction and not the other. If none of the
+                survivors reaches the crest this falls back to the middle of the list. The title and
                 legend always name which correction is drawn.
+                <br />
+                <br />
+                Neither correction drops a run for producing an extreme value. An above-range
+                forecast is kept and counted — excluding those would preferentially delete the runs
+                that predicted the event, leaving a corrected score computed mostly from the runs
+                that missed it.
               </PlotNote>
             </div>
           )}

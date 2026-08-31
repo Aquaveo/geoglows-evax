@@ -255,7 +255,7 @@ export function OverviewTab() {
           cadence off one <em>whole</em> run and reports the median spacing; the metrics read it off
           lead 1, the densest day a run publishes. An RFS run changes spacing across its horizon —
           all 51 members share one time index, but that index is finer early than late — so a run
-          that is 3-hourly for a week and 6-hourly after has no single cadence, and the two readings
+          whose spacing changes partway along has no single cadence, and the two readings
           legitimately differ. Where they do, the resolution notice shown beside the metrics is the
           one the metrics actually used.
         </p>

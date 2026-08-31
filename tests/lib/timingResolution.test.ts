@@ -21,7 +21,13 @@ const shape = (ms: number) => 20 + 300 * Math.exp(-(((ms - peakMs) / H) ** 2) / 
 const obsTime = Array.from({ length: 16 * 8 }, (_, i) => new Date(ev0 + i * 3 * H));
 const obs = { time: obsTime, values: obsTime.map((d) => shape(d.getTime())) };
 
-/** 20 perfect runs, 3-hourly for 7 days then 6-hourly — as RFS publishes. */
+/**
+ * 20 perfect runs, 3-hourly for 7 days then 6-hourly.
+ *
+ * The 7-day breakpoint is chosen for the test, not observed from real RFS
+ * output — what the test needs is that the spacing CHANGES partway through, not
+ * that it changes on any particular day. Do not quote it as RFS behaviour.
+ */
 function perfectRuns(): Map<string, ForecastRun> {
   const out = new Map<string, ForecastRun>();
   for (let r = 0; r < 20; r++) {
