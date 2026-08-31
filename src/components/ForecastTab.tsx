@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { PROSE_MAX } from '../prose';
 import { useApp } from '../state/appState';
 import { fetchForecasts } from '../data/rfs';
 import { dailyDateRange, reorganizeByLead, statSeries, type StatKey } from '../lib/leadBuckets';
@@ -156,7 +157,7 @@ export function ForecastTab() {
         <h2 style={h2}>Forecast download</h2>
         {!app.riverId && <p>Pick a river_id on the Setup tab first.</p>}
         {app.riverId && !csvBounds && (
-          <p style={{ color: '#b91c1c' }}>
+          <p style={{ maxWidth: PROSE_MAX, color: '#b91c1c' }}>
             Upload the event observations CSV on the Setup tab first — the event window defaults
             are derived from it.
           </p>
@@ -197,12 +198,12 @@ export function ForecastTab() {
 
             {validation.ok ? (
               <>
-                <p style={{ color: '#444', margin: '0 0 0.4rem' }}>
+                <p style={{ maxWidth: PROSE_MAX, color: '#444', margin: '0 0 0.4rem' }}>
                   Event window: <code>{ymd(validation.eventStart)}</code> …{' '}
                   <code>{ymd(validation.eventEnd)}</code> ({validation.eventDays} day
                   {validation.eventDays === 1 ? '' : 's'}).
                 </p>
-                <p style={{ color: '#555', margin: '0 0 0.75rem', fontSize: '0.9rem' }}>
+                <p style={{ maxWidth: PROSE_MAX, color: '#555', margin: '0 0 0.75rem', fontSize: '0.9rem' }}>
                   Forecast init range (event start − {INIT_LOOKBACK_DAYS} days through event end):{' '}
                   <code>{forecastDates[0]}</code> …{' '}
                   <code>{forecastDates[forecastDates.length - 1]}</code> ({forecastDates.length}{' '}
@@ -210,7 +211,7 @@ export function ForecastTab() {
                 </p>
               </>
             ) : (
-              <p style={{ color: '#b91c1c', margin: '0 0 0.5rem' }}>{validation.reason}</p>
+              <p style={{ maxWidth: PROSE_MAX, color: '#b91c1c', margin: '0 0 0.5rem' }}>{validation.reason}</p>
             )}
 
             <button
@@ -225,7 +226,7 @@ export function ForecastTab() {
                   : 'Download all forecasts'}
             </button>
             {app.forecasts.size > 0 && (
-              <p style={{ color: '#1a7f37', marginTop: '0.5rem' }}>
+              <p style={{ maxWidth: PROSE_MAX, color: '#1a7f37', marginTop: '0.5rem' }}>
                 {app.forecasts.size} forecast{app.forecasts.size === 1 ? '' : 's'} cached in memory.
               </p>
             )}
@@ -272,12 +273,12 @@ export function ForecastTab() {
         <section style={section}>
           <h2 style={h2}>Event vs forecast lead time</h2>
           {!app.eventData ? (
-            <p style={{ color: '#b91c1c', margin: 0 }}>
+            <p style={{ maxWidth: PROSE_MAX, color: '#b91c1c', margin: 0 }}>
               Upload the event observations CSV on the Setup tab to compare against forecasts.
             </p>
           ) : (
             <>
-              <p style={{ color: '#555', fontSize: '0.9rem', margin: '0 0 0.75rem' }}>
+              <p style={{ maxWidth: PROSE_MAX, color: '#555', fontSize: '0.9rem', margin: '0 0 0.75rem' }}>
                 Each line holds lead time constant and walks forward through the event: every
                 forecast start date contributes the timesteps that fall that far ahead of its own
                 initialization. Short leads are blue, long leads red. Leads {' '}

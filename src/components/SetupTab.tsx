@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PROSE_MAX } from '../prose';
 import { useApp } from '../state/appState';
 import { getReachMetadata } from '../data/reachMetadata';
 import { getAndCacheRetrospective } from '../data/rfs';
@@ -79,7 +80,7 @@ export function SetupTab() {
           {error && <span style={{ color: '#b91c1c' }}>{error}</span>}
         </div>
         {app.reach && (
-          <p style={{ color: '#555', marginTop: '0.5rem' }}>
+          <p style={{ maxWidth: PROSE_MAX, color: '#555', marginTop: '0.5rem' }}>
             Reach <code>{app.reach.riverId}</code> loaded.
             {app.reach.lat != null && app.reach.lon != null && (
               <> Lat <code>{app.reach.lat}</code>, lon <code>{app.reach.lon}</code>.</>
@@ -166,13 +167,13 @@ export function SetupTab() {
                 >
                   Find the event
                 </button>
-                <p style={{ ...note, marginTop: '0.5rem' }}>
+                <p style={{ maxWidth: PROSE_MAX, ...note, marginTop: '0.5rem' }}>
                   The app finds the highest value within 10 days of the date, then opens the window
                   at the last minimum before the rise and closes it once flow is back near that
                   level. Use the upload option instead if you have sub-daily data for the event —
                   a daily record caps peak timing at 24 hours no matter how the window is chosen.
                 </p>
-                {extractNote && <p style={{ ...note, color: '#1d4ed8' }}>{extractNote}</p>}
+                {extractNote && <p style={{ maxWidth: PROSE_MAX, ...note, color: '#1d4ed8' }}>{extractNote}</p>}
               </>
             )}
           </div>
@@ -191,7 +192,7 @@ export function SetupTab() {
         />
         {app.eventData && (
           <>
-            <p style={{ ...note, marginTop: '0.75rem' }}>
+            <p style={{ maxWidth: PROSE_MAX, ...note, marginTop: '0.75rem' }}>
               Stored at its native{' '}
               <strong>{detectCadence(app.eventData)?.label ?? 'unknown'}</strong> resolution — see{' '}
               <em>Temporal resolution</em> on the Overview tab for how this sets the comparison grid.
@@ -227,7 +228,7 @@ export function SetupTab() {
       )}
 
       {app.eventData && !app.retro && (
-        <p style={{ ...note, marginBottom: '2rem' }}>
+        <p style={{ maxWidth: PROSE_MAX, ...note, marginBottom: '2rem' }}>
           Load a reach above to compare the uploaded event against the retrospective simulation.
         </p>
       )}
@@ -285,7 +286,7 @@ function WindowAdvice({ event }: { event: TimeSeries }) {
       {w.daysAfter} after, opening at {w.baseline.toFixed(0)} m³/s and closing at{' '}
       {w.endFlow.toFixed(0)}, with the peak of {w.peakValue.toFixed(0)} m³/s on{' '}
       <code>{w.peakDay}</code>.
-      <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.2rem', lineHeight: 1.6 }}>
+      <ul style={{ maxWidth: PROSE_MAX, margin: '0.5rem 0 0', paddingLeft: '1.2rem', lineHeight: 1.6 }}>
         <li>
           Open the window at the last low point <em>before</em> the rise so the whole rising limb is
           inside, and close it once flow is back near that level. Both ends at comparable flow means
@@ -308,7 +309,7 @@ function WindowAdvice({ event }: { event: TimeSeries }) {
         {w.dataLimited && <li style={{ color: '#7f1d1d' }}>{w.dataLimited}.</li>}
       </ul>
       {!matches && (
-        <p style={{ margin: '0.5rem 0 0' }}>
+        <p style={{ maxWidth: PROSE_MAX, margin: '0.5rem 0 0' }}>
           The series currently loaded runs <code>{loaded.start}</code> to <code>{loaded.end}</code>.
           Enter the suggested dates on the Forecast tab, or re-cut the upload to match.
         </p>
@@ -342,7 +343,7 @@ function EventQualityNotice({
   return (
     <div style={qualityNotice}>
       <strong>Check the event data before trusting the metrics.</strong>
-      <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.2rem', lineHeight: 1.6 }}>
+      <ul style={{ maxWidth: PROSE_MAX, margin: '0.4rem 0 0', paddingLeft: '1.2rem', lineHeight: 1.6 }}>
         {q.totalMissingSteps > 0 && (
           <li>
             <strong>{q.totalMissingSteps} missing {q.cadenceLabel} value

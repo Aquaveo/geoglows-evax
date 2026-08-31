@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../state/appState';
+import { PROSE_MAX } from '../prose';
 import { reorganizeByLead, memberSeries, statSeries, type StatKey } from '../lib/leadBuckets';
 import type { LeadBucket, RpThresholds, TimeSeries } from '../lib/types';
 import {
@@ -221,21 +222,21 @@ function NoCategoriesAlert({ peak, obsRp }: { peak: number; obsRp: RpThresholds 
     <div style={noCategoriesAlert}>
       <strong>No categorical scores — the observed flow never reached the 2-year threshold.</strong>
       {haveBoth && (
-        <p style={{ margin: '0.45rem 0' }}>
+        <p style={{ maxWidth: PROSE_MAX, margin: '0.45rem 0' }}>
           Observed peak in this window <strong>{peak.toFixed(1)} m³/s</strong> against a 2-year
           threshold of <strong>{(t2 as number).toFixed(1)} m³/s</strong> — short by a factor of{' '}
           <strong>{ratio.toFixed(1)}×</strong>.
         </p>
       )}
-      <p style={{ margin: '0.45rem 0' }}>
+      <p style={{ maxWidth: PROSE_MAX, margin: '0.45rem 0' }}>
         Return-period categories are built from the observations, so with nothing above the lowest
         threshold there is only one category and nothing to classify. That hides the{' '}
         <strong>contingency matrix</strong>, the <strong>per-threshold table</strong> (POD, FAR, CSI,
         frequency bias) and <strong>RPS/RPSS</strong>. It is not caused by the forecast — a model
         that missed the flood completely still scores, as CSI&nbsp;=&nbsp;0.
       </p>
-      <p style={{ margin: '0.45rem 0 0.2rem' }}>Worth checking, in order:</p>
-      <ul style={{ margin: 0, paddingLeft: '1.2rem', lineHeight: 1.6 }}>
+      <p style={{ maxWidth: PROSE_MAX, margin: '0.45rem 0 0.2rem' }}>Worth checking, in order:</p>
+      <ul style={{ maxWidth: PROSE_MAX, margin: 0, paddingLeft: '1.2rem', lineHeight: 1.6 }}>
         {unitSuspect && (
           <li>
             <strong>Units.</strong> That {ratio.toFixed(1)}× gap is close to the 35.31 ft³/s per m³/s
@@ -379,7 +380,7 @@ function MissingRowsNote({ rows }: { rows: ComparisonRow[] }) {
       </strong>{' '}
       The dashes run by <em>row</em>, not by column: this table summarises results the other blocks
       produce, so a metric is either available for every variant or for none.
-      <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.2rem' }}>
+      <ul style={{ maxWidth: PROSE_MAX, margin: '0.4rem 0 0', paddingLeft: '1.2rem' }}>
         {needsButton.length > 0 && (
           <li>
             {needsButton.join(', ')} — press <strong>Compute probabilistic metrics</strong> in the
@@ -446,7 +447,7 @@ function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
       so it cannot inherit a short gauge record's gaps — and because nothing can fail, all{' '}
       {c.forecasts.size} runs are kept. Nothing is excluded, so the surviving set is not a biased
       subset.
-      <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.2rem', lineHeight: 1.6 }}>
+      <ul style={{ maxWidth: PROSE_MAX, margin: '0.4rem 0 0', paddingLeft: '1.2rem', lineHeight: 1.6 }}>
         {c.unusableMonths.length > 0 && (
           <li style={{ color: '#8a6d1f' }}>
             <strong>
@@ -547,14 +548,14 @@ function CorrectionBanner({ c, clampedNegatives }: { c: BiasCorrection; clampedN
   return (
     <div style={correctionBanner}>
       {c.selectionBias && (
-        <p style={{ margin: '0 0 0.5rem', color: '#7f1d1d' }}>
+        <p style={{ maxWidth: PROSE_MAX, margin: '0 0 0.5rem', color: '#7f1d1d' }}>
           <strong>Corrected metrics are withheld for this event.</strong> {c.selectionBias}
         </p>
       )}
       <strong>Bias-corrected</strong> by monthly quantile mapping of the forecasts onto the
       uploaded observed record ({c.observedCadence}), using the retrospective (
       {c.simulatedCadence}) as the simulated distribution.
-      <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.2rem' }}>
+      <ul style={{ maxWidth: PROSE_MAX, margin: '0.4rem 0 0', paddingLeft: '1.2rem' }}>
         {c.months.map((m) => (
           <li key={m.month}>
             Month {m.month}:{' '}
@@ -1944,7 +1945,7 @@ export function MetricsTab() {
         description="Did the forecast put the event in the right severity class? Dual-threshold classification of forecast against observed return-period categories: the contingency matrix, MCC and HSS over all categories at once, RPS and RPSS which are the only scores here that know the categories are ordered, the two-by-two scores per exceedance threshold (POD, FAR, CSI, frequency bias), and CSI by lead day in its own panel. All are left raw — the dual thresholds absorb magnitude bias by construction, so correcting the forecasts too would apply the same adjustment twice."
       >
         {!canCompute && (
-          <p style={{ color: '#555' }}>
+          <p style={{ maxWidth: PROSE_MAX, color: '#555' }}>
             Need observed event data, historical observations (for observed return periods), and
             downloaded forecasts before computing metrics.
           </p>
@@ -2054,9 +2055,9 @@ export function MetricsTab() {
             </button>
           </div>
         )}
-        {error && <p style={{ color: '#b91c1c' }}>{error}</p>}
+        {error && <p style={{ maxWidth: PROSE_MAX, color: '#b91c1c' }}>{error}</p>}
         {app.eventReturnPeriod != null && app.eventReturnPeriod > 0 && (
-          <p style={{ color: '#444', marginTop: '0.6rem' }}>
+          <p style={{ maxWidth: PROSE_MAX, color: '#444', marginTop: '0.6rem' }}>
             Observed event return period: <strong>{eventRpLabel}</strong>
           </p>
         )}
@@ -2109,7 +2110,7 @@ export function MetricsTab() {
               </label>
             </div>
             {contingency && contingency.n === 0 && (
-              <p style={{ color: '#b91c1c', marginTop: '0.6rem' }}>
+              <p style={{ maxWidth: PROSE_MAX, color: '#b91c1c', marginTop: '0.6rem' }}>
                 No overlap between the selected forecast series and the event data.
               </p>
             )}
@@ -2389,7 +2390,7 @@ export function MetricsTab() {
         description="Did the forecast get the timing right, independently of magnitude? Peak timing error (Δt_peak) grouped two ways — by lead day, and by forecast initialization — plus first-ascending threshold crossing error (Δt_RP), the warning-time error, per ensemble member. Members are excluded only on facts about their own shape: flat throughout, or a maximum sitting on their first or last sample. The counts are reported beneath each chart, because excluding anything without saying so is survivorship bias."
       >
         {!canComputeTiming && (
-          <p style={{ color: '#555' }}>
+          <p style={{ maxWidth: PROSE_MAX, color: '#555' }}>
             Need observed event data and downloaded forecasts before computing timing metrics.
           </p>
         )}
@@ -2403,12 +2404,12 @@ export function MetricsTab() {
           </button>
         )}
         {!canComputeCrossing && canComputeTiming && (
-          <p style={{ color: '#666', marginTop: '0.6rem', fontSize: '0.9rem' }}>
+          <p style={{ maxWidth: PROSE_MAX, color: '#666', marginTop: '0.6rem', fontSize: '0.9rem' }}>
             Threshold crossing requires both observed and simulated return periods — upload
             historical observations on the Setup tab to enable it.
           </p>
         )}
-        {timingError && <p style={{ color: '#b91c1c' }}>{timingError}</p>}
+        {timingError && <p style={{ maxWidth: PROSE_MAX, color: '#b91c1c' }}>{timingError}</p>}
 
         {!peakTimingByLeadRows && peakByRun && peakByRun.daysBefore.length > 0 && (
           <p style={note}>
@@ -2619,7 +2620,7 @@ export function MetricsTab() {
         description="How close the forecast came in magnitude and shape. KGE' and its decomposition — Pearson correlation r, bias ratio β = μ_f/μ_o, variability ratio γ = CV_f/CV_o (Kling et al., 2012) — then NSE and KGE' side by side, coloured by performance band, by lead day and by forecast initialization. Every number here comes from one scoring pass over the ensemble, so the box plots and the bars cannot disagree. All compare raw discharge, so a bias-corrected variant is available."
       >
         {!canComputeAccuracy && (
-          <p style={{ color: '#555' }}>
+          <p style={{ maxWidth: PROSE_MAX, color: '#555' }}>
             Need observed event data and downloaded forecasts before computing accuracy metrics.
           </p>
         )}
@@ -2773,7 +2774,7 @@ export function MetricsTab() {
             heading is needed here.
           */}
           {!skillLead && !skillRun && (
-            <p style={{ color: '#555' }}>
+            <p style={{ maxWidth: PROSE_MAX, color: '#555' }}>
               Need observed event data and downloaded forecasts before summarising skill.
             </p>
           )}
@@ -2880,7 +2881,7 @@ export function MetricsTab() {
         description="Continuous Ranked Probability Score (CRPS) via the energy-score decomposition (Gneiting & Raftery, 2007): CRPS = MAE component − Spread. Evaluates the 51-member ensemble as a distribution; one scalar per lead day. CRPSS = 1 − CRPS/CRPS_climatology normalises it against a seasonal climatological forecast built from the observed record, which is why it requires the historical observations upload."
       >
         {!canComputeCrps && (
-          <p style={{ color: '#555' }}>
+          <p style={{ maxWidth: PROSE_MAX, color: '#555' }}>
             Need observed event data and downloaded forecasts before computing CRPS.
           </p>
         )}
@@ -2893,7 +2894,7 @@ export function MetricsTab() {
                 : 'Compute probabilistic metrics'}
           </button>
         )}
-        {crpsError && <p style={{ color: '#b91c1c' }}>{crpsError}</p>}
+        {crpsError && <p style={{ maxWidth: PROSE_MAX, color: '#b91c1c' }}>{crpsError}</p>}
 
         {app.crpsResults && (
           <div style={{ marginTop: '0.75rem' }}>
@@ -2957,7 +2958,7 @@ export function MetricsTab() {
                 </PlotNote>
               </div>
             ) : (
-              <p style={{ color: '#666', marginTop: '1rem', fontSize: '0.9rem' }}>
+              <p style={{ maxWidth: PROSE_MAX, color: '#666', marginTop: '1rem', fontSize: '0.9rem' }}>
                 CRPS skill score needs a climatological reference, and that reference must come
                 from the <strong>observed</strong> record — a baseline built from model output is
                 biased wherever the model is, which makes it artificially easy to beat. Upload
@@ -3011,7 +3012,7 @@ export function MetricsTab() {
           SABER, which needs no observations at all, was sitting there ready.
         */}
         {(correctionPending || globalPending) && (
-          <p style={{ color: '#1d4ed8', margin: '0 0 0.45rem' }}>
+          <p style={{ maxWidth: PROSE_MAX, color: '#1d4ed8', margin: '0 0 0.45rem' }}>
             Building {correctionPending && globalPending
               ? 'both corrections'
               : correctionPending
@@ -3022,13 +3023,13 @@ export function MetricsTab() {
           </p>
         )}
         {!correction && !correctionPending && (
-          <p style={{ color: '#555', margin: '0 0 0.45rem' }}>
+          <p style={{ maxWidth: PROSE_MAX, color: '#555', margin: '0 0 0.45rem' }}>
             <strong>Local CDF correction unavailable</strong> —{' '}
             {correctedUnavailableReason ?? 'not available yet.'}
           </p>
         )}
         {(!globalCorrection || globalCorrection.unusable) && !globalPending && (
-          <p style={{ color: '#555', margin: '0 0 0.45rem' }}>
+          <p style={{ maxWidth: PROSE_MAX, color: '#555', margin: '0 0 0.45rem' }}>
             <strong>SABER unavailable</strong> — {globalUnavailableReason ?? 'not available yet.'}
           </p>
         )}
@@ -3180,7 +3181,7 @@ export function MetricsTab() {
                 />
               )}
               {activeCorrected && !activeCorrected.get(activeBiasRun) && (
-                <p style={{ color: '#8a6d1f', margin: '0.4rem 0' }}>
+                <p style={{ maxWidth: PROSE_MAX, color: '#8a6d1f', margin: '0.4rem 0' }}>
                   This run was excluded from the <strong>{biasLabel}</strong> correction — the banner
                   above says why. SABER excludes nothing, so switching the correction at the top will
                   show it.
@@ -3369,7 +3370,7 @@ function ContingencyMatrixTable({ result }: { result: ContingencyResult }) {
           ))}
         </tbody>
       </table>
-      <p style={{ marginTop: '0.6rem', color: '#444' }}>
+      <p style={{ maxWidth: PROSE_MAX, marginTop: '0.6rem', color: '#444' }}>
         <strong>Hits</strong> (diagonal): {hits} &nbsp;|&nbsp;{' '}
         <strong>Underestimation</strong> (lower triangle): {underestimation} &nbsp;|&nbsp;{' '}
         <strong>Overestimation</strong> (upper triangle): {overestimation} &nbsp;|&nbsp;{' '}
@@ -3397,17 +3398,6 @@ function leadOptions(): number[] {
   for (let i = 0; i <= MAX_LEAD; i++) out.push(i);
   return out;
 }
-
-/**
- * Reading measure for every prose block on this page.
- *
- * Was applied to some and not others, so a block's intro ran to the window edge
- * — past 1600px on a wide screen — while the notes below it wrapped at 46rem.
- * Left edges aligned, right edges did not, and the intro was the least readable
- * text on the page despite being the first thing read. The three banners had the
- * same gap.
- */
-const PROSE_MAX = '46rem';
 
 const feasibilityBanner: React.CSSProperties = {
   margin: '0 0 1rem',

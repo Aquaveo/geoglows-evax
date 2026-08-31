@@ -1,4 +1,5 @@
 import { useApp } from '../state/appState';
+import { PROSE_MAX } from '../prose';
 import { detectCadence } from '../lib/ingest/cadence';
 import { chooseGrid } from '../lib/ingest/grid';
 import { ResolutionNotice } from './ResolutionNotice';
@@ -113,7 +114,7 @@ export function OverviewTab() {
           publishes at its own. Every metric therefore compares two series that may not share a
           clock:
         </p>
-        <p style={{ ...p, fontWeight: 600, color: '#1f2937' }}>
+        <p style={{ maxWidth: PROSE_MAX, ...p, fontWeight: 600, color: '#1f2937' }}>
           Comparison happens at the coarser resolution: the finer series is aggregated down, the
           coarser never interpolated up.
         </p>
@@ -270,22 +271,22 @@ export function OverviewTab() {
           out. Correcting the forecasts as well would apply the same adjustment twice. The
           contingency matrix, MCC, HSS, CSI, the per-threshold scores, RPS and the timing metrics
           are therefore left raw, and corrected variants appear only under{' '}
-          <strong>Accuracy</strong>, <strong>Probabilistic</strong> and{' '}
-          <strong>Skill summary</strong>.
+          <strong>Accuracy</strong> and <strong>Probabilistic</strong>.
         </p>
         <p style={p}>
-          Where a corrected variant does exist, the Bias correction block opens with a table putting
-          raw against both corrections on every one of those metrics at once. The charts below it
-          show one correction at a time, so the table is the quickest way to see whether either
-          helped. Read its <em>Best</em> column as movement <em>toward</em> each metric's ideal
-          rather than upward: β and γ target 1 and can miss either way, so an over-correction from
-          0.9 to 1.4 is not an improvement, and CRPS wants to fall.
+          This section sits <strong>last</strong> on the metrics page, because it opens with a table
+          putting raw against both corrections on every affected metric at once — and that table
+          summarises the blocks above it. Read its <em>Best</em> column as movement{' '}
+          <em>toward</em> each metric's ideal rather than upward: β and γ target 1 and can miss
+          either way, so an over-correction from 0.9 to 1.4 is not an improvement, and CRPS wants to
+          fall. The charts below the table show one correction at a time and sit behind a Compute
+          button, since drawing them is the expensive part of this page.
         </p>
 
         <h3 style={h3}>Two methods, offered side by side</h3>
         <p style={p}>
-          All three offer <strong>Raw</strong> plus two corrected options: the methods fail in
-          opposite ways, neither reliably better.
+          Both blocks offer <strong>Raw</strong> plus two corrected options. The methods fail in
+          opposite ways and neither is reliably better.
         </p>
         <p style={p}>
           <strong>
@@ -301,8 +302,8 @@ export function OverviewTab() {
             duration curve quantile mapping (MFDC-QM), evaluated in{' '}
             <a href="https://doi.org/10.1016/j.envsoft.2024.106235" style={link} target="_blank" rel="noreferrer">
               Sanchez Lozano et al. (2025)
-            </a>. Detailed below: fitted to your reach, inheriting the sparsity of the record you
-            upload.
+            </a>. Fitted to your reach from the record you upload, and inheriting that record's
+            sparsity. Detailed below.
           </li>
           <li>
             <strong>SABER</strong> — Stream Analysis for Bias Estimation and Reduction, the RFS
@@ -311,34 +312,56 @@ export function OverviewTab() {
             <a href="https://doi.org/10.3390/hydrology9070113" style={link} target="_blank" rel="noreferrer">
               Hales et al. (2022)
             </a>. Same premise, fitted centrally: simulated against observed curves at gauged
-            reaches, watersheds clustered by flow behaviour so <em>ungauged</em> reaches borrow
-            from gauged ones, a scalar published per month and exceedance probability. It needs
-            nothing from you — the app reads those weights' polynomial form — and smooth fits, not
-            empirical steps, leave no flat inverse: no infinities, no excluded runs. Still
-            experimental, and the training material notes it is{' '}
-            <strong>not applied to the forecast data end users receive</strong>: this app's
+            reaches, watersheds clustered by flow behaviour so <em>ungauged</em> reaches borrow from
+            gauged ones, coefficients published per river and calendar month. It needs nothing from
+            you. Still experimental, and it is{' '}
+            <strong>not applied to the forecast data end users receive</strong> — this app's
             downloads are uncorrected until you choose it.
           </li>
         </ul>
         <p style={p}>
           <strong>Both use gauge data</strong>; the difference is <em>whose</em>. Local Bias
           Correction uses your uploaded record — directly relevant, as sparse as it is. SABER's
-          gauges are chosen centrally, maybe a <em>different, clustered</em> reach: better sampled,
-          not necessarily this river. So a SABER ceiling can sit well below your record's maximum —
-          it belongs to the reference curve, not your gauge.
+          gauges are chosen centrally, possibly at a <em>different, clustered</em> reach: better
+          sampled, not necessarily this river. So a SABER ceiling can sit well below your record's
+          maximum, because it belongs to the reference curve rather than to your gauge.
         </p>
         <p style={p}>
-          SABER's own failure is <strong>saturation</strong>: once the percentile clamps, larger
-          discharges all map to one value and flood magnitudes stop being distinguishable; nor are
-          the polynomial fits guaranteed monotonic. The banner above the corrected metrics counts
-          both; the variant is withheld when essentially everything clamps. A reach with no published
-          transformer does not fall back to an identity — the lookup fails and the variant is
-          withheld with that reason, so SABER is either applied or absent, never silently a no-op.
+          Which to prefer shows in the diagnostics rather than in advance. With a long, well-spread
+          record the local map is better fitted; where your event falls in a month SABER has no
+          usable coefficients for, only the local one is available. Neither is withheld for
+          producing extreme values — see below.
+        </p>
+
+        <h3 style={h3}>Where the published method and the code disagree</h3>
+        <p style={p}>
+          This matters for reading everything below, so it is worth stating plainly. The app is a
+          faithful port of what <code>geoglows</code> does. <code>geoglows</code> is not a faithful
+          implementation of what its own authors published.
         </p>
         <p style={p}>
-          Which to prefer depends on the reach and shows in the diagnostics, not in advance: past
-          the model's simulated range the local is withheld, leaving the global; with a long,
-          well-spread record the local is better fitted.
+          The method's authors <em>do</em> prescribe a rule for forecasts outside the fitted range:
+          clamp the value to the historical range, apply the correction, then multiply by a
+          deviation factor to restore the excess. It appears in the 2023 BYU dissertation that
+          documents the method. <code>geoglows.bias.correct_forecast</code> implements none of it —
+          it is six lines with no range test, no clamp and no flag. A guard did exist in versions
+          1.0 through 1.8.3 (<code>np.clip(func(x), 0, 1)</code>) and was removed in 2.0.0 with no
+          mention in the release notes, so pinning the current version gets the <em>less</em> guarded
+          code. The package's newer routines do guard their tails;{' '}
+          <code>correct_forecast</code> was never brought along.
+        </p>
+        <p style={p}>
+          Nor does the published evaluation reach this regime. The 2025 paper scores the{' '}
+          <em>continuous retrospective simulation</em> at 15,586 gauges by KGE distributions — a
+          setting where an above-range forecast cannot arise at all, and where KGE is nearly blind
+          to the upper tail. Its supplement contains no discussion of extrapolation, tails, extremes
+          or return periods.
+        </p>
+        <p style={p}>
+          So the app reports the ceiling rather than working around it. Verifying what the delivered
+          code produces is the point; substituting the published rule would measure a method nobody
+          is actually running. The consequences are the two subsections below, and both are counted
+          in the banner above the corrected metrics rather than silently absorbed.
         </p>
 
         <h3 style={h3}>The local FDC mapping, in detail</h3>
@@ -654,7 +677,7 @@ export function OverviewTab() {
           flood-skill metric.
         </p>
         <div style={caution}>
-          <p style={{ margin: 0 }}>
+          <p style={{ maxWidth: PROSE_MAX, margin: 0 }}>
             <strong>Both scores move with the length of the uploaded window.</strong> Quiet
             timesteps pile into the "both below the lowest threshold" cell and dominate the
             marginals. At fixed forecast skill, padding with quiet days lifts a forecast that
@@ -665,14 +688,14 @@ export function OverviewTab() {
             count and base rate, never as headline numbers, never across events of different window
             length.
           </p>
-          <p style={{ margin: '0.5rem 0 0' }}>
+          <p style={{ maxWidth: PROSE_MAX, margin: '0.5rem 0 0' }}>
             <strong>Nor are they independent checks.</strong> The MCC and HSS formulae share the
             numerator N·c − Σ tₖpₖ and differ only in denominator: they cannot disagree on sign, so
             agreement is arithmetic, not corroboration. The multi-category MCC also has no floor of
             −1 — the bound depends on category count and marginals — so negative values have no
             fixed reference.
           </p>
-          <p style={{ margin: '0.5rem 0 0' }}>
+          <p style={{ maxWidth: PROSE_MAX, margin: '0.5rem 0 0' }}>
             Only scores that exclude the correct-negative cell are invariant to window length. Of
             those shown here that means CSI = a/(a+b+c), POD, FAR and frequency bias. Rare-event
             scores built on the false-alarm <em>rate</em> are not invariant — padding drives that
@@ -696,7 +719,7 @@ export function OverviewTab() {
           correlation between forecast and observed category.
         </p>
         <div style={caution}>
-          <p style={{ margin: 0 }}>
+          <p style={{ maxWidth: PROSE_MAX, margin: 0 }}>
             <strong>Their order is fixed by the sign, not by where the skill came from.</strong>{' '}
             MCC's denominator is never larger than HSS's, so any forecast better than chance has
             MCC ≥ HSS necessarily, and any forecast worse than chance has MCC ≤ HSS. Across 60,000
@@ -705,7 +728,7 @@ export function OverviewTab() {
             on normal flow rather than the extreme — it cannot happen at all unless the forecast is
             already worse than chance, where MCC simply reports the failure more sharply.
           </p>
-          <p style={{ margin: '0.5rem 0 0' }}>
+          <p style={{ maxWidth: PROSE_MAX, margin: '0.5rem 0 0' }}>
             What the gap between them does measure is <strong>frequency bias</strong>: how far the
             forecast's category frequencies sit from the observed ones. Matched marginals make the
             two denominators equal and the scores identical; skewed marginals separate them. That
@@ -1060,7 +1083,7 @@ const sectionStyle: React.CSSProperties = {
   background: '#fff',
 };
 const h2: React.CSSProperties = { marginTop: 0, fontSize: '1.15rem' };
-const caution: React.CSSProperties = {
+const caution: React.CSSProperties = { maxWidth: PROSE_MAX,
   margin: '0.75rem 0',
   padding: '0.8rem 1rem',
   border: '1px solid #fcd34d',
@@ -1074,8 +1097,8 @@ const caution: React.CSSProperties = {
 const notePara: React.CSSProperties = { display: 'block', marginTop: '0.5rem' };
 const link: React.CSSProperties = { color: '#1d4ed8', textDecoration: 'underline' };
 const h3: React.CSSProperties = { marginTop: '1.25rem', marginBottom: '0.4rem', fontSize: '1rem' };
-const p: React.CSSProperties = { margin: '0.5rem 0', lineHeight: 1.55, color: '#222' };
-const pMono: React.CSSProperties = {
+const p: React.CSSProperties = { maxWidth: PROSE_MAX, margin: '0.5rem 0', lineHeight: 1.55, color: '#222' };
+const pMono: React.CSSProperties = { maxWidth: PROSE_MAX,
   margin: '0.5rem 0',
   padding: '0.5rem 0.75rem',
   background: '#f6f7f9',
@@ -1084,7 +1107,7 @@ const pMono: React.CSSProperties = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
   fontSize: '0.95rem',
 };
-const ul: React.CSSProperties = { margin: '0.4rem 0 0.6rem 1.25rem', lineHeight: 1.55, color: '#222' };
+const ul: React.CSSProperties = { maxWidth: PROSE_MAX, margin: '0.4rem 0 0.6rem 1.25rem', lineHeight: 1.55, color: '#222' };
 const table: React.CSSProperties = { borderCollapse: 'collapse', marginTop: '0.5rem', width: '100%' };
 const th: React.CSSProperties = {
   textAlign: 'left',
