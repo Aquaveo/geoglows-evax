@@ -31,6 +31,11 @@ export function OverviewTab() {
           numerical weather prediction. It scores one flood event's forecasts against observed
           gauge data across lead times of 0–15 days and all 51 members.
         </p>
+        <p style={p}>
+          To use this app you will need a reachID from RFS and observed data. You want one file with
+          a long record of observed data. Then you can have either a date of an event, or a file with
+          specifically the data from the event. (EDIT ME)
+        </p>
 
         <h3 style={h3}>Why ensemble verification is different</h3>
         <p style={p}>
@@ -49,33 +54,18 @@ export function OverviewTab() {
             score can express.
           </li>
           <li>
-            <strong>CSI does neither.</strong> All 51 members are pooled into one contingency table
-            per lead and scored once. Taking the median of 51 separate CSIs collapses at the high
-            thresholds, where most members produce the same degenerate table — its ability to rank a
-            known-better forecast is close to chance. See its own section
-            below.
+            <strong>Spread is a result, not a defect.</strong> Members disagreeing is the forecast
+            stating how certain it is; the failure case is the opposite, a narrow spread around the
+            wrong answer. Only the collective scores can see it.
           </li>
-          <li>Spread is itself informative — a wide spread at the right time is desirable.</li>
         </ul>
 
         <h3 style={h3}>Structure of the verification framework</h3>
         <p style={p}>
-          Four families cover complementary aspects of forecast quality. None alone tells the whole
-          story — good timing can accompany poor magnitude, good categorical skill poor
-          probabilistic calibration — so read them together as a diagnostic portrait of model
-          behavior.
-        </p>
-        <p style={p}>
-          Two families are also affected by something other than forecast error: RFS is global and
-          can run systematically high or low at a single reach — one running 40% low scores badly
-          on magnitude however well it caught the event's shape and timing.{' '}
-          <strong>Bias correction</strong> separates the two: the metrics section's Accuracy and
-          Probabilistic blocks each offer a raw view plus up to two corrected ones — one fitted to
-          your uploaded record, one from centrally published per-river coefficients. Both are
-          conditional and often unavailable; each says why on the selector.
-          Detailed in the <em>Bias correction</em> section below. Categorical and Timing need none:
-          their dual-threshold design absorbs magnitude bias by construction, as their own section
-          explains.
+          This web application divides the forecast evaluation into four families of metrics. None
+          alone tells the whole story — good timing can accompany poor magnitude, good categorical
+          skill poor probabilistic calibration — so read them together as a diagnostic portrait of
+          model behavior.
         </p>
         <table style={table}>
           <thead>
@@ -115,11 +105,11 @@ export function OverviewTab() {
       <section style={sectionStyle}>
         <h2 style={h2}>Temporal resolution</h2>
 
-        <h3 style={h3}>The rule</h3>
+        <h3 style={h3}>Handling mismatched resolutions</h3>
         <p style={p}>
           Uploaded observations arrive at any interval — 15-minute, hourly, 3-hourly, daily; RFS
           publishes at its own. Every metric therefore compares two series that may not share a
-          clock:
+          clock.
         </p>
         <p style={{ maxWidth: PROSE_MAX, ...p, fontWeight: 600, color: '#1f2937' }}>
           Comparison happens at the coarser resolution: the finer series is aggregated down, the
@@ -133,30 +123,25 @@ export function OverviewTab() {
           and every pair still rests on a real observation.
         </p>
 
-        <h3 style={h3}>The forecast is not one resolution</h3>
+        <h3 style={h3}>RFS Forecast</h3>
         <p style={p}>
-          A single RFS run changes spacing across its own horizon — typically 3-hourly for the first
-          week, coarser after. All 51 members share one time index, so they never disagree with each
-          other; the index itself is simply denser at short lead than long. Three consequences run
-          through everything below.
+          The RFS forecast temporal spacing changes partway through its horizon — finer early,
+          coarser late. All 51 members share one time index, so they never disagree with each other;
+          the index is simply denser at short lead. Three consequences:
         </p>
         <ul style={ul}>
           <li>
-            <strong>The comparison grid comes from lead 1</strong>, the densest day a run publishes.
-            That is deliberate — it keeps the near field at full resolution — but it means the later
-            leads sit on a grid finer than their own publishing interval.
+            The comparison grid comes from lead 1, the densest day a run publishes. Deliberate, but
+            it leaves later leads on a grid finer than their own publishing interval.
           </li>
           <li>
-            <strong>Later leads carry fewer pairs.</strong> Not because the forecast is worse there,
-            but because fewer values were published. The banner above the metrics reports the range
-            rather than a single figure for this reason, and each lead is gated on its own count, so
-            the long leads blank out first.
+            Later leads carry fewer pairs — fewer values were published, not worse ones. Each lead
+            is gated on its own count, so long leads blank out first.
           </li>
           <li>
-            <strong>Timing numbers are quantised differently by lead.</strong> A peak can only be
-            placed on a sample that exists, so at a coarse lead the nearest available instant may be
-            hours from the true crest. The timing panels shade that resolution as a band, and draw a
-            bar hollow when its median falls inside — see <em>Peak timing</em> below.
+            A peak can only be placed on a sample that exists, so at a coarse lead the nearest
+            instant may be hours from the true crest. Timing bars are drawn hollow when the
+            difference is smaller than that spacing; the crossing panel shades it as a band.
           </li>
         </ul>
 
@@ -178,40 +163,33 @@ export function OverviewTab() {
           </li>
         </ul>
         <p style={p}>
-          <strong>Why it is a choice.</strong> A threshold can only be compared against a quantity
-          of its own kind, and these thresholds inherit whatever you uploaded:{' '}
-          <code>returnPeriodsFromSeries</code> fits Gumbel-I to annual maxima at the record's{' '}
-          <em>native</em> resolution. A daily upload — which for most gauge services means daily{' '}
-          <em>mean</em> discharge — gives a threshold on daily means; a 15-minute upload gives one on
-          instantaneous peaks. Same code, two different kinds of threshold, and only you know which
-          you have. That inheritance applies to the <em>observed</em> thresholds only: the simulated
-          set is always fitted to the daily retrospective, so on a sub-daily upload the two halves of
-          the dual threshold are not fitted at the same resolution.
+          Your return-period thresholds are fitted to the record you upload, at whatever resolution
+          it arrived in. A daily record — usually daily <em>mean</em> discharge — gives a threshold
+          on daily means; a 15-minute record gives one on instantaneous peaks. A threshold can only
+          be compared against a quantity of its own kind, and only you know which you have. The
+          simulated thresholds are always daily, so on a sub-daily upload the two halves are not
+          fitted alike.
         </p>
         <p style={p}>
-          <strong>And no summary is safe in general — they fail in opposite directions.</strong> On
-          a bin with realistic within-day shape the maximum crosses a 10-year-ish level{' '}
-          <strong>7.2×</strong> as often as the mean, inflating the exceedance count. But on a
-          flashy event a 280 m³/s peak 1.2 hours wide, binned to 3 hours, survives the maximum and
-          is reported as 204 by the median and 190 by the mean — erasing an exceedance that
-          genuinely occurred.
+          No summary is safe in general, and they fail in opposite directions. On a bin with normal
+          within-day variation the maximum crosses a high threshold far more often than the mean
+          does, inflating the exceedance count. But a short, sharp peak binned to a coarser interval
+          survives the maximum and is flattened by the median and the mean, erasing an exceedance
+          that really happened.
         </p>
         <p style={p}>
-          The median is the default for <strong>comparability</strong>, not for being
-          least-distorting. Only the finer side is summarised, and a value reported at a coarser
-          resolution already represents something typical of its period rather than an instantaneous
-          peak — so taking the median of the finer side puts the same kind of quantity on both
-          sides, which neither the mean nor the maximum reliably does. Which is <em>right</em>
-          depends on how flashy your event is relative to the grid, so the app checks rather than
-          assuming: where the choice would change the event's return-period classification, the
-          Categorical block says so and shows the peak each summary gives.
+          The median is the default for comparability, not for being least distorting. Only the
+          finer side gets summarised, and a value already reported at a coarser resolution
+          represents something typical of its period rather than an instant — so the median puts the
+          same kind of quantity on both sides. Which is right depends on your event, so the app
+          checks: if the choice would change the event's return-period classification, the
+          Categorical block says so and shows what each summary gives.
         </p>
         <p style={p}>
-          Finally, this is aggregation over <em>time</em>, applied to each member separately — a
-          51-member ensemble stays 51 trajectories throughout. Combining members is a different
-          choice, made in the Contingency matrix block and described there. And none of it bites
-          unless your data is finer than the grid: with a daily gauge on a daily grid every bin
-          holds one value and all three choices agree.
+          This aggregates over time, member by member — 51 members stay 51 trajectories. Combining
+          members is a separate choice, made in the Contingency matrix block. And none of it matters
+          unless your data is finer than the grid: on a daily gauge with a daily grid every bin holds
+          one value and all three agree.
         </p>
 
         <h3 style={h3}>Consequences</h3>
@@ -244,6 +222,11 @@ export function OverviewTab() {
             resolutions and comparison grid appear here.
           </p>
         )}
+        <p style={p}>
+          The coarser input always sets the comparison resolution. Nothing is interpolated up to a
+          finer grid, because that would invent samples the data does not contain and make every
+          metric look better-sampled than it is.
+        </p>
         {/*
           OUTSIDE the conditional, deliberately. This caveat used to sit in the
           `else` branch, so it rendered only while there was no data and vanished
@@ -272,36 +255,22 @@ export function OverviewTab() {
           well it captured shape and timing.
         </p>
         <p style={p}>
-          The categorical metrics need no correction. Their{' '}
-          <strong>dual-threshold design</strong> — explained below — compares observations against
-          observed return periods and forecasts against simulated ones, so magnitude bias cancels
-          out. Correcting the forecasts as well would apply the same adjustment twice. The
-          contingency matrix, MCC, HSS, CSI, the per-threshold scores, RPS and the timing metrics
-          are therefore left raw, and corrected variants appear only under{' '}
-          <strong>Accuracy</strong> and <strong>Probabilistic</strong>.
-        </p>
-        <p style={p}>
-          This section sits <strong>last</strong> on the metrics page, because it opens with a table
-          putting raw against both corrections on every affected metric at once — and that table
-          summarises the blocks above it. Read its <em>Best</em> column as movement{' '}
-          <em>toward</em> each metric's ideal rather than upward: β and γ target 1 and can miss
-          either way, so an over-correction from 0.9 to 1.4 is not an improvement, and CRPS wants to
-          fall. The charts below the table show one correction at a time and sit behind a Compute
-          button, since drawing them is the expensive part of this page.
+          The categorical metrics need no correction. Their <strong>dual-threshold design</strong> —
+          explained below — compares observations against observed return periods and forecasts
+          against simulated ones, so magnitude bias cancels out. Correcting the forecasts as well
+          would apply the same adjustment twice. The contingency matrix, MCC, HSS, CSI, the
+          per-threshold scores, RPS and the timing metrics are therefore left raw, and corrected
+          variants appear only under <strong>Accuracy</strong> and <strong>Probabilistic</strong>.
         </p>
 
-        <h3 style={h3}>Two methods, offered side by side</h3>
+        <h3 style={h3}>Bias Correction Methods</h3>
         <p style={p}>
-          Both blocks offer <strong>Raw</strong> plus two corrected options. The methods fail in
-          opposite ways and neither is reliably better.
+          Both blocks offer <strong>Raw</strong> plus two corrected options. Raw is the forecasts you
+          would normally receive from RFS.
         </p>
         <p style={p}>
-          <strong>
-            Both fit on the retrospective against observations, then apply that transform to
-            forecasts — assuming both share the same error.
-          </strong>{' '}
-          They need not: retrospective meteorology is observed, forecast meteorology forecast, and
-          nothing here measures the gap — a correction can be faithful and still wrong.
+          Both fit on the retrospective against observations, then apply that transform to forecasts
+          — assuming both share the same error. This is not an accurate assumption in all cases.
         </p>
         <ul style={ul}>
           <li>
@@ -314,16 +283,13 @@ export function OverviewTab() {
           </li>
           <li>
             <strong>SABER</strong> — Stream Analysis for Bias Estimation and Reduction, the RFS
-            "Global Bias Correction", applied through{' '}
-            <code>geoglows.bias.discharge_transform</code> and described in{' '}
+            "Global Bias Correction", as described in{' '}
             <a href="https://doi.org/10.3390/hydrology9070113" style={link} target="_blank" rel="noreferrer">
               Hales et al. (2022)
             </a>. Same premise, fitted centrally: simulated against observed curves at gauged
             reaches, watersheds clustered by flow behaviour so <em>ungauged</em> reaches borrow from
             gauged ones, coefficients published per river and calendar month. It needs nothing from
-            you. Still experimental, and it is{' '}
-            <strong>not applied to the forecast data end users receive</strong> — this app's
-            downloads are uncorrected until you choose it.
+            you. It is still experimental.
           </li>
         </ul>
         <p style={p}>
@@ -333,46 +299,10 @@ export function OverviewTab() {
           sampled, not necessarily this river. So a SABER ceiling can sit well below your record's
           maximum, because it belongs to the reference curve rather than to your gauge.
         </p>
-        <p style={p}>
-          Which to prefer shows in the diagnostics rather than in advance. With a long, well-spread
-          record the local map is better fitted; where your event falls in a month SABER has no
-          usable coefficients for, only the local one is available. Neither is withheld for
-          producing extreme values — see below.
-        </p>
-
-        <h3 style={h3}>What the published evaluation does and does not cover</h3>
-        <p style={p}>
-          <strong>This app does not depart from anything.</strong> It reproduces{' '}
-          <code>geoglows.bias.correct_forecast</code> bit for bit — 19 cases assert exact
-          floating-point equality against outputs generated from <strong>geoglows 2.2.0</strong>
-          (numpy 2.2.3, scipy 1.15.2, pandas 2.3.0) — because reproducing it exactly is the only way
-          to evaluate it. Everything in the two subsections after this is behaviour of the
-          published method, not a choice made here.
-        </p>
-        <p style={p}>
-          Those fixtures are what make the next claim first-hand rather than hearsay: the delivered
-          code carries <strong>no guard</strong> for forecasts outside the fitted range, and the
-          reference's own outputs include the infinities. Measured, forecasts of 178, 324, 810, 3,239 and 161,950 m³/s on a realistic June pair all came
-          out at the same corrected value, and some above-range inputs return{' '}
-          <em>+Infinity</em> instead. That is what the ceiling subsection below describes.
-        </p>
-        <p style={p}>
-          <strong>And the published evaluation does not reach that regime.</strong> Sanchez Lozano et
-          al. (2025) scores the <em>continuous retrospective simulation</em> against gauge records by
-          KGE — a setting where a forecast above the simulated maximum cannot arise, since there is
-          no forecast. So the paper's evidence that MFDC-QM works does not extend to the
-          above-range case, and KGE is in any event weakly sensitive to the upper tail. This is not a
-          criticism of the paper: it evaluated what it set out to evaluate. It is a caution against
-          reading its result as validation of the behaviour you will see here on a flood.
-        </p>
-        <p style={p}>
-          Longer notes on the method's history and its documentation live in the repository rather
-          than here, since parts of that trail we could not verify from primary sources directly.
-        </p>
 
         <h3 style={h3}>The local FDC mapping, in detail</h3>
         <p style={p}>
-          The GEOGLOWS training material covers both:{' '}
+          To learn more about how bias correction works, visit the GEOGLOWS training materials:{' '}
           <a href="https://training.geoglows.org/rfs/bias-correction/bias-correction/" style={link} target="_blank" rel="noreferrer">
             bias correction
           </a>{' '}
@@ -381,34 +311,6 @@ export function OverviewTab() {
             forecasted bias correction
           </a>{' '}
           for forecasts.
-        </p>
-        <p style={p}>
-          A TypeScript port of <code>geoglows.bias.correct_forecast</code> (the Python package
-          keeps the programme name), verified bit-for-bit against it. Monthly empirical quantile
-          mapping:
-        </p>
-        <ul style={ul}>
-          <li>
-            Build a histogram CDF from the simulated retrospective for the forecast's calendar
-            month; convert each forecast value to an exceedance probability.
-          </li>
-          <li>
-            Build the uploaded observed record's CDF for the same month; read the flow back out at
-            that probability.
-          </li>
-          <li>
-            The forecast now sits on the observed distribution's scale, clipped at zero.
-          </li>
-        </ul>
-        <p style={p}>
-          Correction applies to raw forecast values <em>before</em> lead bucketing and grid
-          aggregation: quantile mapping is nonlinear, so correcting a daily mean differs from
-          averaging corrected sub-daily values.
-        </p>
-        <p style={p}>
-          It needs the <strong>historical observations</strong> upload, not the event CSV: a few
-          days cannot form a monthly distribution. It also gates CRPSS, which needs an observed
-          climatological baseline.
         </p>
 
         <h3 style={h3}>The ceiling: extreme forecasts stop being distinguishable</h3>
@@ -435,119 +337,6 @@ export function OverviewTab() {
           preferentially deletes the ones that saw the event coming, leaving a corrected score
           computed mostly from the runs that missed it. The banner counts them instead, which matters
           most when the runs landing on the ceiling are the runs that forecast your flood.
-        </p>
-
-        <h3 style={h3}>Low flows: two different outcomes, decided by your record</h3>
-        <p style={p}>
-          Below the simulated monthly minimum the mapping extrapolates off the bottom of the observed
-          distribution, and what happens next depends on whether the observed month has anything in
-          its lowest histogram bin.
-        </p>
-        <ul style={ul}>
-          <li>
-            <strong>Empty lowest bin</strong> — the inverse slope divides by zero, the result is NaN,
-            and the reference keeps the <em>raw</em> value. The forecast passes through uncorrected.
-          </li>
-          <li>
-            <strong>Any value in it</strong> — the slope is finite, the flow maps at or below zero,
-            and the clip at 0 turns a real low flow into <strong>exactly 0</strong>.
-          </li>
-        </ul>
-        <p style={p}>
-          A single 0 anywhere in your record flips every sub-minimum timestep from the first outcome
-          to the second — and a clamped negative gauge reading is exactly such a value. The app
-          matches the reference bit for bit here and counts both outcomes rather than changing
-          either.
-        </p>
-        <p style={p}>
-          Whether the zeros are <em>right</em> depends on the river. An intermittent one genuinely
-          reads 0, its observed distribution genuinely has mass there, and mapping the lowest
-          forecasts onto it is the correction working. A perennial one reads negative only from
-          backwater, ice or a drifting sensor — and those are clamped up to 0 on upload, so the zeros
-          are manufactured and the correction inherits them. The banner reports how many negative
-          readings your record had clamped, which is the number that separates the two cases.
-        </p>
-
-        <h3 style={h3}>SABER's own limits</h3>
-        <p style={p}>
-          <strong>Where these come from.</strong> Not from the literature. Every limit below was
-          read from <code>discharge_transform</code>'s arithmetic or measured by probing the
-          published coefficients directly — the app inspects each month's transform across its own
-          valid range before trusting any corrected number. Hales et al. (2022) describes the
-          clustering and fitting method; it is not a source for how the fitted transforms behave at
-          their edges, and we did not find one. Treat these as properties of the delivered
-          coefficients that the app measures and reports, not as published caveats.
-        </p>
-        <p style={p}>
-          SABER cannot produce an infinity — its transforms are smooth polynomial fits rather than
-          empirical steps — but it saturates for a different reason. The exceedance percentile is
-          clamped to [0, 100], and once it clamps, every discharge beyond that point maps to one
-          value. Flood magnitudes stop being distinguishable exactly as they do under the local
-          ceiling.
-        </p>
-        <p style={p}>
-          <strong>It saturates at both ends, and the banner reports each separately.</strong> The
-          low-flow end clamps at percentile 100, the high-flow end at 0, and a month can do both.
-          The high end is the one that matters for flood verification, so it is named explicitly —
-          "every discharge at or above X maps to Y" — alongside the low end rather than instead of
-          it. Each figure is measured inside its own saturated region, so the value quoted is one
-          that inputs there really produce.
-        </p>
-        <ul style={ul}>
-          <li>
-            <strong>Not guaranteed monotonic.</strong> Nothing in a polynomial fit constrains it
-            to preserve order, so a larger forecast <em>can</em> transform to a smaller corrected
-            value. The app tests each month across its range and the banner names any where it
-            occurs — so this is checked on your river rather than assumed either way.
-          </li>
-          <li>
-            <strong>Inputs outside the fitted range are clipped before transforming</strong> — down
-            to the monthly maximum, or up to the monthly minimum. Both are counted, because a value
-            clipped up has lost just as much information as one clipped down.
-          </li>
-          <li>
-            <strong>Withheld, not degraded, when it cannot apply.</strong> A river with no published
-            transformer fails the lookup rather than falling back to an identity. A river whose
-            published coefficients for one of your event's months are not numbers withholds the
-            variant <em>entirely</em>, with no tolerance threshold — correcting only the remaining
-            months would score those metrics on a different stretch of the event than the raw ones
-            sitting beside them in the table. And it is withheld when essentially everything clamps,
-            since a corrected series that is constant carries no magnitude information at all.
-          </li>
-        </ul>
-
-        <h3 style={h3}>Limits that apply to both</h3>
-        <ul style={ul}>
-          <li>
-            <strong>The distributions are daily.</strong> Forecasts are typically sub-daily, so their
-            peaks compress toward the observed daily maximum: β and KGE′ can improve while peak
-            magnitude degrades.
-          </li>
-          <li>
-            <strong>A short observed record lowers the ceiling.</strong> The local mapping cannot
-            produce a flow larger than the record holds that month, so a few years of data visibly
-            flattens extreme forecasts.
-          </li>
-          <li>
-            <strong>The correction is in-sample.</strong> Your observed record almost certainly
-            contains the event being verified, so corrected scores are optimistic by an unquantified
-            amount.
-          </li>
-          <li>
-            <strong>A dry month collapses the mapping.</strong> An all-zero observed month drives
-            every corrected value to almost zero; the banner flags a flat record.
-          </li>
-          <li>
-            <strong>Values already missing in the download pass through uncorrected.</strong> Every
-            member of a run shares one time index, so a gap is a genuine gap rather than members
-            being published on different clocks. The banner counts these, because they explain holes
-            in a corrected series that the mapping did not cause.
-          </li>
-        </ul>
-        <p style={p}>
-          Bias correction fixes magnitude, not skill: wrong timing or hydrograph shape — visible as
-          low r — is beyond it, so distrust a corrected score that improves sharply while r stays
-          poor.
         </p>
       </section>
 
