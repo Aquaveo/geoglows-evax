@@ -683,7 +683,7 @@ export function MetricsTab() {
    */
   const [biasDiagnostics, setBiasDiagnostics] = useState(false);
 
-  /** Whether the accuracy block's twelve figures have been asked for. */
+  /** Whether the accuracy block's six figures have been asked for. */
   const [accuracyCharts, setAccuracyCharts] = useState(false);
 
   const [computingCrps, setComputingCrps] = useState(false);
@@ -2210,8 +2210,7 @@ export function MetricsTab() {
               Compare <strong>RPSS</strong> across events, not RPS. Raw RPS is a mean over
               timesteps, so a longer window full of quiet days drags it toward zero whatever the
               skill — but the climatology reference absorbs the same easy steps, so the ratio
-              barely moves. Measured across an 800-fold increase in window length: CSI 0.003,
-              RPSS 0.028, MCC 0.070, HSS 0.074.
+              barely moves — far less than MCC or HSS do over the same change.
             </PlotNote>
           </div>
         )}
@@ -2316,8 +2315,7 @@ export function MetricsTab() {
               Both grade all {app.eventReturnPeriod ? 'the' : ''} return-period categories at once,
               so they answer "did the forecast place the severity correctly" rather than "did it
               call an exceedance". Both also include correct negatives, so both move when you
-              lengthen the uploaded window — measured drift over an 800-fold increase is 0.070 for
-              MCC and 0.074 for HSS. <strong>CSI is the check on that</strong>, and it now has its
+              lengthen the uploaded window. <strong>CSI is the check on that</strong>, and it has its
               own panel below, because it is only defined on a two-by-two table and cannot share
               this axis honestly.
             </PlotNote>
@@ -2359,19 +2357,16 @@ export function MetricsTab() {
               comparable; the unselected thresholds stay faint for context.
               <br />
               <br />
-              <strong>Why carry it at all:</strong> it is the only score in the app that is
-              essentially exactly invariant to how long a window you uploaded. Padding an event with
-              quiet days adds only correct negatives, and CSI never touches that cell. Over an
-              800-fold increase in window length CSI moves 0.003, against 0.028 for RPSS, 0.070 for
-              MCC and 0.074 for HSS. If the chance-corrected scores look healthier than this one,
-              quiet timesteps are flattering them.
+              <strong>Why carry it at all:</strong> padding an event with quiet days adds only
+              correct negatives, and CSI never touches that cell — so unlike MCC and HSS it does not
+              climb just because you uploaded a longer window. If the chance-corrected scores look
+              healthier than this one, quiet timesteps are flattering them.
               <br />
               <br />
               Scored on the {csiLead.members} members <strong>pooled into one table per lead</strong>,
               not as the median of {csiLead.members} separate scores. The median construction
-              collapses at the high thresholds, where most members produce the same degenerate table
-              — its ability to rank a known-better forecast on a single event measures 0.576, a coin
-              flip.
+              collapses at the high thresholds, where most members produce the same degenerate
+              table, so the median ends up decided by a handful of timesteps.
               <br />
               <br />
               A hollow red marker means fewer than three <em>distinct</em> observed exceedances fed
@@ -2641,7 +2636,7 @@ export function MetricsTab() {
 
         {/*
           A button, for the same reason the bias section has one: this block
-          draws TWELVE Plotly figures once the skill bars moved in, and it is
+          draws SIX Plotly figures once the skill bars moved in, and it is
           the drawing that costs, not the numbers. Every value here comes from
           one memoized scoring pass (leadMemberScores) that runs regardless,
           so this gates rendering only — pressing it computes nothing. The label
@@ -3049,7 +3044,7 @@ export function MetricsTab() {
 
         {/*
           A button, like every other metric block has, because this section
-          renders SEVEN Plotly figures and used to render them unbidden. The
+          renders THREE Plotly figures and used to render them unbidden. The
           corrections themselves are cheap — measured ~50 ms each — and stay
           automatic, because the variant selectors in the blocks above depend
           on them; gating those behind this button would make every selector

@@ -14,7 +14,7 @@ import { computeCsi } from './csi';
  * categorical chart does, and it degrades badly on a single event: at the
  * 25-year threshold most members produce the same degenerate table, so the
  * median is decided by a handful of timesteps and its ordering accuracy against
- * a known-better forecast measures 0.576, which is a coin flip. Pooling the
+ * a known-better forecast is close to chance. Pooling the
  * members into one table per lead and scoring that once uses every member as
  * evidence rather than as a separate experiment.
  *
@@ -22,16 +22,15 @@ import { computeCsi } from './csi';
  * accepted multi-category CSI, and the standard practice is to report it per
  * threshold. That is why it cannot share an axis with the multi-category MCC and
  * HSS: collapsing to "at or above the 2-year level" is an easier question than
- * grading all K categories, and CSI reads 0.08-0.12 higher on a severe event for
+ * grading all K categories, and CSI reads somewhat higher on a severe event for
  * that reason alone. Giving it its own panel with the threshold named turns that
  * from a hidden inconsistency into the point of the chart.
  *
  * The reason to carry CSI at all is that it is the only score here that is
  * essentially exactly invariant to how long a window was uploaded: padding an
  * event with quiet days adds only correct negatives, and CSI = a/(a+b+c) never
- * touches the correct-negative cell. Measured over an 800-fold increase in
- * window length, CSI moves 0.003 while RPSS moves 0.028, MCC 0.070 and HSS
- * 0.074.
+ * touches the correct-negative cell — so unlike MCC and HSS it does not climb
+ * simply because a longer window was uploaded.
  */
 
 export interface CsiThresholdSeries {

@@ -52,7 +52,7 @@ export function OverviewTab() {
             <strong>CSI does neither.</strong> All 51 members are pooled into one contingency table
             per lead and scored once. Taking the median of 51 separate CSIs collapses at the high
             thresholds, where most members produce the same degenerate table — its ability to rank a
-            known-better forecast measured 0.576 on a single event, a coin flip. See its own section
+            known-better forecast is close to chance. See its own section
             below.
           </li>
           <li>Spread is itself informative — a wide spread at the right time is desirable.</li>
@@ -904,9 +904,8 @@ export function OverviewTab() {
           experiments and the distinction matters. Adding pure quiet timesteps cannot move a score
           that ignores the correct-negative cell — that is algebra, not measurement. Genuinely
           <em>extending</em> a window adds timesteps that get classified, some as hits or false
-          alarms, so these scores do move a little. Measured across an 800-fold increase in window
-          length: <strong>CSI 0.003, RPSS 0.028, MCC 0.070, HSS 0.074</strong>. This is the only
-          place those figures are quoted; the RPS and CSI sections refer back here.
+          alarms, so even these scores move a little. They move far less than MCC and HSS do, which
+          is the property that makes them the antidote.
         </p>
         <p style={p}>
           <strong>Frequency bias is not a skill score</strong>, and that is what makes it useful.
@@ -953,7 +952,7 @@ export function OverviewTab() {
           Scored on the 51 members <strong>pooled into one table per lead</strong>, not as the median
           of 51 separate scores. The median construction collapses at the high thresholds, where most
           members produce the same degenerate table — its ability to rank a known-better forecast on
-          a single event measures 0.576, a coin flip. Sample size is reported as{' '}
+          a single event is close to chance. Sample size is reported as{' '}
           <em>distinct observed exceedance timesteps</em>: 51 members scoring the same three flood
           days is three events, not 153, and leads with fewer than three are drawn hollow.
         </p>
