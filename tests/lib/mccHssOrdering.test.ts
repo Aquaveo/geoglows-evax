@@ -25,6 +25,8 @@ function sweep(trials: number) {
   let checked = 0;
   let mccBelowHssWhileBothPositive = 0;
   let orderViolations = 0;
+  const mccs: number[] = [];
+  const hsss: number[] = [];
   for (let t = 0; t < trials; t++) {
     const K = 2 + Math.floor(rand() * 4); // 2..5 categories
     const m: number[][] = Array.from({ length: K }, () => new Array<number>(K).fill(0));
@@ -40,6 +42,8 @@ function sweep(trials: number) {
     const hss = computeHss(m);
     if (!Number.isFinite(mcc) || !Number.isFinite(hss)) continue;
     checked += 1;
+    mccs.push(mcc);
+    hsss.push(hss);
     // Claim: better than chance => MCC >= HSS; worse than chance => MCC <= HSS.
     const tol = 1e-12;
     if (hss > tol && mcc < hss - tol) {
@@ -48,7 +52,25 @@ function sweep(trials: number) {
     }
     if (hss < -tol && mcc > hss + tol) orderViolations += 1;
   }
-  return { checked, orderViolations, mccBelowHssWhileBothPositive };
+  // Pearson correlation between the two scores over the same sweep. The page
+  // tells readers their agreement is arithmetic rather than corroboration, and
+  // quoted a figure for it that was not pinned anywhere.
+  const n = mccs.length;
+  const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+  const mMcc = mean(mccs);
+  const mHss = mean(hsss);
+  let cov = 0;
+  let vM = 0;
+  let vH = 0;
+  for (let i = 0; i < n; i++) {
+    const dm = mccs[i] - mMcc;
+    const dh = hsss[i] - mHss;
+    cov += dm * dh;
+    vM += dm * dm;
+    vH += dh * dh;
+  }
+  const correlation = cov / Math.sqrt(vM * vH);
+  return { checked, orderViolations, mccBelowHssWhileBothPositive, correlation };
 }
 
 describe('MCC and HSS order is fixed by sign', () => {
@@ -57,11 +79,16 @@ describe('MCC and HSS order is fixed by sign', () => {
     if (r.checked < 1000 || r.orderViolations > 0) {
       throw new Error(
         `SWEEP scored=${r.checked} violations=${r.orderViolations} ` +
-          `mccBelowHssBothPositive=${r.mccBelowHssWhileBothPositive}`,
+          `mccBelowHssBothPositive=${r.mccBelowHssWhileBothPositive} ` +
+          `correlation=${r.correlation.toFixed(4)}`,
       );
     }
     expect(r.checked).toBeGreaterThan(1000);
     expect(r.orderViolations).toBe(0);
     expect(r.mccBelowHssWhileBothPositive).toBe(0);
+    // Quoted on the categorical-scores chart as 0.994, so pin it to that. The
+    // sweep is deterministic, so this is exact up to the rounding shown; if the
+    // sweep's construction ever changes, the page's figure has to change with it.
+    expect(r.correlation).toBeCloseTo(0.994, 3);
   });
 });

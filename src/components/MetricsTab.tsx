@@ -2307,8 +2307,9 @@ export function MetricsTab() {
               <br />
               <strong>MCC and HSS will track each other closely, and that is expected</strong> —
               they are built from the same numerator and differ only in their denominator, so
-              across thousands of contingency matrices they correlate at 0.99 and never disagree
-              on sign. Treat their agreement as arithmetic, not as two methods confirming each
+              across a 60,000-matrix sweep they correlate at <strong>0.994</strong> and never once
+              disagree on sign — a deterministic test in this repository, so the figure is
+              reproducible rather than remembered. Treat their agreement as arithmetic, not as two methods confirming each
               other.
               <br />
               <br />
@@ -2354,8 +2355,7 @@ export function MetricsTab() {
               multi-category version, and the standard practice is to report it once per exceedance
               threshold, which is what the selector does. That is also why it cannot sit on the
               MCC/HSS axis above: collapsing to "at or above the 2-year level" is an easier question
-              than grading every category, and CSI reads about 0.08 to 0.12 higher on a severe event
-              for that reason alone. Every line here is the same kind of quantity, so this axis is
+              than grading every category, so CSI reads higher for that reason alone. Every line here is the same kind of quantity, so this axis is
               comparable; the unselected thresholds stay faint for context.
               <br />
               <br />
