@@ -2132,32 +2132,10 @@ export function MetricsTab() {
                   </div>
                 </div>
                 <PlotNote>
-                  these are the two series the table was built from, so every count above
-                  corresponds to points here. Black is observed, blue is the selected forecast
-                  series, and each marker flags a timestep that landed in the wrong return-period
-                  category — orange triangles up for over-forecasting, red triangles down for
-                  under-forecasting. Hover one to see which categories it confused.
-                  <br />
-                  <br />
-                  The coloured bands are the return-period zones a value gets sorted into, running
-                  yellow at the 2-year level through orange and red and then purple at 50 and 100
-                  years. Only the levels this event reached are drawn, so on a 10-year event the
-                  topmost band is red rather than purple. Classification is
-                  dual-threshold, so there are two sets: <strong>observed</strong> zones are shown
-                  by default because they classify the black line, and{' '}
-                  <strong>simulated</strong> zones start hidden — click that legend entry to swap
-                  to the cut points the blue forecast line is judged against. Showing both at once
-                  is unreadable, so compare them by toggling.
-                  <br />
-                  <br />
-                  That toggle is the explanation for most surprises here. A timestep can count as
-                  a miss even where the two lines nearly touch, if each sits in a different zone
-                  under its own thresholds. And if the two zone sets are far apart when you flip
-                  between them, the model has a magnitude bias at this reach — meaning the
-                  categorical scores are partly measuring that bias rather than forecast skill.
-                  Only zones at or below the event's own return period are drawn, since
-                  classification is capped there.
-                </PlotNote>
+              observed flow in black against the chosen forecast series. Coloured bands are the
+              return-period zones each value is sorted into. Where the black line and the forecast
+              sit in different bands, that timestep is an off-diagonal cell in the table.
+            </PlotNote>
               </>
             )}
           </div>
@@ -2173,41 +2151,10 @@ export function MetricsTab() {
               })}
             />
             <PlotNote>
-              the only categorical score here that knows the categories are <em>ordered</em>. MCC
-              and HSS score "one return period low" exactly like "four return periods low"; RPS
-              penalises by how far off the forecast was, which is the whole point of a severity
-              ladder. It also reads the 51 members as a probability distribution rather than
-              scoring each one separately and taking a median.
-              <br />
-              <br />
-              <strong>Top panel:</strong> forecast RPS against the climatological RPS it is scored
-              against — same units, so the shaded gap between them is the skill. A high
-              climatology curve means the period was genuinely hard to forecast.{' '}
-              <strong>Bottom panel:</strong> that gap as a fraction. Note the two panels read in{' '}
-              <strong>opposite directions</strong>: RPS is an error, so lower is better and 0 is
-              perfect, while RPSS is a skill score, so <strong>higher is better and 1 is
-              perfect</strong>. On the lower panel 0 means the forecast matched climatology exactly,
-              green means it beat climatology and red means climatology beat it. A negative RPSS is
-              not a small number — it means you would have done better ignoring the forecast.
-              <br />
-              <br />
-              <strong>What RPSS is measured against.</strong> The reference is the observed record
-              you uploaded, restricted to <strong>±15 days of the event's calendar days</strong> —
-              the same rule CRPSS uses. Whole-record would ask the reference to predict a wet-season
-              flood from the dry season's distribution, so beating it would partly reward the
-              forecast for knowing what month it is. RPSS is <strong>withheld rather than
-              estimated</strong> for any of three reasons, and the figure names which one applied:
-              no historical record in season — it would otherwise be scored against a climatology
-              built from the very event being scored; nothing in the window crossing even the lowest
-              threshold, where climatology is right by default and the ratio explodes; or a
-              reference so nearly perfect that the same thing happens. RPS itself is a proper score
-              and is still shown.
-              <br />
-              <br />
-              Compare <strong>RPSS</strong> across events, not RPS. Raw RPS is a mean over
-              timesteps, so a longer window full of quiet days drags it toward zero whatever the
-              skill — but the climatology reference absorbs the same easy steps, so the ratio
-              barely moves — far less than MCC or HSS do over the same change.
+              lower is better; 0 is a perfect forecast. The dashed line is the climatological
+              reference — below it the forecast beat climatology, above it did not. RPSS on the
+              second panel is the same comparison expressed as a skill score, where 1 is perfect and
+              0 means no better than climatology.
             </PlotNote>
           </div>
         )}
@@ -2260,20 +2207,10 @@ export function MetricsTab() {
               </table>
             </div>
             <PlotNote>
-              every score here <strong>excludes correct negatives</strong>, which makes all four
-              exactly unaffected by how long a window you uploaded — unlike MCC and HSS. Pooled
-              across all members and leads, because splitting by lead leaves too few exceedances
-              per cell to read.
-              <br />
-              <br />
-              Read <em>down</em> the columns: POD falling and FAR rising as the threshold climbs is
-              skill decaying with severity, which a single collapsed number hides.{' '}
-              <strong>Frequency bias</strong> is the one to check first, and it is not a skill
-              score — it is how many exceedances were forecast divided by how many occurred, so
-              1.0 means the right <em>number</em> of warnings whether or not they fell on the right
-              days. Below 1 at every threshold, decaying toward 0 at the top, is the direct
-              fingerprint of systematic under-prediction. It is also what the gap between MCC and
-              HSS has been measuring indirectly all along.
+              one row per exceedance threshold, most severe at the bottom. Read down the rows:
+              hit rate falling and false-alarm ratio rising as severity climbs is skill decaying
+              with magnitude. Frequency bias near 1 means the right number of warnings were issued,
+              whether or not they landed on the right days.
             </PlotNote>
           </div>
         )}
@@ -2295,26 +2232,10 @@ export function MetricsTab() {
               )}
             />
             <PlotNote>
-              each line is the median across the 51 members at that lead and the band is the
-              interquartile range, so band height is member disagreement. This is a summary: the
-              full member distribution is not shown, because sixteen leads of overlaid box plots
-              is unreadable.
-              <br />
-              <br />
-              <strong>MCC and HSS will track each other closely, and that is expected</strong> —
-              they are built from the same numerator and differ only in their denominator, so
-              across a 60,000-matrix sweep they correlate at <strong>0.994</strong> and never once
-              disagree on sign — a deterministic test in this repository, so the figure is
-              reproducible rather than remembered. Treat their agreement as arithmetic, not as two methods confirming each
-              other.
-              <br />
-              <br />
-              Both grade all {app.eventReturnPeriod ? 'the' : ''} return-period categories at once,
-              so they answer "did the forecast place the severity correctly" rather than "did it
-              call an exceedance". Both also include correct negatives, so both move when you
-              lengthen the uploaded window. <strong>CSI is the check on that</strong>, and it has its
-              own panel below, because it is only defined on a two-by-two table and cannot share
-              this axis honestly.
+              each line is the median across members at that lead, and the band is the middle
+              half of them, so band height is member disagreement. Both scores fall as lead grows on
+              a forecast losing skill. They track each other closely by construction — treat that as
+              arithmetic, not as two methods agreeing.
             </PlotNote>
           </div>
         )}
@@ -2346,30 +2267,9 @@ export function MetricsTab() {
               })}
             />
             <PlotNote>
-              CSI is <strong>only defined on a two-by-two table</strong> — there is no accepted
-              multi-category version, and the standard practice is to report it once per exceedance
-              threshold, which is what the selector does. That is also why it cannot sit on the
-              MCC/HSS axis above: collapsing to "at or above the 2-year level" is an easier question
-              than grading every category, so CSI reads higher for that reason alone. Every line here is the same kind of quantity, so this axis is
-              comparable; the unselected thresholds stay faint for context.
-              <br />
-              <br />
-              <strong>Why carry it at all:</strong> padding an event with quiet days adds only
-              correct negatives, and CSI never touches that cell — so unlike MCC and HSS it does not
-              climb just because you uploaded a longer window. If the chance-corrected scores look
-              healthier than this one, quiet timesteps are flattering them.
-              <br />
-              <br />
-              Scored on the {csiLead.members} members <strong>pooled into one table per lead</strong>,
-              not as the median of {csiLead.members} separate scores. The median construction
-              collapses at the high thresholds, where most members produce the same degenerate
-              table, so the median ends up decided by a handful of timesteps.
-              <br />
-              <br />
-              A hollow red marker means fewer than three <em>distinct</em> observed exceedances fed
-              that lead. The hover gives the exact count, and it is the number that matters: 51
-              members scoring the same three flood days is three events, not 153. It is not a skill
-              score — 0 means no hits, not "no better than chance".
+              one line per exceedance threshold, with the selected one solid and the rest faint for
+              context. Higher is better. A hollow marker means too few observed exceedances at that
+              lead to read the value.
             </PlotNote>
           </div>
         )}
@@ -2428,23 +2328,11 @@ export function MetricsTab() {
               })}
             />
             <PlotNote>
-              bars left of the line predicted the peak early, right of it late. The bar is the
-              median across members; the heavy whisker is the middle half and the light one behind
-              it the full range — together they say whether the bulk of members agreed on the sign,
-              and whether <em>any</em> member got it right.
-              <br />
-              <br />
-              A <strong>hollow</strong> bar sits inside that lead's own sampling resolution, so its
-              offset is the crest falling between two available instants rather than a timing error.
-              Hover gives the spacing. A <strong>›</strong> or <strong>‹</strong> marks a row whose
-              range runs past the axis, which is scaled to the bars and the middle half so one
-              straggler cannot flatten everything else.
-              <br />
-              <br />
-              <strong>Check the member count before reading a bar.</strong> Members are excluded
-              only for having no peak to time — flat throughout, or peaking on their own first or
-              last sample. Nothing is dropped for forecasting badly, so a wide range at long lead
-              means the ensemble had no peak to agree on.
+              one row per lead day. Bars left of the line predicted the peak early, right of it
+              late. The heavy whisker is the middle half of the members, the light one the full
+              range. A hollow bar sits within that lead's own sample spacing, so it is not a
+              measured bias. A › or ‹ marks a row running past the axis. Hover for the member
+              count.
             </PlotNote>
           </>
         )}
@@ -2467,71 +2355,9 @@ export function MetricsTab() {
               })}
             />
             <PlotNote>
-              one row per initialization, so the <em>sign</em> reads first: bars left of the line
-              predicted the peak early, bars right of it late. The bar is the median across members,
-              the heavy whisker the middle half and the light one the full range,
-              clipped at the axis with a <strong>›</strong> where it continues. Colour is
-              redundant with side on purpose — the
-              axis already answers the question, so nothing is lost in greyscale or to
-              colour-blindness. A <strong>hollow</strong> bar sits within its own run's sampling
-              resolution: the run publishes coarser samples late in its horizon, so a peak placed
-              on the nearest available instant produces an offset of one step that is not a timing
-              error. The hover gives the spacing for each row.
-              {peakByRun && (
-                <>
-                  <br />
-                  <br />
-                  <strong>What is not in these boxes.</strong> Of the member-slots this panel could
-                  have scored, {peakByRun.noPeakMembers.toLocaleString()} predicted no peak at all
-                  (flat throughout, so there is no argmax to time) and{' '}
-                  {peakByRun.censoredMembers.toLocaleString()} were censored for putting their
-                  maximum on their own first or last sample, where the true peak is probably outside
-                  the series and Δt would be a bound rather than a measurement.{' '}
-                  {peakByRun.runsNotCoveringPeak > 0 && (
-                    <>
-                      {peakByRun.runsNotCoveringPeak.toLocaleString()} run
-                      {peakByRun.runsNotCoveringPeak === 1 ? '' : 's'} never reached the observed
-                      peak within the uploaded record, so there was nothing to time against.{' '}
-                    </>
-                  )}
-                  {peakByRun.runsAfterPeak > 0 && (
-                    <>
-                      {peakByRun.runsAfterPeak.toLocaleString()} were initialized after the peak had
-                      already passed.{' '}
-                    </>
-                  )}
-                  {peakByRun.unusableRuns > 0 && (
-                    <>
-                      {peakByRun.unusableRuns.toLocaleString()} run
-                      {peakByRun.unusableRuns === 1 ? '' : 's'} had too little overlap with the
-                      record to find a shape in — under three samples — or no usable
-                      initialization date.{' '}
-                    </>
-                  )}
-                  {peakByRun.emptyRuns > 0 && (
-                    <>
-                      {peakByRun.emptyRuns.toLocaleString()} run
-                      {peakByRun.emptyRuns === 1 ? '' : 's'} had every member excluded, so they
-                      contribute no box at all rather than an empty one.{' '}
-                    </>
-                  )}
-                  {peakByRun.unusableMembers > 0 && (
-                    <>
-                      {peakByRun.unusableMembers.toLocaleString()} member slot
-                      {peakByRun.unusableMembers === 1 ? '' : 's'} held no finite value inside the
-                      overlap.{' '}
-                    </>
-                  )}
-                  Nothing is dropped for being a <em>poor</em> forecast — both exclusions are facts
-                  about the shape of the series, not judgements about its quality, so a member that
-                  timed the crest badly is still in the box.
-                  <br />
-                  <br />
-                  The search is unbounded over each run's overlap with the record. An earlier
-                  version looked only within ±72 h of the observed peak, which capped |Δt| at 72 h
-                  by construction and quietly censored the members that got the timing most wrong.
-                </>
-              )}
+              one row per forecast run, oldest at the top. Bars left of the line predicted the peak
+              early, right of it late. A hollow bar sits within that run's own sample spacing, so it
+              is not a measured bias. Hover for the member count.
             </PlotNote>
           </>
         )}
@@ -2568,17 +2394,10 @@ export function MetricsTab() {
               />
             </div>
             <PlotNote>
-              hours between the forecast first crossing the selected threshold on the way up and
-              the observation doing the same — the warning-time error. The grey band is the lead's
-              own sampling resolution, and it matters more here than for peak timing: a crossing can
-              only be detected on a sample that exists, so at the coarse leads a crossing can only be
-              detected at or after the true one, which pushes the error <em>late</em> rather than
-              scattering both ways. Below zero the forecast
-              warned early, above zero late. Only members that crossed the threshold in{' '}
-              <em>both</em> forecast and observation can contribute, so check the detection table
-              below before trusting a box: a tight box built from three members is a small
-              sample, not skill, and members counted under "Obs ✓ / Fcst ✗" are missed warnings that this
-              plot cannot show.
+              hours between the forecast crossing the selected threshold and the observation
+              doing the same. Below zero the forecast warned early, above zero late. The grey band
+              is the lead's sampling resolution — differences inside it are not measurable. Only
+              members that crossed on both sides appear, so check the detection table below.
             </PlotNote>
             <DetectionTable detection={app.crossingDetections[crossingRp]} />
           </div>
@@ -2674,21 +2493,10 @@ export function MetricsTab() {
                 })}
               />
               <PlotNote>
-                the shape-and-timing component of KGE': how well the rise and fall of the forecast
-                lines up with the observation, ignoring magnitude entirely. A member can score near
-                1 here while being badly wrong in absolute terms — that combination points to a
-                scaling problem, which β and γ below will show. Low r instead means the hydrograph
-                shape or timing itself was wrong.
-                <br />
-                <br />
-                This panel <em>is</em> re-scored under each correction, so r does move — but no
-                correction can re-time a hydrograph, and none will rescue a genuinely mistimed
-                forecast. Where a correction
-                saturates a member flat, r stops existing for that member rather than improving:
-                correlation is undefined without variability, so the member drops out of this box
-                instead of scoring badly in it. Check the member count in the hover before reading a
-                corrected variant as an improvement.
-              </PlotNote>
+              how well the rise and fall of the forecast lines up with the observation, ignoring
+              magnitude. 1 is perfect. A member can score near 1 here and still be far off in
+              absolute terms — that points to a scaling problem, which β and γ below will show.
+            </PlotNote>
             </div>
           )}
   
@@ -2786,47 +2594,12 @@ export function MetricsTab() {
                 })}
               />
               <PlotNote>
-                each row is one lead day scored two ways, and{' '}
-                <strong>each panel is coloured against its own benchmark</strong>. The dotted line is
-                the score of a forecast that just predicts the observed mean flow at every timestep:
-                0 for <strong>NSE</strong>, which is already normalised by the observed variance, and
-                −0.41 for <strong>KGE′</strong>, which is not. Left of that dotted line the forecast
-                is worse than doing nothing. Dashed lines mark the remaining category boundaries: 0.75
-                and 0.50 on both panels, plus 0 on KGE′, where it is the Poor/Very poor edge rather
-                than a benchmark.
-                <br />
-                <br />
-                Categories follow the KGE′ classification of Thiemig et al. (2015, citing Kling
-                2012) — Good above 0.75, Intermediate 0.50–0.75, Poor 0.00–0.50 — whose bottom band
-                is a single <em>Very poor</em> at or below 0. Splitting that at −0.41 into Very poor
-                and Unacceptable is this app's own extension, grafting the mean-flow benchmark onto
-                Thiemig's scheme; no source publishes 0.75/0.50 together with a −0.41 floor. NSE
-                reuses the names and the upper boundaries but has no Very poor band, because its
-                benchmark <em>is</em> 0: at or below it the forecast is already beaten by the
-                observed mean. Both of those last two points are derived from what the benchmarks
-                mean rather than taken from a paper.
-                <br />
-                <br />
-                <strong>The two panels use different colours on purpose.</strong> They are two
-                classifications, not one — the boundaries differ and KGE′ has a Very poor band that
-                NSE does not — so a shared palette invited reading a colour on one panel as the same
-                verdict on the other. KGE′ keeps green–amber–red, the convention of the scheme it
-                follows; NSE is blue–brown. The legend is split per metric and carries each one's own
-                numeric ranges, which a shared legend could not have done correctly.
-                <br />
-                <br />
-                Colour is a convenience, not the record. Every boundary is also drawn as a line, and
-                each bar names its category in the hover.
-                <br />
-                <br />
-                Read a row straight across: strong on KGE' but weak on NSE usually means the shape
-                was right and the magnitude was not, because NSE punishes squared error on the peak
-                while KGE' spreads the penalty across three components. Bars are the median across
-                members. When both selectors in this block are set the same way, the KGE′ bar is the
-                same number as the black median line on the KGE′ box plot above — they come from one
-                scoring pass — but the two selectors are independent, so check them before comparing.
-                NSE has no box plot. Hover gives the pair count behind each row.
-              </PlotNote>
+              one row per lead day, NSE and KGE′ side by side. Longer bars to the right are
+              better. Colour is the performance band, and each metric has its own palette and
+              legend because their scales differ — do not compare a colour across the two panels.
+              Dotted lines mark each metric's mean-flow benchmark; left of it the forecast is worse
+              than predicting the average.
+            </PlotNote>
             </div>
           )}
   
@@ -2842,19 +2615,9 @@ export function MetricsTab() {
                 })}
               />
               <PlotNote>
-                the same two scores, but one row per forecast run rather than per lead day — so
-                nothing is stitched together, and each row is a real model run judged against the
-                observations it overlaps. Read top to bottom to replay the event: rows should
-                improve as initialization approaches the event, and the row where colour first turns
-                green is the run that first got the event right.
-                <br />
-                <br />
-                Runs initialized well before the event overlap it only briefly, so they are scored on
-                few pairs and are marked <em>n/a</em> rather than given a misleading number. Because
-                each run covers a different slice of the event, rows here are not strictly comparable
-                with one another the way the lead-day rows are — use this to find when the forecast
-                locked on, and the lead-day view to quantify how skill decays.
-              </PlotNote>
+              the same two scores, one row per forecast run rather than per lead day. Read down
+              the rows to see when the runs started catching the event.
+            </PlotNote>
             </div>
           )}
           </>
@@ -2928,19 +2691,11 @@ export function MetricsTab() {
                   })}
                 />
                 <PlotNote>
-                  CRPS on its own has units of discharge, so a "good" value depends on how big
-                  the river is. This normalises it against a climatological forecast — the
-                  distribution of flows from your <strong>uploaded observed record</strong>{' '}
-                  within ±{CLIMATOLOGY_WINDOW_DAYS} days of the event's time of year, summarised
-                  onto the same comparison grid the CRPS above is scored on. Observed rather than
-                  modelled on purpose: a baseline carrying the model's own bias is too easy to
-                  beat. 1 is perfect, 0 means the ensemble was worth no more
-                  than quoting the long-term record for that season, and anything in the red
-                  region means it was actively worse than doing nothing. The lead day where the
-                  line crosses zero is the honest limit of useful forecast skill for this event,
-                  and it is a stricter test than the deterministic limit above because it judges
-                  the whole distribution rather than category agreement.
-                </PlotNote>
+              higher is better, 1 is perfect. Zero means the ensemble was worth no more than
+              quoting the season's long-term record, and the red region below it means worse than
+              that. Where the line crosses zero is the practical limit of useful skill for this
+              event.
+            </PlotNote>
               </div>
             ) : (
               <p style={{ maxWidth: PROSE_MAX, color: '#666', marginTop: '1rem', fontSize: '0.9rem' }}>
@@ -2969,25 +2724,9 @@ export function MetricsTab() {
             />
             <MissingRowsNote rows={comparison} />
             <PlotNote>
-              every cell is the <strong>median across lead days</strong> of that lead's own median
-              across the 51 members — the same two-level summary the charts in this app plot, so the
-              table cannot disagree with them. It is a summary and hides the lead structure
-              completely; a correction that helps at short lead and hurts at long lead reads as a
-              small change here. The charts below are the record.
-              <br />
-              <br />
-              <strong>Best</strong> names the correction that moved furthest{' '}
-              <em>toward</em> the metric's ideal, which is not the same as furthest up. β and γ are
-              ratios targeting 1 and can miss either way, so 1.4 is worse than 1.0 and so is 0.7 and an
-              over-correction is not an improvement. "neither" means both corrections left that
-              metric worse than raw.
-              <span style={notePara}>
-                A dash means the metric has not been computed yet for any variant — this table
-                reuses the other blocks' results rather than recomputing anything, so the dashes
-                run by <em>row</em>, not by column. CRPS and CRPSS wait on the Compute button in the
-                block above; the rest come from the same scoring pass the accuracy charts use, so an
-                empty row there means missing data rather than an unpressed button.
-              </span>
+              each cell summarises one metric across all lead days. The Best column names the
+              correction that moved furthest toward that metric's ideal — which is not always
+              upward, since β and γ target 1 and can overshoot.
             </PlotNote>
           </div>
         )}
@@ -3089,25 +2828,10 @@ export function MetricsTab() {
                 })}
               />
               <PlotNote>
-                how far the correction moves the forecast at each lead day. Above the dashed zero
-                line it inflated the values, below it deflated them, and a box sitting on zero means
-                the mapping was a no-op for that lead.
-                <br />
-                <br />
-                One caution about reading a trend here: <strong>neither mapping has a lead
-                dimension</strong>. The local map comes from the retrospective and picks one curve per
-                run, so it really is identical at every lead. SABER's coefficients are fitted per
-                river and calendar <em>month</em> and applied per timestep, so a run whose horizon
-                crosses a month boundary does switch curves partway along. Beyond that, lead-dependence
-                is those leads occupying a different part of one fixed curve rather than either
-                correction treating long leads differently. That is also the shared structural limit of both: forecast error grows with
-                lead, and neither correction can know that.
-                <br />
-                <br />
-                Worth switching the selector at the top and comparing: where the two corrections
-                disagree in sign, one is inflating the forecast while the other deflates it, and the
-                metric tabs will disagree about which helped.
-              </PlotNote>
+              the distribution of corrected minus raw at each lead day. Above zero the correction
+              raised the forecast, below zero it lowered it. A band centred near zero means the
+              correction is doing little at that lead.
+            </PlotNote>
             </div>
           )}
   
@@ -3176,44 +2900,11 @@ export function MetricsTab() {
                 </p>
               )}
               <PlotNote>
-                the plainest test of whether the correction helped: if the blue corrected line moves
-                toward the black observations relative to the grey raw line, it did. If it overshoots
-                past them, the mapping is over-inflating — which happens when the observed record's
-                upper tail is heavier than the simulated one. Under the local map, where grey and blue coincide
-                the mapping was undefined there and the raw value was kept, and the subtitle counts
-                those timesteps. SABER instead leaves a gap in the blue line where a month has no
-                usable fit.
-                <br />
-                <br />
-                Two return-period sets are available in the legend, because the lines sit on two
-                different scales: the <strong>observed</strong> zones apply to the black observations
-                and to the corrected forecast, while the <strong>simulated</strong> zones are the
-                scale the raw forecast lives on. The observed set is drawn when its lowest threshold
-                is within reach of the plotted peak and starts hidden otherwise — drawing it out of
-                range would stretch the axis and flatten all three lines — with the subtitle reporting
-                how close the peak came instead. The simulated set always starts as a legend entry.
-                Click either to bring its zones in.
-                <br />
-                <br />
-                Opens on a run whose horizon actually spans the observed crest, rather than the
-                earliest one available. Runs are fetched from 15 days before the event, so the
-                earliest initialization finishes before the flood begins — its raw and corrected
-                traces sit at baseflow, weeks to the left of anything worth comparing. Drag the
-                selector to watch the correction's effect change as the forecast closes on the event.
-                <br />
-                <br />
-                The run list is the union of both corrections. The local map drops a run only when
-                it has no timesteps or when its calendar month has no usable mapping; SABER drops
-                none. So a run can be available for one correction and not the other. If none of the
-                survivors reaches the crest this falls back to the middle of the list. The title and
-                legend always name which correction is drawn.
-                <br />
-                <br />
-                Neither correction drops a run for producing an extreme value. An above-range
-                forecast is kept and counted — excluding those would preferentially delete the runs
-                that predicted the event, leaving a corrected score computed mostly from the runs
-                that missed it.
-              </PlotNote>
+              one forecast run before and after correction, against the observations in black. If
+              the corrected line moves toward the black line, the correction helped there; if it
+              overshoots past it, the correction is over-inflating. Use the selector above to try
+              other runs.
+            </PlotNote>
             </div>
           )}
           </>
