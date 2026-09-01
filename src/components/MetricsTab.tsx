@@ -2429,49 +2429,22 @@ export function MetricsTab() {
             />
             <PlotNote>
               bars left of the line predicted the peak early, right of it late. The bar is the
-              median across members. The heavy whisker is the middle half of them and the light one
-              behind it is the full range, so the two together answer different questions: whether
-              the bulk of members agreed on the sign, and whether <em>any</em> member got it right.
+              median across members; the heavy whisker is the middle half and the light one behind
+              it the full range — together they say whether the bulk of members agreed on the sign,
+              and whether <em>any</em> member got it right.
               <br />
               <br />
-              <strong>A hollow bar sits inside that lead's own sampling resolution.</strong> A run
-              does not publish at one spacing: all 51 members share a single time index, but that
-              index is finer early than late, switching partway through the horizon. A peak can
-              only be placed on a sample that exists, so a median no larger than that spacing is the
-              crest falling between two available instants, not a timing error. On a{' '}
-              <em>perfect</em> forecast against 3-hourly observations, a run that drops to 6-hourly
-              partway along reports Δt = 0 while it is fine and then a unanimous three-hour offset
-              at every coarser lead — a tight, clean step that reads as real early bias and is
-              entirely the lattice. The hover gives the spacing behind each row. Peak timing
-              is drawn as bars rather than boxes, so hollow is the whole signal here; the threshold
-              crossing panel below, which is a box plot, shades the same quantity as a grey band.
+              A <strong>hollow</strong> bar sits inside that lead's own sampling resolution, so its
+              offset is the crest falling between two available instants rather than a timing error.
+              Hover gives the spacing. A <strong>›</strong> or <strong>‹</strong> marks a row whose
+              range runs past the axis, which is scaled to the bars and the middle half so one
+              straggler cannot flatten everything else.
               <br />
               <br />
-              <strong>Check the member count in the hover before reading a box.</strong> A member
-              is excluded only when it has no timing to report — its maximum is attained at every
-              timestep, so there is no peak, or the maximum sits on its own first or last sample,
-              where the true peak is probably outside the series. Nothing is dropped for being a poor forecast: a member that
-              runs 55% low but times the crest perfectly still scores 0, which is the property that
-              makes this worth reading separately from KGE′. Members with a noisy, incoherent shape
-              are scored too, and their scatter is the finding rather than something to hide — so a
-              wide band at long lead usually means the ensemble had no peak to agree on.
-              The axis is scaled to the bars and the middle half rather than to the full range
-              whenever a straggler would otherwise swamp it — a single
-              straggling member can sit hundreds of hours out, and letting that set the scale left
-              every bar too short to read. A <strong>›</strong> or <strong>‹</strong> marks each row whose range carries
-              on past the edge on that side; hover for its exact extent.
-              <br />
-              <br />
-              Grouped by how far ahead the forecast was looking rather than by when it was issued,
-              which makes it the more interpretable of the two.
-              <br />
-              <br />
-              <strong>Why this version is cleaner:</strong> in the per-initialization chart, a run
-              started long before the peak can only place that peak inside its own 15-day horizon,
-              so it is forced early; a run started on the peak day can only place it at or after,
-              so it is forced late. Much of the sign pattern there is that geometry rather than
-              skill. Grouping by lead compares forecasts at a consistent horizon, so a systematic
-              lag shows up as a real lag.
+              <strong>Check the member count before reading a bar.</strong> Members are excluded
+              only for having no peak to time — flat throughout, or peaking on their own first or
+              last sample. Nothing is dropped for forecasting badly, so a wide range at long lead
+              means the ensemble had no peak to agree on.
             </PlotNote>
           </>
         )}

@@ -208,8 +208,7 @@ export function OverviewTab() {
           <strong>Both use gauge data</strong>; the difference is <em>whose</em>. Local Bias
           Correction uses your uploaded record — directly relevant, as sparse as it is. SABER's
           gauges are chosen centrally, possibly at a <em>different, clustered</em> reach: better
-          sampled, not necessarily this river. So a SABER ceiling can sit well below your record's
-          maximum, because it belongs to the reference curve rather than to your gauge.
+          sampled, not necessarily this river.
         </p>
 
         <h3 style={h3}>Learning more</h3>
