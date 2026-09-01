@@ -377,357 +377,184 @@ export function OverviewTab() {
       </section>
 
       <section style={sectionStyle}>
-        <h2 style={h2}>Metrics</h2>
+        <h2 style={h2}>Categorical metrics</h2>
 
-        <h3 style={h3}>Categorical — Contingency matrix</h3>
+        <h3 style={h3}>Contingency matrix</h3>
         <p style={p}>
-          A K × K table, K being the number of return-period categories. Element C
-          <sub>ij</sub> counts timesteps with observation in category{' '}
-          <em>i</em> (row), forecast in category <em>j</em> (column).
-        </p>
-        <ul style={ul}>
-          <li>
-            <strong>Lower triangle</strong> (i &gt; j): observation above forecast →
-            underestimation.
-          </li>
-          <li>
-            <strong>Upper triangle</strong> (i &lt; j): observation below it → overestimation.
-          </li>
-        </ul>
-        <p style={p}>
-          A perfect forecast is non-zero only on the diagonal; following the WMO/WWRP framework and
-          Hewson (2007), all off-diagonal elements count as errors — a binary table's "misses +
-          false alarms".
+          A K × K table of timestep counts for one lead: observed category down the rows, forecast
+          category across the columns. A perfect forecast is non-zero only on the diagonal; below it
+          is underestimation, above it overestimation.
         </p>
         <p style={p}>
-          <strong>This is the one panel that reduces the ensemble to a single series</strong>, since
-          a K×K table needs one forecast category per timestep. The{' '}
-          <em>Forecast series</em> selector chooses how: the ensemble median by default, or its mean,
-          p25, p75, min, max, or any individual member. Reducing to the{' '}
-          <strong>maximum</strong> asks "did <em>any</em> member cross", which with 51 members
-          crosses far more readily than the median — a different question, not a stricter version of
-          the same one. Every other categorical score on this page reads all 51 members, so this
-          selector moves the matrix and nothing else.
+          This is the one panel that reduces the ensemble to a single series. The selector takes an
+          ensemble statistic, the median by default, or any single member. The maximum asks whether{' '}
+          <em>any</em> member crossed — a different question rather than a stricter one. Every other
+          score in this family reads all 51 members.
         </p>
 
-        <h3 style={h3}>Categorical — Matthews Correlation Coefficient (MCC)</h3>
+        <h3 style={h3}>MCC and HSS</h3>
         <p style={pMono}>
-          MCC = (N·c − Σ tₖpₖ) / √[(N² − Σ pₖ²)(N² − Σ tₖ²)]
+          MCC = (N·c − Σ tₖpₖ) / √[(N² − Σ pₖ²)(N² − Σ tₖ²)]{'\n'}
+          HSS = (N·c − Σ tₖpₖ) / (N² − Σ tₖpₖ)
         </p>
         <p style={p}>
-          The multi-category MCC (Gorodkin, 2004; Jurman et al., 2012) generalizes the binary MCC.
-          From the contingency matrix: N total count, c diagonal sum (hits), tₖ row sum for category
-          k (observed marginals), pₖ column sum (forecast marginals). The numerator is excess hits
-          over a random forecast with the same marginals; the denominator normalizes it. The binary
-          form spans [−1, 1]; the multi-category form reaches 1 but its lower bound depends on the
-          category count and the marginals, so a negative value has no fixed reference.
+          Both grade all K categories against chance: 1 is perfect, 0 no better than a random
+          forecast with the same marginals. They share a numerator — excess hits over chance — and
+          differ only in the denominator: MCC normalises by the marginal spreads, HSS by the gap
+          between chance and perfection. Each member is scored separately; the line is their median,
+          the band their interquartile range.
         </p>
         <p style={p}>
-          MCC = 1 is perfect agreement, 0 no better than random. A model always predicting{' '}
-          "&lt; 2 yr" through a flood event scores exactly zero despite many hits: its forecast
-          marginal collapses into one column, degenerating the denominator — desirable in a
-          flood-skill metric.
+          That shared numerator fixes their order by sign. Better than chance puts MCC at or above
+          HSS, worse than chance the reverse, with no exception across a deterministic
+          60,000-matrix sweep kept as a test. Their agreement is arithmetic, not corroboration.
         </p>
-        <div style={caution}>
-          <p style={{ maxWidth: PROSE_MAX, margin: 0 }}>
-            <strong>Both scores move with the length of the uploaded window.</strong> Quiet
-            timesteps pile into the "both below the lowest threshold" cell and dominate the
-            marginals. At fixed forecast skill, padding with quiet days lifts both scores
-            substantially — enough to carry a forecast that is <em>systematically one category
-            low</em> throughout from correctly damning to apparently skilful. Slow-rising events suffer most: long limbs below
-            threshold while the river is plainly doing something. Read these alongside the pair
-            count and base rate, never as headline numbers, never across events of different window
-            length.
-          </p>
-          <p style={{ maxWidth: PROSE_MAX, margin: '0.5rem 0 0' }}>
-            <strong>Nor are they independent checks.</strong> The MCC and HSS formulae share the
-            numerator N·c − Σ tₖpₖ and differ only in denominator: they cannot disagree on sign, so
-            agreement is arithmetic, not corroboration. The multi-category MCC also has no floor of
-            −1 — the bound depends on category count and marginals — so negative values have no
-            fixed reference.
-          </p>
-          <p style={{ maxWidth: PROSE_MAX, margin: '0.5rem 0 0' }}>
-            Only scores that exclude the correct-negative cell are invariant to window length. Of
-            those shown here that means CSI = a/(a+b+c), POD, FAR and frequency bias. Rare-event
-            scores built on the false-alarm <em>rate</em> are not invariant — padding drives that
-            rate to zero and they climb toward 1 regardless of skill — which is one reason none is
-            offered.
-          </p>
-        </div>
+        <p style={p}>
+          Both count correct negatives, so both move when a window is padded with quiet days — on a
+          forecast running one category low, that shift can reverse the verdict. Never read them
+          across events of different window length.
+        </p>
 
-        <h3 style={h3}>Categorical — Heidke Skill Score (HSS)</h3>
-        <p style={pMono}>HSS = (N·c − Σ tₖpₖ) / (N² − Σ tₖpₖ)</p>
-        <p style={p}>
-          HSS measures improvement over a random forecast: HSS = (PC − PC<sub>ref</sub>) / (1 − PC
-          <sub>ref</sub>), PC the proportion correct, PC<sub>ref</sub> that expected by chance.
-        </p>
-        <p style={p}>
-          Its denominator is the gap between a perfect forecast and chance, N² − Σtₖpₖ, so HSS is
-          the fraction of that gap the forecast closes. Note "perfect" here is the unconstrained
-          ideal, not the best attainable given these marginals — with mismatched marginals a
-          forecast cannot reach 1 however well it ranks. MCC
-          divides instead by the geometric mean of the two marginal spreads, making it the
-          correlation between forecast and observed category.
-        </p>
-        <div style={caution}>
-          <p style={{ maxWidth: PROSE_MAX, margin: 0 }}>
-            <strong>Their order is fixed by the sign, not by where the skill came from.</strong>{' '}
-            MCC's denominator is never larger than HSS's, so any forecast better than chance has
-            MCC ≥ HSS necessarily, and any forecast worse than chance has MCC ≤ HSS. Across
-            60,000 contingency matrices it held without exception, and MCC fell below HSS while both
-            were positive in zero cases — a deterministic sweep kept as a test in this repository, so
-            the figure is reproducible rather than remembered. So "MCC much lower than HSS" cannot indicate skill earned
-            on normal flow rather than the extreme — it cannot happen at all unless the forecast is
-            already worse than chance, where MCC simply reports the failure more sharply.
-          </p>
-          <p style={{ maxWidth: PROSE_MAX, margin: '0.5rem 0 0' }}>
-            What the gap between them does measure is <strong>frequency bias</strong>: how far the
-            forecast's category frequencies sit from the observed ones. Matched marginals make the
-            two denominators equal and the scores identical; skewed marginals separate them. That
-            is a property of how often each category was issued, not of which flows the skill came
-            from.
-          </p>
-        </div>
-
-        <h3 style={h3}>Categorical — Ranked probability score (RPS, RPSS)</h3>
+        <h3 style={h3}>Ranked probability score (RPS, RPSS)</h3>
         <p style={pMono}>
-          RPS = Σₖ (CDF<sub>forecast</sub>(k) − CDF<sub>observed</sub>(k))²{'\n'}
-          RPSS = 1 − RPS / RPS<sub>climatology</sub>
+          RPS = Σₖ (CDF_forecast(k) − CDF_observed(k))²{'\n'}
+          RPSS = 1 − RPS / RPS_climatology
         </p>
         <p style={p}>
           The only categorical score here that knows the categories are <strong>ordered</strong>.
-          Differencing <em>cumulative</em> probabilities means the penalty grows with distance: on a
-          four-category ladder a confident forecast one category low scores 1, two low scores 2,
-          three low scores 3. MCC and HSS return the same value for all three, discarding the
-          severity ladder the return-period design exists to express.
+          Differencing cumulative probabilities makes the penalty grow with distance: one category
+          low costs 1, three low costs 3, where MCC and HSS return the same value for all three. It
+          reads the members as a distribution over categories, so a spread straddling the truth beats
+          confident error. Quiet days drag raw RPS toward zero whatever the skill; compare across
+          events with RPSS.
         </p>
         <p style={p}>
-          It also reads the ensemble as an ensemble. MCC and HSS score each of the 51 members as a
-          separate deterministic forecast and take the median of those scores; RPS uses the fraction
-          of members in each category as a probability distribution, so a spread that straddles the
-          truth is rewarded over confident error.
-        </p>
-        <p style={p}>
-          Report <strong>RPSS</strong> when comparing across events. Raw RPS is a mean over
-          timesteps, so quiet days drag it toward zero whatever the skill — but the climatological
-          reference absorbs the same easy timesteps, so the ratio moves far less. It is still not
-          window-invariant: only the scores that omit the correct-negative cell are, as{' '}
-          <em>Scores per exceedance threshold</em> sets out below.
-        </p>
-        <p style={p}>
-          <strong>What the reference is, exactly.</strong> RPSS and CRPSS are both skill scores —
-          the number means nothing without saying what it was compared against — so both use one
-          rule, and it is worth stating in full:
+          RPSS and CRPSS follow one rule, not one reference:
         </p>
         <ul style={ul}>
+          <li>Observed, never modelled, and never taken from the event being scored.</li>
           <li>
-            <strong>Observed, never modelled.</strong> Built from the uploaded gauge record. A
-            baseline carrying the model's own bias is too easy to beat.
+            Season-restricted to ±15 calendar days of the event's days: every reading of every year
+            in that window. A filter, not an average.
           </li>
           <li>
-            <strong>Season-restricted to ±15 days</strong> of the event's calendar days. Not an
-            average of those days — a filter: every individual reading from every year whose day of
-            year falls in that window, pooled into one distribution. A whole-record baseline would
-            have to predict a wet-season flood from the dry season's distribution, so beating it
-            would partly reward the forecast for knowing what month it is.
+            Aggregated to the same grid and bin summary as the observations it is scored against.
+            That is where the two part company — the categorical reference follows the chosen bin
+            summary, the continuous one uses bin means.
           </li>
           <li>
-            <strong>Aggregated the same way the scored observations are.</strong> Whatever bin
-            summary the Categorical block is set to — median by default — the reference uses it too.
-            A reference summarised differently is answering a different question: on a 15-minute
-            record, one built from raw readings expects exceedance 96× less often than a matched
-            one, because most readings within a day sit below that day's peak.
-          </li>
-          <li>
-            <strong>Withheld rather than estimated.</strong> With no historical upload, or fewer
-            than 30 values in season, no skill score is shown.
-          </li>
-          <li>
-            <strong>Withheld when the reference was never tested.</strong> If nothing in the window
-            crossed even the lowest threshold, climatology is right by default. RPSS is withheld
-            there and says so.
+            Withheld with a stated reason, not estimated: no record uploaded, fewer than 30
+            in-season values, or nothing crossing even the lowest threshold. RPS and CRPS need no
+            reference and are reported anyway.
           </li>
         </ul>
 
-        <h3 style={h3}>Categorical — Scores per exceedance threshold</h3>
+        <h3 style={h3}>Scores per exceedance threshold</h3>
         <p style={pMono}>
           POD = a/(a+c)   FAR = b/(a+b)   CSI = a/(a+b+c)   bias = (a+b)/(a+c){'\n'}
           a hits · b false alarms · c misses · d correct negatives
         </p>
         <p style={p}>
-          These are two-by-two scores, so the K-category matrix is dichotomised at each threshold —
-          "at or above this return period" against "below" — giving one row per threshold rather
-          than a single number. There are K−1 rows for K categories: the lowest band gets no row,
-          because "at or above the bottom of the scale" is everything. The trend down the rows is the point: hit rate falling and false-alarm
-          ratio rising as severity climbs is skill decaying with magnitude, which any collapsed
-          number hides.
+          Probability of detection, false-alarm ratio, CSI and frequency bias, each from a two-by-two
+          table dichotomising the matrix at one threshold: K−1 rows. Read down the rows for skill
+          decaying as severity climbs. None uses the correct-negative cell, so quiet timesteps cannot
+          move them.
         </p>
         <p style={p}>
-          <strong>None of the four uses d</strong>, the correct-negative cell, so all four are
-          exactly invariant to window length: adding 100,000 quiet timesteps leaves every value
-          unchanged to twelve decimals, while MCC and HSS drift substantially. They are the antidote
-          to the window sensitivity described above.
-        </p>
-        <p style={p}>
-          <strong>Exactly invariant to padding, not to re-windowing.</strong> Those are different
-          experiments and the distinction matters. Adding pure quiet timesteps cannot move a score
-          that ignores the correct-negative cell — that is algebra, not measurement. Genuinely
-          <em>extending</em> a window adds timesteps that get classified, some as hits or false
-          alarms, so even these scores move a little. They move far less than MCC and HSS do, which
-          is the property that makes them the antidote.
-        </p>
-        <p style={p}>
-          <strong>Frequency bias is not a skill score</strong>, and that is what makes it useful.
-          It is how many exceedances were forecast divided by how many occurred, so 1.0 means the
-          right <em>number</em> of warnings whether or not they landed on the right days. It is also
-          what the gap between MCC and HSS measures indirectly: matched category frequencies make
-          those two scores identical, and skewed ones separate them.
-        </p>
-        <p style={p}>
-          <strong>Read it as a warning-count check, not a magnitude-bias detector.</strong> Under a
-          single threshold, a model running 40% low would read below 1 at every level and decay
-          toward 0 at the top — the classic fingerprint of under-prediction. The dual-threshold
-          design removes exactly that signal on purpose: the forecast is judged against its own
-          simulated return periods, which are fitted to the same biased model, so a uniformly low
-          model crosses its own thresholds about as often as the observations cross theirs and
-          frequency bias reads near 1. What survives is a mismatch in <em>shape</em> rather than
-          level — an ensemble too narrow to reach its own thresholds as often as reality reaches
-          hers. For magnitude bias, read β in the Accuracy block instead.
-        </p>
-        <p style={p}>
-          The equitable threat score is deliberately absent. ETS = HSS / (2 − HSS) exactly, so it is
-          a monotone relabelling of a score already shown, and it inherits the same window drift.
+          Frequency bias is not a skill score: forecast exceedances over observed ones, so 1.0 means
+          the right <em>number</em> of warnings, not the right days. For magnitude bias, read the bias
+          ratio under Accuracy instead — the dual thresholds mean a uniformly low model crosses its
+          own thresholds about as often as observations cross theirs.
         </p>
 
-        <h3 style={h3}>Categorical — CSI by lead day</h3>
+        <h3 style={h3}>CSI by lead day</h3>
         <p style={p}>
-          CSI gets a panel of its own, with a threshold selector, because it is the{' '}
-          <strong>window-invariant</strong> score given a by-lead view. Padding an event with quiet
-          days adds only correct negatives, and a/(a+b+c) never touches that cell. POD, FAR and
-          frequency bias share that property — see <em>Scores per exceedance threshold</em> — but
-          CSI is the one that combines hits, misses and false alarms into a single number, which is
-          what makes it worth plotting against lead. If the chance-corrected scores look healthier
-          than this one, quiet timesteps are flattering them.
+          Its own panel, because it is the window-invariant score: hits over hits plus false alarms
+          plus misses, correct negatives never entering. If the chance-corrected scores look
+          healthier, quiet timesteps are flattering them.
         </p>
         <p style={p}>
-          It sits apart rather than on the MCC/HSS axis because it is a different kind of quantity.
-          CSI is <strong>only defined on a two-by-two table</strong> — there is no accepted
-          multi-category version, and the standard practice is one value per exceedance threshold,
-          which is what the selector chooses. MCC and HSS grade all K categories at once. Collapsing
-          to "at or above the 2-year level" is an easier question, and CSI reads higher for that
-          reason alone, so sharing an axis invited a false comparison. Every line in its own panel is the same kind of quantity, so that axis is fair.
+          CSI is defined only on a two-by-two table, hence the threshold selector and no shared axis
+          with MCC and HSS. "At or above the 2-year level" is an easier question than grading every
+          category, so CSI reads higher for that reason alone. It is scored on the members{' '}
+          <strong>pooled</strong> into one table per lead, not as a median of separate member scores.
+          Sample size is distinct observed exceedance timesteps — the same three flood days seen by
+          51 members is three events, not 153 — and leads with fewer than three are drawn hollow.
         </p>
         <p style={p}>
-          Scored on the 51 members <strong>pooled into one table per lead</strong>, not as the median
-          of 51 separate scores. The median construction collapses at the high thresholds, where most
-          members produce the same degenerate table — its ability to rank a known-better forecast on
-          a single event is close to chance. Sample size is reported as{' '}
-          <em>distinct observed exceedance timesteps</em>: 51 members scoring the same three flood
-          days is three events, not 153, and leads with fewer than three are drawn hollow.
+          It is not a skill score: 0 means no hits were scored, not "no better than chance". A level
+          with nothing observed and nothing forecast reads n/a.
         </p>
-        <p style={p}>
-          It is not a skill score. 0 means no hits were scored, not "no better than chance". Where
-          nothing was observed <em>and</em> nothing forecast at a level, it reads n/a rather than 0 —
-          0 is the worst attainable value, and a lead where nothing happened has not earned it.
-        </p>
+      </section>
 
-        <h3 style={h3}>Timing — Peak timing error (Δt<sub>peak</sub>)</h3>
+      <section style={sectionStyle}>
+        <h2 style={h2}>Timing metrics</h2>
+        <p style={p}>Both are signed differences in hours: negative is early, positive late.</p>
+
+        <h3 style={h3}>Peak timing error</h3>
         <p style={pMono}>Δt_peak = t_peak,forecast − t_peak,observed  [hours]</p>
         <p style={p}>
-          Δt<sub>peak</sub> &lt; 0 is an early forecast peak, &gt; 0 a late one.{' '}
-          <strong>It is independent of magnitude</strong>: Δt = 0 for a member with correct timing
-          and far-off magnitude. Take the median Δt across members as the headline statistic, the
-          IQR as ensemble timing spread. An early bias is often preferable operationally — more
-          preparation time for communities.
+          The time of a member's maximum minus the time of the observed maximum. No threshold decides
+          what counts as a peak, and magnitude never enters: a member that misses the flow but times
+          the crest exactly scores zero, so read it separately from the accuracy scores. The median
+          across members is the headline, the whisker is member disagreement.
         </p>
         <p style={p}>
-          <strong>Read the resolution band before reading a bias.</strong> A peak can only be placed
-          on a sample that exists, and a run publishes coarser samples at long lead, so at those
-          leads the nearest available instant may be hours from the true crest. The panels shade
-          that spacing as a grey band and draw a bar hollow when its median falls inside. This is not
-          a theoretical caveat: on a <em>perfect</em> forecast against 3-hourly observations, a run
-          coarsening after day 7 reports Δt = 0 through lead 7 and then a unanimous three-hour
-          offset at leads 8–15. Tight box, clean step, entirely the lattice.
+          A peak can only be placed on a sample that exists, and a run publishes coarser samples late
+          in its horizon. A bar whose median falls within its own row's sample spacing is drawn{' '}
+          <strong>hollow</strong>. Hollow is not a measured bias: a perfect forecast produces hollow
+          bars wherever the spacing coarsens.
         </p>
         <p style={p}>
-          <strong>Which members are excluded, and why it is never about quality.</strong> A member
-          contributes no Δt in exactly two cases, both facts about the shape of its own series:
+          A member contributes no timing in two cases, both facts about its shape rather than its
+          quality:
         </p>
         <ul style={ul}>
           <li>
-            <strong>Flat throughout</strong> — the series attains its maximum at every timestep, so
-            there is no argmax to time. Counted as "predicted no peak" rather than scored, and at
-            long lead that count is the finding, not a timing number.
+            Flat throughout, so there is no maximum to time. Counted as predicting no peak, and at
+            long lead that count is the finding.
           </li>
           <li>
-            <strong>Maximum on its own first or last sample</strong> — the real peak is probably
-            outside the series, so Δt would be a bound rather than a measurement. Censored.
+            Maximum on its own first or last sample, so the real peak probably lies outside the
+            series and the difference is a bound rather than a measurement.
           </li>
         </ul>
         <p style={p}>
-          Nothing is dropped for forecasting badly. A member that runs 55% low but times the crest
-          perfectly still scores 0, which is exactly what makes this worth reading separately from
-          KGE′. A member with a noisy, incoherent shape <em>is</em> scored, and its scatter is the
-          finding rather than something to hide — so a wide band at long lead usually means the
-          ensemble had no peak to agree on. The counts travel with every chart, because excluding
-          anything without saying so is survivorship bias.
-        </p>
-        <p style={p}>
-          A crest with a flat top is timed at its <strong>first</strong> sample, not its midpoint.
-          Time-to-peak is when the flow reaches its maximum; the rest of the plateau is the crest
-          holding rather than arriving. It also has to match the other side of the subtraction, since
-          the observed peak keeps the first of any ties — timing the forecast at a plateau's midpoint
-          would bias every such Δt late by half the plateau's width, an offset produced by the
-          estimator rather than the forecast.
+          Nothing is dropped for forecasting badly: a noisy member is scored, and its scatter is the
+          finding. The counts travel with every chart.
         </p>
 
-        <h3 style={h3}>Timing — Threshold crossing</h3>
+        <h3 style={h3}>Threshold crossing</h3>
         <p style={pMono}>Δt_RP = t_crossing,forecast − t_crossing,observed  [hours]</p>
         <p style={p}>
-          For each return-period threshold Q<sub>RP</sub>, t<sub>crossing</sub> is the first
-          ascending crossing — the first in-window timestep at or above the threshold. If a series
-          is already above at its first sample it counts as crossing there, which matters when the
-          record itself starts mid-flood: both sides then register at the window edge and Δt_RP
-          reads 0 for a crossing neither actually witnessed. This beats peak timing operationally:
-          flood early-warning systems alert on threshold exceedance, not peak arrival.
+          For each return-period level, the first timestep at or above it on the forecast side minus
+          the same on the observed side, each against its own threshold. This is warning-time error:
+          alerts fire on exceedance, not on peak arrival. A series already above at its first sample
+          counts as crossing there, so a record starting mid-flood can read zero. Unlike peak timing
+          it depends on magnitude, and a member that runs low never crosses.
         </p>
         <p style={p}>
-          The table splits the members four ways at each lead, because a missing Δt<sub>RP</sub> has
-          more than one cause and they mean opposite things:
-        </p>
-        <ul style={ul}>
-          <li>
-            <strong>Crossed</strong> — members crossing both thresholds, so having a computable
-            Δt<sub>RP</sub>. The conditional timing error is taken over these alone.
-          </li>
-          <li>
-            <strong>Observed crossed, forecast did not</strong> — a genuine miss.
-          </li>
-          <li>
-            <strong>Observations never crossed</strong> — nothing to time against, and not a
-            forecast failure at all.
-          </li>
-          <li>
-            <strong>Total members</strong>, as the denominator for the other three.
-          </li>
-        </ul>
-        <p style={p}>
-          Detection rate falls as the threshold rises, but read the third column before drawing a
-          conclusion from that. At the 50- and 100-year levels the observations usually never
-          crossed either, so the fall is showing the event's severity rather than a limit of the
-          ensemble.
+          Only members that crossed on both sides have an error, so read the detection table too. Per
+          lead it counts members, crossings on both sides, crossings seen only in the observations —
+          missed warnings the plot cannot show — cases with no observed crossing, and the detection
+          rate. Detection falls as the level rises, but at the highest levels the observations usually
+          never crossed either: severity, not an ensemble limit.
         </p>
         <p style={p}>
-          The whole crossing family needs the <strong>historical observations</strong> upload, since
-          it compares observed return periods against simulated ones and the observed set is fitted
-          to that record. Without it the panel is absent rather than approximate.
+          The whole crossing family needs the <strong>historical observations</strong> upload, which
+          supplies the observed-side thresholds. Without it the panel is absent rather than
+          approximate.
         </p>
+      </section>
 
-        <h3 style={h3}>Accuracy — Kling–Gupta Efficiency (KGE')</h3>
+      <section style={sectionStyle}>
+        <h2 style={h2}>Accuracy metrics</h2>
+
+        <h3 style={h3}>Kling–Gupta efficiency (KGE′)</h3>
         <p style={pMono}>KGE' = 1 − √[(r − 1)² + (β − 1)² + (γ − 1)²]</p>
         <p style={p}>
-          Gupta et al. (2009) decomposed the MSE into three orthogonal components, refined by
-          Kling et al. (2012); each is perfect at 1:
+          Gupta et al. (2009) decomposed mean squared error into three components, refined by Kling
+          et al. (2012). Each is perfect at 1:
         </p>
         <ul style={ul}>
           <li>
@@ -735,159 +562,103 @@ export function OverviewTab() {
             means poor timing or shape.
           </li>
           <li>
-            <strong>Bias ratio β</strong> = mean(forecast) / mean(observed); &gt; 1 overestimation
-            bias, &lt; 1 underestimation.
+            <strong>Bias ratio β</strong> — mean forecast over mean observed; above 1 overestimation,
+            below 1 underestimation.
           </li>
           <li>
-            <strong>Variability ratio γ</strong> = CV<sub>f</sub> / CV<sub>o</sub>; &gt; 1
-            overestimates variability, &lt; 1 underestimates.
+            <strong>Variability ratio γ</strong> — forecast CV over observed CV; above 1 too much
+            variability, below 1 too little.
           </li>
         </ul>
+        <p style={p}>The component furthest from 1 dominates.</p>
         <p style={p}>
-          The dominant error source is the component furthest from 1.
-        </p>
-        <p style={p}>
-          <strong>Each component is guarded on what it alone needs</strong>, which is why a member
-          can appear in the β panel and not the KGE′ one. A forecast that is flat — every timestep
-          the same value — still has a real mean, so β is reported; it has no variability, so γ reads
-          0; and correlation is undefined, so r and KGE′ are withheld rather than filled in. That
-          case is not hypothetical: transform saturation maps a whole range of discharges onto one
-          number, and the negative clamp maps to exactly zero, so flat members are what the corrected
-          variants produce. The bars carry their own member counts for this reason — the NSE and KGE′
-          medians on one row can rest on different member sets.
+          Each component is guarded on what it alone needs, so a member can appear in the bias-ratio
+          panel and not in KGE′. A flat forecast — every timestep the same value — still has a mean,
+          so β is reported; it has no variability, so γ reads 0; correlation is undefined, so r and
+          KGE′ are withheld. That case is live: the corrected variants go flat wherever the transform
+          saturates or the negative clamp bites.
         </p>
 
-        <h3 style={h3}>Accuracy — Nash–Sutcliffe Efficiency (NSE)</h3>
+        <h3 style={h3}>Nash–Sutcliffe efficiency (NSE)</h3>
         <p style={pMono}>NSE = 1 − Σ(f − o)² / Σ(o − ō)²</p>
         <p style={p}>
-          Shown beside KGE′ on the skill panels. It is the mean-squared-error skill score against
-          the observed average, so it is dominated by the largest errors — which on a flood window
-          means the peak. Reading a row across the two is the diagnosis: strong on KGE′ but weak on
-          NSE usually means the shape was right and the magnitude was not, because NSE punishes
-          squared error at the peak while KGE′ spreads the penalty across three components.
+          The mean-squared-error skill score against the observed average, dominated by the largest
+          errors — on a flood window, the peak. NSE needs only the observations to vary, so it
+          survives the flat-forecast case that withholds KGE′, and the two medians on one row can rest
+          on different member sets. Each bar carries its own count.
+        </p>
+        <p style={p}>
+          Read a row across the pair: strong on KGE′ and weak on NSE usually means the shape was right
+          and the magnitude was not, since NSE punishes squared error at the peak while KGE′ spreads
+          it over three components.
         </p>
 
-        <h3 style={h3}>Performance bands, and what they rest on</h3>
+        <h3 style={h3}>Reading the coloured bars</h3>
         <p style={p}>
-          The skill panels colour each bar by band. The KGE′ ladder is the published one — Good
-          above 0.75, Intermediate 0.50–0.75, Poor 0.00–0.50 — from{' '}
-          <a
-            href="https://doi.org/10.5194/hess-19-3365-2015"
-            style={link}
-            target="_blank"
-            rel="noreferrer"
-          >
+          Each bar is the median across members for one lead day or one forecast run. Members without
+          enough overlapping points of their own are left out.
+        </p>
+        <p style={p}>
+          Colour is the performance band. KGE′ uses the published ladder — Good above 0.75,
+          Intermediate 0.50–0.75, Poor 0.00–0.50 — from{' '}
+          <a href="https://doi.org/10.5194/hess-19-3365-2015" style={link} target="_blank" rel="noreferrer">
             Thiemig et al. (2015)
           </a>
-          , citing Kling et al. (2012). Two honest caveats come with it.
+          . Below 0 that source has a single band; splitting it at −0.41 into Very poor and
+          Unacceptable is this app's own extension.
         </p>
-        <ul style={ul}>
-          <li>
-            <strong>The published ladder has four bands, not five.</strong> Its bottom band is Very
-            poor at ≤ 0.00. Splitting that at −0.41 into Very poor and Unacceptable is this app's
-            own extension, grafting the benchmark below onto Thiemig's scheme. No source publishes
-            0.75/0.50 together with a −0.41 floor.
-          </li>
-          <li>
-            <strong>It was calibrated on a different problem.</strong> Thiemig applied it to daily
-            multi-year continuous simulation. For the <em>forecast</em> half of the same paper the
-            authors used skill scores against explicit benchmarks and no KGE bands at all.
-          </li>
-        </ul>
         <p style={p}>
-          <strong>−0.41 is the mean-flow benchmark</strong> — the score of a forecast equal to the
-          observed mean at every timestep, established by{' '}
-          <a
-            href="https://doi.org/10.5194/hess-23-4323-2019"
-            style={link}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Knoben, Freer &amp; Woods (2019)
+          −0.41 is the mean-flow benchmark (
+          <a href="https://doi.org/10.5194/hess-23-4323-2019" style={link} target="_blank" rel="noreferrer">
+            Knoben, Freer &amp; Woods, 2019
           </a>
-          : "KGE values greater than −0.41 indicate that a model improves upon the mean flow
-          benchmark — even if the model's KGE value is negative." That is the trap the bands exist
-          to avoid: a KGE′ of −0.2 is not "bad", it beats doing nothing. It carries over from KGE to
-          KGE′ because a flat forecast has zero variability either way, stated for KGE′ directly by{' '}
-          <a
-            href="https://doi.org/10.5194/essd-12-2043-2020"
-            style={link}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Harrigan et al. (2020)
+          ; stated for KGE′ by{' '}
+          <a href="https://doi.org/10.5194/essd-12-2043-2020" style={link} target="_blank" rel="noreferrer">
+            Harrigan et al., 2020
           </a>
-          . NSE is keyed to <strong>0</strong> instead, its own mean-flow benchmark, since it is
-          already normalised by the observed variance — so the two panels are coloured on different
-          scales, with different palettes and separate legends to say so. NSE therefore has{' '}
-          <strong>four</strong> bands where KGE′ has five: with its benchmark at 0 there is no gap
-          between Poor and the benchmark, so at or below 0 it is Unacceptable directly. Do not carry
-          the KGE′ ladder across.
+          ): the score of a forecast equal to the observed mean at every timestep. So a KGE′ of −0.2
+          still beats the observed mean. Read "below the benchmark" as worse than a flat line, not
+          worse than climatology, which is a different and generally better forecast.
         </p>
-        <p style={caution}>
-          <strong>On one event, −0.41 is not the climatology line.</strong> It is the best score any{' '}
-          <em>flat</em> forecast can reach, and only the flat forecast equal to{' '}
-          <em>this window's own</em> observed mean reaches it — a hindsight quantity. The algebra is
-          short: a constant forecast has zero variability, so γ = 0 and r is undefined and taken as
-          0, leaving KGE′ = 1 − √[2 + (c/μ&#x2092; − 1)²], maximised at c = μ&#x2092; to give exactly
-          1 − √2.
+        <p style={p}>
+          NSE is keyed to 0 instead, already normalised by the observed variance, so it has four bands
+          where KGE′ has five, on its own palette and legend. The KGE′ ladder does not carry across.
         </p>
-        <p style={caution}>
-          A real seasonal climatology is a different and generally better forecast, and its own score
-          depends on the window it is scored over — narrow windows around a crest score far worse
-          than the whole record does. The −0.41 line never moves. So read "below the benchmark" as{' '}
-          <strong>worse than a flat line</strong>, which is what it means, rather than "worse than
-          climatology", which does not follow. Band names shift with the window you chose for the
-          same reason: the observed variability these scores normalise by is the window's, not the
-          river's.
+        <p style={p}>
+          Band names shift with the window you chose: these scores normalise by the window's observed
+          variability, not the river's. Bars far off the left of the axis are compressed into a strip
+          and labelled with their true value.
         </p>
+      </section>
 
-        <h3 style={h3}>Probabilistic — Continuous Ranked Probability Score (CRPS)</h3>
+      <section style={sectionStyle}>
+        <h2 style={h2}>Probabilistic metrics</h2>
+
+        <h3 style={h3}>Continuous ranked probability score (CRPS, CRPSS)</h3>
         <p style={pMono}>
           CRPS = (1/M) Σ |Xₘ − Q_obs| − (1/2M²) Σ Σ |Xₘ − Xₘ'|
         </p>
         <p style={p}>
-          CRPS scores the ensemble as a probability distribution, not member by member. In the
-          energy-score form (Gneiting &amp; Raftery, 2007) the first term is the members' mean
-          absolute error against the observation (penalizes bias), the second half their mean
-          pairwise absolute difference (rewards spread). Units: discharge (m³/s).
-        </p>
-        <ul style={ul}>
-          <li>
-            <strong>Perfect score</strong> CRPS = 0; <strong>lower is better</strong>; no upper
-            bound.
-          </li>
-          <li>
-            <strong>Proper scoring rule</strong>: a forecaster cannot game CRPS by over- or
-            under-dispersing the ensemble.
-          </li>
-          <li>
-            One value per lead day; averaging over all timesteps dilutes extreme peaks among many
-            normal-flow timesteps, so a moderate CRPS may hide a catastrophic failure at the peak.
-          </li>
-        </ul>
-        <p style={p}>
-          <strong>CRPSS</strong> follows the reference rules set out under Ranked probability score
-          above — observed rather than modelled, restricted to ±15 days of the event's calendar days,
-          and withheld rather than estimated — and shares one implementation with RPSS for the
-          season filter and the 30-value minimum, so those cannot drift apart again.
+          CRPS scores the ensemble as a distribution, not member by member. The first term is the
+          members' mean absolute error against the observation; the second is half their mean pairwise
+          difference, which credits spread. Units are discharge. Zero is perfect, lower is better, no
+          upper bound. Over- or under-spreading the ensemble does not improve it.
         </p>
         <p style={p}>
-          <strong>The two references are not identical, and should not be.</strong> The rule both
-          follow is that a reference is aggregated the same way as the observations it will be scored
-          against — which makes them differ, because those observations differ. RPS categorises the
-          chosen-summary grid, so its reference uses your bin summary; CRPS is an error magnitude
-          scored on the bin-<em>mean</em> grid, so its reference uses the mean. Same grid step, same
-          season, same minimum; different summary, because forcing one on both would break the rule
-          for whichever metric lost.
+          One value per lead day, averaged over every timestep where forecast and observation overlap.
+          That average dilutes the peak among ordinary flows, so a moderate CRPS can still hide a bad
+          miss at the crest.
         </p>
         <p style={p}>
-          One correction, since an earlier version of this page said the two "share one
-          implementation" without qualification: they share the season rule, not the aggregation. The
-          CRPSS reference was also being floored at daily resolution while CRPS itself was scored on
-          the sub-daily grid — a narrower reference is easier to beat, and that inflated CRPSS by up
-          to 0.09 near the climatological median, most where the verdict is marginal. Fixed, and
-          both references now live in one module.
+          CRPSS normalises that against a climatological forecast: 1 is perfect, 0 means the ensemble
+          was worth no more than quoting the season's long-term record, below 0 worse. Its reference
+          is built by the rule set out under Ranked probability score above and scored on exactly the
+          timesteps the forecast was, and all three variants share it, so a difference between
+          variants is a difference in the forecast. No uploaded record, no CRPSS; CRPS still shows.
+        </p>
+        <p style={p}>
+          Beyond the bin summary, the continuous reference departs from the categorical one in one
+          way: it follows the comparison grid rather than flooring at daily.
         </p>
       </section>
     </div>
@@ -902,16 +673,6 @@ const sectionStyle: React.CSSProperties = {
   background: '#fff',
 };
 const h2: React.CSSProperties = { marginTop: 0, fontSize: '1.15rem' };
-const caution: React.CSSProperties = { maxWidth: PROSE_MAX,
-  margin: '0.75rem 0',
-  padding: '0.8rem 1rem',
-  border: '1px solid #fcd34d',
-  background: '#fffbeb',
-  borderRadius: 6,
-  fontSize: '0.9rem',
-  lineHeight: 1.6,
-  color: '#713f12',
-};
 const link: React.CSSProperties = { color: '#1d4ed8', textDecoration: 'underline' };
 const h3: React.CSSProperties = { marginTop: '1.25rem', marginBottom: '0.4rem', fontSize: '1rem' };
 const p: React.CSSProperties = { maxWidth: PROSE_MAX, margin: '0.5rem 0', lineHeight: 1.55, color: '#222' };
