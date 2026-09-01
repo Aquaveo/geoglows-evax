@@ -544,9 +544,8 @@ export function OverviewTab() {
           </li>
           <li>
             <strong>Withheld when the reference was never tested.</strong> If nothing in the window
-            crossed even the lowest threshold, climatology is right by default, its score collapses
-            toward zero, and the ratio explodes — measured RPSS of −3421 on an ordinary near-miss
-            event, which then sets the panel's axis. RPSS is withheld there and says so.
+            crossed even the lowest threshold, climatology is right by default. RPSS is withheld
+            there and says so.
           </li>
         </ul>
 
