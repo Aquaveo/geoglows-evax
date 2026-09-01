@@ -443,10 +443,9 @@ function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
   return (
     <div style={correctionBanner}>
       <strong>SABER.</strong> The RFS team's own correction, fitted centrally per river and per
-      calendar month and applied through discharge_transform. It uses no uploaded observations at all,
-      so it cannot inherit a short gauge record's gaps — and because nothing can fail, all{' '}
-      {c.forecasts.size} runs are kept. Nothing is excluded, so the surviving set is not a biased
-      subset.
+      calendar month. It uses none of your uploaded observations, so it cannot inherit a short
+      record's gaps, and all {c.forecasts.size} runs are kept — nothing is excluded, so what you are
+      scoring is not a biased subset.
       <ul style={{ maxWidth: PROSE_MAX, margin: '0.4rem 0 0', paddingLeft: '1.2rem', lineHeight: 1.6 }}>
         {c.unusableMonths.length > 0 && (
           <li style={{ color: '#8a6d1f' }}>
@@ -514,8 +513,7 @@ function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
               Not monotonic in month{nonMonotonic.length === 1 ? '' : 's'}{' '}
               {nonMonotonic.join(', ')}
             </strong>{' '}
-            — a larger forecast can transform to a smaller corrected value. These are degree-7
-            polynomial fits, and nothing constrains them to preserve order.
+            — in these months a larger forecast can come out as a smaller corrected value.
           </li>
         )}
         {c.clippedToQmax > 0 && (
@@ -527,9 +525,7 @@ function GlobalCorrectionBanner({ c }: { c: GlobalCorrection }) {
         {c.clippedToQmin > 0 && (
           <li>
             {c.clippedToQmin.toLocaleString()} values ({pct(c.clippedToQmin)}%) fell below the
-            fitted minimum for their month and were clipped up to it before transforming. Counted
-            because the high end was already counted, and a value clipped up is just as much
-            information lost.
+            fitted minimum for their month and were clipped up to it before transforming.
           </li>
         )}
         {c.negativeClamped > 0 && (
@@ -552,9 +548,9 @@ function CorrectionBanner({ c, clampedNegatives }: { c: BiasCorrection; clampedN
           <strong>Corrected metrics are withheld for this event.</strong> {c.selectionBias}
         </p>
       )}
-      <strong>Bias-corrected</strong> by monthly quantile mapping of the forecasts onto the
-      uploaded observed record ({c.observedCadence}), using the retrospective (
-      {c.simulatedCadence}) as the simulated distribution.
+      <strong>Bias-corrected</strong> against your uploaded observed record ({c.observedCadence}),
+      using the retrospective ({c.simulatedCadence}) as the simulated distribution. Fitted per
+      calendar month.
       <ul style={{ maxWidth: PROSE_MAX, margin: '0.4rem 0 0', paddingLeft: '1.2rem' }}>
         {c.months.map((m) => (
           <li key={m.month}>
@@ -567,9 +563,9 @@ function CorrectionBanner({ c, clampedNegatives }: { c: BiasCorrection; clampedN
               <>
                 {' '}
                 — <strong>low resolution</strong>: {Math.round(m.simMaxBinShare * 100)}% of
-                simulated and {Math.round(m.obsMaxBinShare * 100)}% of observed values fall in a
-                single histogram bin, so the mapping has little detail where the data is and
-                behaves close to a constant scale factor. Check the transfer curve.
+                simulated and {Math.round(m.obsMaxBinShare * 100)}% of observed values fall in one
+                bin, so the correction has little detail to work with in this month and behaves close
+                to a constant scale factor.
               </>
             )}
           </li>
@@ -584,24 +580,20 @@ function CorrectionBanner({ c, clampedNegatives }: { c: BiasCorrection; clampedN
         {c.aboveSimRange > 0 && (
           <li style={{ color: '#8a6d1f' }}>
             <strong>{c.aboveSimRange.toLocaleString()}</strong> member-timestep
-            {c.aboveSimRange === 1 ? '' : 's'} sat at or above the simulated month's maximum, where
-            the mapping has no inverse. The simulated distribution is flat there, so every forecast
-            above it collapses onto the same corrected flow however far above it sits — a 178 and a
-            161,950 come out the same number.
+            {c.aboveSimRange === 1 ? '' : 's'} sat at or above the simulated month's maximum. Above
+            that point the correction cannot distinguish magnitudes: every such forecast comes out at
+            the same value however far above it sat.
             {c.positiveInfinite > 0 && (
               <>
                 {' '}
-                {c.positiveInfinite.toLocaleString()} of them returned <strong>+Infinity</strong>{' '}
-                instead of that ceiling, which happens when two cumulative sums disagree in their
-                last bits; those timesteps drop out of every metric as a gap would.
+                {c.positiveInfinite.toLocaleString()} returned <strong>+Infinity</strong> rather than
+                that value, and those timesteps drop out of every metric as a gap would.
               </>
             )}
             <span style={notePara}>
-            These are kept, not removed, because this app evaluates the geoglows method and the
-            reference keeps them. But the finite ones are counted in the metrics as though the
-            correction had produced a real number there, and the runs that land here are the ones
-            that forecast the event — so read the corrected magnitude scores knowing the top of the
-            event was flattened onto a ceiling.
+            All are kept rather than removed, matching the reference implementation. The runs landing
+            here are the ones that forecast the event, so read the corrected magnitude scores knowing
+            the top of the event was flattened.
             </span>
           </li>
         )}
@@ -2716,9 +2708,9 @@ export function MetricsTab() {
                 shape or timing itself was wrong.
                 <br />
                 <br />
-                This panel <em>is</em> re-scored under each correction — quantile mapping is a
-                per-month transform, so it does move r — but it cannot re-time a hydrograph, so a
-                correction will not rescue a genuinely mistimed forecast. Where a correction
+                This panel <em>is</em> re-scored under each correction, so r does move — but no
+                correction can re-time a hydrograph, and none will rescue a genuinely mistimed
+                forecast. Where a correction
                 saturates a member flat, r stops existing for that member rather than improving:
                 correlation is undefined without variability, so the member drops out of this box
                 instead of scoring badly in it. Check the member count in the hover before reading a
@@ -2992,7 +2984,7 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Bias correction"
-        description="Whether either correction helped, and what it did to get there. Opens with raw against both corrections on every affected metric at once; below that, how far the chosen correction shifts each lead day and one run before and after. Pick which correction with the selector — the local CDF map fitted to your uploaded gauge record, or SABER, fitted centrally per river and month. Last on the page because the table summarises the blocks above it."
+        description="Whether either correction helped, and what it did to get there. Opens with raw against both corrections on every affected metric at once; below that, how far the chosen correction shifts each lead day and one run before and after. Pick which correction with the selector: one fitted to your uploaded gauge record, or SABER, fitted centrally per river and month. For how either method works, see the papers linked on the Overview tab."
       >
         {comparisonReady && (
           <div style={subBlock}>
