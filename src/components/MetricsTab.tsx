@@ -1934,7 +1934,6 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Categorical metrics"
-        description="Did the forecast put the event in the right severity class? Dual-threshold classification of forecast against observed return-period categories: the contingency matrix, MCC and HSS over all categories at once, RPS and RPSS which are the only scores here that know the categories are ordered, the two-by-two scores per exceedance threshold (POD, FAR, CSI, frequency bias), and CSI by lead day in its own panel. All are left raw — the dual thresholds absorb magnitude bias by construction, so correcting the forecasts too would apply the same adjustment twice."
       >
         {!canCompute && (
           <p style={{ maxWidth: PROSE_MAX, color: '#555' }}>
@@ -2279,7 +2278,6 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Timing metrics"
-        description="Did the forecast get the timing right, independently of magnitude? Peak timing error (Δt_peak) grouped two ways — by lead day, and by forecast initialization — plus first-ascending threshold crossing error (Δt_RP), the warning-time error, per ensemble member. Members are excluded only on facts about their own shape: flat throughout, or a maximum sitting on their first or last sample. The counts are reported beneath each chart, because excluding anything without saying so is survivorship bias."
       >
         {!canComputeTiming && (
           <p style={{ maxWidth: PROSE_MAX, color: '#555' }}>
@@ -2406,7 +2404,6 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Accuracy metrics"
-        description="How close the forecast came in magnitude and shape. KGE' and its decomposition — Pearson correlation r, bias ratio β = μ_f/μ_o, variability ratio γ = CV_f/CV_o (Kling et al., 2012) — then NSE and KGE' side by side, coloured by performance band, by lead day and by forecast initialization. Every number here comes from one scoring pass over the ensemble, so the box plots and the bars cannot disagree. All compare raw discharge, so a bias-corrected variant is available."
       >
         {!canComputeAccuracy && (
           <p style={{ maxWidth: PROSE_MAX, color: '#555' }}>
@@ -2626,7 +2623,6 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Probabilistic metrics"
-        description="Continuous Ranked Probability Score (CRPS) via the energy-score decomposition (Gneiting & Raftery, 2007): CRPS = MAE component − Spread. Evaluates the 51-member ensemble as a distribution; one scalar per lead day. CRPSS = 1 − CRPS/CRPS_climatology normalises it against a seasonal climatological forecast built from the observed record, which is why it requires the historical observations upload."
       >
         {!canComputeCrps && (
           <p style={{ maxWidth: PROSE_MAX, color: '#555' }}>
@@ -2712,7 +2708,6 @@ export function MetricsTab() {
 
       <CollapsibleBlock
         title="Bias correction"
-        description="Whether either correction helped, and what it did to get there. Opens with raw against both corrections on every affected metric at once; below that, how far the chosen correction shifts each lead day and one run before and after. Pick which correction with the selector: one fitted to your uploaded gauge record, or SABER, fitted centrally per river and month. For how either method works, see the papers linked on the Overview tab."
       >
         {comparisonReady && (
           <div style={subBlock}>
@@ -2988,12 +2983,10 @@ function DetectionTable({ detection }: { detection: CrossingDetection }) {
 
 function CollapsibleBlock({
   title,
-  description,
   defaultOpen = false,
   children,
 }: {
   title: string;
-  description?: string;
   defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
@@ -3013,7 +3006,6 @@ function CollapsibleBlock({
       </button>
       {open && (
         <div style={blockBody}>
-          {description && <p style={blockIntro}>{description}</p>}
           {children}
         </div>
       )}
@@ -3139,13 +3131,6 @@ const chevronStyle: React.CSSProperties = {
 };
 const blockBody: React.CSSProperties = {
   padding: '1.25rem 1.5rem',
-};
-const blockIntro: React.CSSProperties = {
-  maxWidth: PROSE_MAX,
-  lineHeight: 1.55,
-  color: '#555',
-  margin: '0 0 1rem',
-  fontSize: '0.95rem',
 };
 const fmt = (v: number) => (Number.isFinite(v) ? v.toFixed(3) : 'n/a');
 const scoreTable: React.CSSProperties = {
