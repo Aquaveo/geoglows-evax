@@ -109,111 +109,41 @@ export function OverviewTab() {
 
         <h3 style={h3}>Handling mismatched resolutions</h3>
         <p style={p}>
-          Uploaded observations arrive at any interval — 15-minute, hourly, 3-hourly, daily; RFS
-          publishes at its own. Every metric therefore compares two series that may not share a
-          clock.
-        </p>
-        <p style={{ maxWidth: PROSE_MAX, ...p, fontWeight: 600, color: '#1f2937' }}>
-          Comparison happens at the coarser resolution: the finer series is aggregated down, the
-          coarser never interpolated up.
-        </p>
-        <p style={p}>
-          Interpolating upward manufactures data. A daily record stretched to hourly invents 23
-          values per real measurement, all counted as independent samples — inflating sample size
-          roughly 24-fold, smoothing the hydrograph, and quantising peak timing to the daily value's
-          hour while still reporting hours. Aggregating down loses detail instead, which is honest,
-          and every pair still rests on a real observation.
+          Uploaded observations arrive at any interval — 15-minute, hourly, daily; RFS publishes at
+          its own. Comparison happens at the coarser of the two: the finer series is aggregated down,
+          the coarser never interpolated up. Interpolating up would invent samples the data does not
+          contain and let every metric count them as evidence.
         </p>
 
         <h3 style={h3}>RFS Forecast</h3>
         <p style={p}>
-          The RFS forecast temporal spacing changes partway through its horizon — finer early,
-          coarser late. All 51 members share one time index, so they never disagree with each other;
-          the index is simply denser at short lead. Three consequences:
+          The forecast's spacing changes partway through its horizon — finer early, coarser late,
+          with all 51 members sharing one time index. The comparison grid is taken from lead 1, the
+          densest day a run publishes. So later leads carry fewer pairs, because fewer values were
+          published rather than worse ones, and each lead is gated on its own count — long leads
+          blank out first. A peak at a coarse lead can only be placed on a sample that exists, so
+          timing bars there are drawn hollow when the difference is smaller than the spacing.
         </p>
-        <ul style={ul}>
-          <li>
-            The comparison grid comes from lead 1, the densest day a run publishes. Deliberate, but
-            it leaves later leads on a grid finer than their own publishing interval.
-          </li>
-          <li>
-            Later leads carry fewer pairs — fewer values were published, not worse ones. Each lead
-            is gated on its own count, so long leads blank out first.
-          </li>
-          <li>
-            A peak can only be placed on a sample that exists, so at a coarse lead the nearest
-            instant may be hours from the true crest. Timing bars are drawn hollow when the
-            difference is smaller than that spacing; the crossing panel shades it as a band.
-          </li>
-        </ul>
 
         <h3 style={h3}>How a bin is summarised</h3>
         <p style={p}>
-          When several timesteps fall in one grid bin they have to become one number, and that
-          choice decides how often the flow counts as crossing a threshold.
-        </p>
-        <ul style={ul}>
-          <li>
-            <strong>Bin mean, always</strong>, for the error and distribution metrics — CRPS, CRPSS,
-            NSE, KGE′ and its components. These are about volume and shape, which the mean
-            preserves.
-          </li>
-          <li>
-            <strong>Your choice</strong>, defaulting to the <strong>median</strong>, for the
-            categorical family <em>and the timing family</em>. The selector sits in the Categorical
-            block but reaches both, and also governs the reference RPSS is scored against.
-          </li>
-        </ul>
-        <p style={p}>
-          Your return-period thresholds are fitted to the record you upload, at whatever resolution
-          it arrived in. A daily record — usually daily <em>mean</em> discharge — gives a threshold
-          on daily means; a 15-minute record gives one on instantaneous peaks. A threshold can only
-          be compared against a quantity of its own kind, and only you know which you have. The
-          simulated thresholds are always daily, so on a sub-daily upload the two halves are not
-          fitted alike.
+          When several timesteps fall in one grid bin they have to become one number. The error and
+          distribution metrics — CRPS, CRPSS, NSE, KGE′ — always use the mean, which preserves volume
+          and shape. The categorical and timing families use your choice, defaulting to the median.
         </p>
         <p style={p}>
-          No summary is safe in general, and they fail in opposite directions. On a bin with normal
-          within-day variation the maximum crosses a high threshold far more often than the mean
-          does, inflating the exceedance count. But a short, sharp peak binned to a coarser interval
-          survives the maximum and is flattened by the median and the mean, erasing an exceedance
-          that really happened.
+          That choice matters because your return-period thresholds are fitted to the record you
+          upload, at whatever resolution it arrived in: a daily record gives a threshold on daily
+          means, a 15-minute record one on instantaneous peaks. Neither extreme is safe — the
+          maximum over-counts exceedances on an ordinary bin, while the median and mean erase a
+          short, sharp peak. The median is the default because it puts the same kind of quantity on
+          both sides of the comparison. If the choice would change your event's classification, the
+          Categorical block says so.
         </p>
         <p style={p}>
-          The median is the default for comparability, not for being least distorting. Only the
-          finer side gets summarised, and a value already reported at a coarser resolution
-          represents something typical of its period rather than an instant — so the median puts the
-          same kind of quantity on both sides. Which is right depends on your event, so the app
-          checks: if the choice would change the event's return-period classification, the
-          Categorical block says so and shows what each summary gives.
+          None of this matters unless your data is finer than the grid: on a daily gauge with a daily
+          grid every bin holds one value and all three agree.
         </p>
-        <p style={p}>
-          This aggregates over time, member by member — 51 members stay 51 trajectories. Combining
-          members is a separate choice, made in the Contingency matrix block. And none of it matters
-          unless your data is finer than the grid: on a daily gauge with a daily grid every bin holds
-          one value and all three agree.
-        </p>
-
-        <h3 style={h3}>Consequences</h3>
-        <ul style={ul}>
-          <li>
-            Timestamps are matched on exact bin boundaries, so a gauge reporting five past the hour
-            still pairs correctly once aggregated.
-          </li>
-          <li>
-            Gaps stay gaps: an empty bin yields no forecast/observation pair, not a filled value. A
-            bin no member reaches is dropped rather than counted.
-          </li>
-          <li>
-            Coarse observations mean few pairs. A four-day event at daily resolution gives four per
-            lead day — too few for any paired score, since r, γ, KGE′, NSE, MCC, HSS and RPS share
-            one minimum — however confident the box plots look.
-          </li>
-          <li>
-            Peak timing resolves only to the grid interval, and that interval is not the same at
-            every lead. On daily data Δt<sub>peak</sub> answers "which day", not "which hour".
-          </li>
-        </ul>
 
         <h3 style={h3}>Your current data</h3>
         {obsCadence || fcstCadence ? (
@@ -224,26 +154,6 @@ export function OverviewTab() {
             resolutions and comparison grid appear here.
           </p>
         )}
-        <p style={p}>
-          The coarser input always sets the comparison resolution. Nothing is interpolated up to a
-          finer grid, because that would invent samples the data does not contain and make every
-          metric look better-sampled than it is.
-        </p>
-        {/*
-          OUTSIDE the conditional, deliberately. This caveat used to sit in the
-          `else` branch, so it rendered only while there was no data and vanished
-          the moment the data it warns about was loaded — the one state in which
-          it was useless was the only state that showed it.
-        */}
-        <p style={p}>
-          <strong>Why this panel can disagree with the metrics page.</strong> It reads the forecast
-          cadence off one <em>whole</em> run and reports the median spacing; the metrics read it off
-          lead 1, the densest day a run publishes. An RFS run changes spacing across its horizon —
-          all 51 members share one time index, but that index is finer early than late — so a run
-          whose spacing changes partway along has no single cadence, and the two readings
-          legitimately differ. Where they do, the resolution notice shown beside the metrics is the
-          one the metrics actually used.
-        </p>
       </section>
 
       <section style={sectionStyle}>
