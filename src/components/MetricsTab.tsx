@@ -2203,10 +2203,13 @@ export function MetricsTab() {
               you uploaded, restricted to <strong>±15 days of the event's calendar days</strong> —
               the same rule CRPSS uses. Whole-record would ask the reference to predict a wet-season
               flood from the dry season's distribution, so beating it would partly reward the
-              forecast for knowing what month it is. With no historical upload, or too few days in
-              season, RPSS is <strong>withheld rather than estimated</strong>: it would otherwise be
-              scored against a climatology built from the very event being scored. RPS itself is a
-              proper score and is still shown.
+              forecast for knowing what month it is. RPSS is <strong>withheld rather than
+              estimated</strong> for any of three reasons, and the figure names which one applied:
+              no historical record in season — it would otherwise be scored against a climatology
+              built from the very event being scored; nothing in the window crossing even the lowest
+              threshold, where climatology is right by default and the ratio explodes; or a
+              reference so nearly perfect that the same thing happens. RPS itself is a proper score
+              and is still shown.
               <br />
               <br />
               Compare <strong>RPSS</strong> across events, not RPS. Raw RPS is a mean over
@@ -2411,8 +2414,10 @@ export function MetricsTab() {
         {!peakTimingByLeadRows && peakByRun && peakByRun.daysBefore.length > 0 && (
           <p style={note}>
             The by-lead-day version of this chart needs the timing metrics computed first — use the
-            button above. It is the more interpretable of the two, for the reason given under the
-            per-initialization chart below.
+            button above. It is the more interpretable of the two: grouping by lead compares
+            forecasts at a consistent horizon, whereas grouping by initialization forces a run
+            started long before the peak to look early and one started on the peak day to look
+            late.
           </p>
         )}
 
@@ -2458,10 +2463,11 @@ export function MetricsTab() {
               makes this worth reading separately from KGE′. Members with a noisy, incoherent shape
               are scored too, and their scatter is the finding rather than something to hide — so a
               wide band at long lead usually means the ensemble had no peak to agree on.
-              The axis is scaled to the bars and the middle half, not to the full range — a single
+              The axis is scaled to the bars and the middle half rather than to the full range
+              whenever a straggler would otherwise swamp it — a single
               straggling member can sit hundreds of hours out, and letting that set the scale left
-              every bar too short to read. A <strong>›</strong> marks each row whose range carries on
-              past the edge; hover for its exact extent.
+              every bar too short to read. A <strong>›</strong> or <strong>‹</strong> marks each row whose range carries
+              on past the edge on that side; hover for its exact extent.
               <br />
               <br />
               Grouped by how far ahead the forecast was looking rather than by when it was issued,
@@ -2600,12 +2606,13 @@ export function MetricsTab() {
               hours between the forecast first crossing the selected threshold on the way up and
               the observation doing the same — the warning-time error. The grey band is the lead's
               own sampling resolution, and it matters more here than for peak timing: a crossing can
-              only be detected on a sample that exists, so at the coarse leads the error is biased
-              <em>late</em> in one direction rather than scattering both ways. Below zero the forecast
+              only be detected on a sample that exists, so at the coarse leads a crossing can only be
+              detected at or after the true one, which pushes the error <em>late</em> rather than
+              scattering both ways. Below zero the forecast
               warned early, above zero late. Only members that crossed the threshold in{' '}
               <em>both</em> forecast and observation can contribute, so check the detection table
               below before trusting a box: a tight box built from three members is a small
-              sample, not skill, and members counted as "obs only" are missed warnings that this
+              sample, not skill, and members counted under "Obs ✓ / Fcst ✗" are missed warnings that this
               plot cannot show.
             </PlotNote>
             <DetectionTable detection={app.crossingDetections[crossingRp]} />
@@ -2819,8 +2826,9 @@ export function MetricsTab() {
                 the score of a forecast that just predicts the observed mean flow at every timestep:
                 0 for <strong>NSE</strong>, which is already normalised by the observed variance, and
                 −0.41 for <strong>KGE′</strong>, which is not. Left of that dotted line the forecast
-                is worse than doing nothing. Dashed lines mark the remaining category boundaries at
-                0.75 and 0.50.
+                is worse than doing nothing. Dashed lines mark the remaining category boundaries: 0.75
+                and 0.50 on both panels, plus 0 on KGE′, where it is the Poor/Very poor edge rather
+                than a benchmark.
                 <br />
                 <br />
                 Categories follow the KGE′ classification of Thiemig et al. (2015, citing Kling
@@ -2849,8 +2857,10 @@ export function MetricsTab() {
                 Read a row straight across: strong on KGE' but weak on NSE usually means the shape
                 was right and the magnitude was not, because NSE punishes squared error on the peak
                 while KGE' spreads the penalty across three components. Bars are the median across
-                members, matching the black median line on the box plots above, and hover gives the
-                pair count behind each row.
+                members. When both selectors in this block are set the same way, the KGE′ bar is the
+                same number as the black median line on the KGE′ box plot above — they come from one
+                scoring pass — but the two selectors are independent, so check them before comparing.
+                NSE has no box plot. Hover gives the pair count behind each row.
               </PlotNote>
             </div>
           )}
@@ -3009,7 +3019,9 @@ export function MetricsTab() {
               <span style={notePara}>
                 A dash means the metric has not been computed yet for any variant — this table
                 reuses the other blocks' results rather than recomputing anything, so the dashes
-                run by <em>row</em>, not by column. The note above says which button fills which.
+                run by <em>row</em>, not by column. CRPS and CRPSS wait on the Compute button in the
+                block above; the rest come from the same scoring pass the accuracy charts use, so an
+                empty row there means missing data rather than an unpressed button.
               </span>
             </PlotNote>
           </div>
@@ -3117,12 +3129,13 @@ export function MetricsTab() {
                 the mapping was a no-op for that lead.
                 <br />
                 <br />
-                One caution about reading a trend here, and it applies to both: the mapping is the{' '}
-                <strong>same at every lead</strong>. The local map comes from the retrospective, which
-                has no lead dimension, and SABER's coefficients are fitted per river and calendar
-                month, not per lead. So any lead-dependence you see is not either correction treating
-                long leads differently — it is those leads occupying a different part of one fixed
-                curve. That is also the shared structural limit of both: forecast error grows with
+                One caution about reading a trend here: <strong>neither mapping has a lead
+                dimension</strong>. The local map comes from the retrospective and picks one curve per
+                run, so it really is identical at every lead. SABER's coefficients are fitted per
+                river and calendar <em>month</em> and applied per timestep, so a run whose horizon
+                crosses a month boundary does switch curves partway along. Beyond that, lead-dependence
+                is those leads occupying a different part of one fixed curve rather than either
+                correction treating long leads differently. That is also the shared structural limit of both: forecast error grows with
                 lead, and neither correction can know that.
                 <br />
                 <br />
@@ -3201,17 +3214,20 @@ export function MetricsTab() {
                 the plainest test of whether the correction helped: if the blue corrected line moves
                 toward the black observations relative to the grey raw line, it did. If it overshoots
                 past them, the mapping is over-inflating — which happens when the observed record's
-                upper tail is heavier than the simulated one. Where grey and blue coincide the mapping
-                was undefined and the raw value was kept; the subtitle counts those timesteps.
+                upper tail is heavier than the simulated one. Under the local map, where grey and blue coincide
+                the mapping was undefined there and the raw value was kept, and the subtitle counts
+                those timesteps. SABER instead leaves a gap in the blue line where a month has no
+                usable fit.
                 <br />
                 <br />
                 Two return-period sets are available in the legend, because the lines sit on two
                 different scales: the <strong>observed</strong> zones apply to the black observations
                 and to the corrected forecast, while the <strong>simulated</strong> zones are the
-                scale the raw forecast lives on. Each set stays hidden when its 2-year threshold is
-                far above everything plotted — drawing it would stretch the axis and flatten all
-                three lines — so the subtitle reports how close the peak came instead. Click a legend
-                entry to bring the zones in when they are in range.
+                scale the raw forecast lives on. The observed set is drawn when its lowest threshold
+                is within reach of the plotted peak and starts hidden otherwise — drawing it out of
+                range would stretch the axis and flatten all three lines — with the subtitle reporting
+                how close the peak came instead. The simulated set always starts as a legend entry.
+                Click either to bring its zones in.
                 <br />
                 <br />
                 Opens on a run whose horizon actually spans the observed crest, rather than the
