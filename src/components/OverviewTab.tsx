@@ -400,8 +400,8 @@ export function OverviewTab() {
 
         <h3 style={h3}>MCC and HSS</h3>
         <p style={pMono}>
-          MCC = (N·c − Σ tₖpₖ) / √[(N² − Σ pₖ²)(N² − Σ tₖ²)]{'\n'}
-          HSS = (N·c − Σ tₖpₖ) / (N² − Σ tₖpₖ)
+          {'MCC = (N·c − Σ tₖpₖ) / √[(N² − Σ pₖ²)(N² − Σ tₖ²)]\n'}
+          {'HSS = (N·c − Σ tₖpₖ) / (N² − Σ tₖpₖ)'}
         </p>
         <p style={p}>
           Both grade all K categories against chance: 1 is perfect, 0 no better than a random
@@ -423,8 +423,8 @@ export function OverviewTab() {
 
         <h3 style={h3}>Ranked probability score (RPS, RPSS)</h3>
         <p style={pMono}>
-          RPS = Σₖ (CDF_forecast(k) − CDF_observed(k))²{'\n'}
-          RPSS = 1 − RPS / RPS_climatology
+          {'RPS  = Σₖ (CDF_forecast(k) − CDF_observed(k))²\n'}
+          {'RPSS = 1 − RPS / RPS_climatology'}
         </p>
         <p style={p}>
           The only categorical score here that knows the categories are <strong>ordered</strong>.
@@ -457,8 +457,15 @@ export function OverviewTab() {
 
         <h3 style={h3}>Scores per exceedance threshold</h3>
         <p style={pMono}>
-          POD = a/(a+c)   FAR = b/(a+b)   CSI = a/(a+b+c)   bias = (a+b)/(a+c){'\n'}
-          a hits · b false alarms · c misses · d correct negatives
+          {'POD  = a / (a + c)\n'}
+          {'FAR  = b / (a + b)\n'}
+          {'CSI  = a / (a + b + c)\n'}
+          {'bias = (a + b) / (a + c)\n'}
+          {'\n'}
+          {'a  hits\n'}
+          {'b  false alarms\n'}
+          {'c  misses\n'}
+          {'d  correct negatives'}
         </p>
         <p style={p}>
           Probability of detection, false-alarm ratio, CSI and frequency bias, each from a two-by-two
@@ -699,6 +706,10 @@ const link: React.CSSProperties = { color: '#1d4ed8', textDecoration: 'underline
 const h3: React.CSSProperties = { marginTop: '1.25rem', marginBottom: '0.4rem', fontSize: '1rem' };
 const p: React.CSSProperties = { maxWidth: PROSE_MAX, margin: '0.5rem 0', lineHeight: 1.55, color: '#222' };
 const pMono: React.CSSProperties = { maxWidth: PROSE_MAX,
+  // Without this every {'\n'} in a formula block collapses to a space and the
+  // whole block renders as one run-on line. pre-wrap rather than pre so a long
+  // line still wraps on a narrow screen instead of overflowing.
+  whiteSpace: 'pre-wrap',
   margin: '0.5rem 0',
   padding: '0.5rem 0.75rem',
   background: '#f6f7f9',
