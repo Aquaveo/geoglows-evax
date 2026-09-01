@@ -212,7 +212,7 @@ export function OverviewTab() {
           maximum, because it belongs to the reference curve rather than to your gauge.
         </p>
 
-        <h3 style={h3}>The local FDC mapping, in detail</h3>
+        <h3 style={h3}>Learning more</h3>
         <p style={p}>
           To learn more about how bias correction works, visit the GEOGLOWS training materials:{' '}
           <a href="https://training.geoglows.org/rfs/bias-correction/bias-correction/" style={link} target="_blank" rel="noreferrer">
@@ -223,32 +223,6 @@ export function OverviewTab() {
             forecasted bias correction
           </a>{' '}
           for forecasts.
-        </p>
-
-        <h3 style={h3}>The ceiling: extreme forecasts stop being distinguishable</h3>
-        <p style={p}>
-          The histogram bins deliberately extend past the data, so each CDF's top step is flat and
-          cannot be inverted. Above the simulated monthly maximum the forward map has zero slope, and
-          every forecast above it collapses onto the <em>same</em> corrected flow however far above
-          it sits. Measured on a realistic June pair, forecasts of 178, 324, 810, 3,239 and{' '}
-          <strong>161,950</strong> m³/s all came out at 277.09.
-        </p>
-        <p style={p}>
-          Whether the inverse returns that ceiling or <em>+Infinity</em> is decided by floating-point
-          luck — whether two cumulative sums finished on the same last bits — so both outcomes occur
-          for the same kind of input. The infinities drop out of every metric the way a gap would,
-          since a non-finite pair never aligns. The finite ceilings do not: they are scored as though
-          the correction had produced a real number.
-        </p>
-        <p style={p}>
-          <strong>Nothing is discarded for it</strong>, and that is deliberate. The reference keeps
-          these values, and it has no notion of a "run" to drop — it takes one forecast frame and
-          returns one frame — so excluding them would be this app's invention rather than the
-          method's behaviour. It would also be the worst possible selection: a forecast only exceeds
-          the simulated maximum when it predicts something extreme, so dropping those runs
-          preferentially deletes the ones that saw the event coming, leaving a corrected score
-          computed mostly from the runs that missed it. The banner counts them instead, which matters
-          most when the runs landing on the ceiling are the runs that forecast your flood.
         </p>
       </section>
 
