@@ -378,6 +378,12 @@ export function OverviewTab() {
 
       <section style={sectionStyle}>
         <h2 style={h2}>Categorical metrics</h2>
+        <p style={p}>
+          Did the forecast put the event in the right severity class? These treat flow as a category
+          rather than a number — whether it cleared the 5-year level, not by how many m³/s — which is
+          the form a warning decision actually takes. All are scored on raw forecasts, since the dual
+          thresholds already absorb magnitude bias.
+        </p>
 
         <h3 style={h3}>Contingency matrix</h3>
         <p style={p}>
@@ -489,6 +495,12 @@ export function OverviewTab() {
 
       <section style={sectionStyle}>
         <h2 style={h2}>Timing metrics</h2>
+        <p style={p}>
+          Did the flood arrive when the forecast said it would? These ignore magnitude entirely, so a
+          member can be badly wrong on flow and still score perfectly if it timed the crest. That
+          separation is the point: timing and magnitude fail independently, and a score combining
+          them hides which one went wrong.
+        </p>
         <p style={p}>Both are signed differences in hours: negative is early, positive late.</p>
 
         <h3 style={h3}>Peak timing error</h3>
@@ -549,6 +561,11 @@ export function OverviewTab() {
 
       <section style={sectionStyle}>
         <h2 style={h2}>Accuracy metrics</h2>
+        <p style={p}>
+          How close was the forecast in magnitude and shape? These compare discharge directly rather
+          than through categories or timestamps, which makes them the only family that measures bias
+          — and the only one where a bias correction changes the answer.
+        </p>
 
         <h3 style={h3}>Kling–Gupta efficiency (KGE′)</h3>
         <p style={pMono}>KGE' = 1 − √[(r − 1)² + (β − 1)² + (γ − 1)²]</p>
@@ -633,6 +650,11 @@ export function OverviewTab() {
 
       <section style={sectionStyle}>
         <h2 style={h2}>Probabilistic metrics</h2>
+        <p style={p}>
+          Did the ensemble as a whole cover the truth? Instead of scoring members one at a time and
+          averaging, these read all 51 as a single distribution — so a forecast that is honestly
+          uncertain can beat one that is confidently wrong, which no per-member score can express.
+        </p>
 
         <h3 style={h3}>Continuous ranked probability score (CRPS, CRPSS)</h3>
         <p style={pMono}>
