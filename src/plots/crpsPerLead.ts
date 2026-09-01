@@ -82,7 +82,16 @@ export function crpsPerLeadFigure(
   const subtitle =
     opts.subtitle ??
     'Gneiting & Raftery (2007) / Hersbach (2000)  |  51 ensemble members  |  CRPS = MAE component − Spread';
-  const titleText = `${title}<br><sup>${subtitle}</sup>`;
+  // Sample size travels with the score: the same CRPS from 4 pairs and from 40
+  // are not equally trustworthy.
+  const counted = r.nTimesteps.filter((n) => n > 0);
+  const pairNote =
+    counted.length === 0
+      ? ''
+      : Math.min(...counted) === Math.max(...counted)
+        ? `  |  ${counted[0]} pairs per lead`
+        : `  |  ${Math.min(...counted)}–${Math.max(...counted)} pairs per lead`;
+  const titleText = `${title}<br><sup>${subtitle}${pairNote}</sup>`;
 
   const layout: Partial<Layout> = {
     title: { text: titleText, x: 0.5 },

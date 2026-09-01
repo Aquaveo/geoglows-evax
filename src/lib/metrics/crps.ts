@@ -1,4 +1,5 @@
 import type { LeadBucket, LeadBuckets, TimeSeries } from '../types';
+import { seasonalValues } from './season';
 
 export interface CrpsPerLead {
   leads: number[];
@@ -6,6 +7,85 @@ export interface CrpsPerLead {
   mae: number[];
   spread: number[];
   nTimesteps: number[];
+  /**
+   * CRPS of the climatological reference over the same timesteps as `crps`.
+   * All NaN when no climatology was supplied.
+   */
+  refCrps: number[];
+  /** CRPS skill score, 1 − crps/refCrps. NaN without a climatology. */
+  crpss: number[];
+}
+
+/**
+ * Climatological reference distribution, sampled from the retrospective record
+ * around the event's time of year. Pre-sorted with prefix sums so that a
+ * per-observation CRPS costs a binary search instead of a full pass over a
+ * multi-decade sample.
+ */
+export interface ClimatologySample {
+  /** Ascending sample values. */
+  sorted: number[];
+  /** prefix[k] = sum of sorted[0..k-1]. */
+  prefix: number[];
+  /** Spread term (1/(2N²)) ΣΣ|xᵢ − xⱼ| — constant for the sample. */
+  spread: number;
+  /** Calendar half-width, in days, used to select the sample. */
+  windowDays: number;
+}
+
+/**
+ * Build the climatological reference from the retrospective record, keeping
+ * only values within ±`windowDays` of a day of year the event covers.
+ *
+ * Restricting by season matters: scored against the whole-record distribution,
+ * any wet-season forecast looks skilful simply for predicting high flow in the
+ * wet season. Returns null when too few values survive to form a distribution.
+ */
+export function buildClimatology(
+  retro: TimeSeries,
+  eventData: TimeSeries,
+  windowDays = 15,
+  minSample = 30,
+): ClimatologySample | null {
+  if (retro.time.length === 0 || eventData.time.length === 0) return null;
+
+  const sample = seasonalValues(retro, eventData, windowDays);
+  if (sample.length < minSample) return null;
+
+  sample.sort((a, b) => a - b);
+
+  const N = sample.length;
+  const prefix = new Array<number>(N + 1).fill(0);
+  for (let i = 0; i < N; i++) prefix[i + 1] = prefix[i] + sample[i];
+
+  // Σᵢ Σⱼ |xᵢ − xⱼ| = 2 Σᵢ (2i − N + 1) xᵢ for ascending x, so the spread term
+  // (1/(2N²))·ΣΣ reduces to (1/N²) Σᵢ (2i − N + 1) xᵢ. O(N) instead of O(N²).
+  let weighted = 0;
+  for (let i = 0; i < N; i++) weighted += (2 * i - N + 1) * sample[i];
+  const spread = weighted / (N * N);
+
+  return { sorted: sample, prefix, spread, windowDays };
+}
+
+/** CRPS of the climatological sample against a single observation. */
+export function climatologyCrpsAt(c: ClimatologySample, obs: number): number {
+  if (!Number.isFinite(obs)) return Number.NaN;
+  const N = c.sorted.length;
+
+  // k = count of sample values <= obs, by binary search.
+  let lo = 0;
+  let hi = N;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (c.sorted[mid] <= obs) lo = mid + 1;
+    else hi = mid;
+  }
+  const k = lo;
+
+  // mean|xᵢ − obs| = (1/N)[ obs(2k − N) − 2·prefix[k] + total ]
+  const total = c.prefix[N];
+  const mae = (obs * (2 * k - N) - 2 * c.prefix[k] + total) / N;
+  return mae - c.spread;
 }
 
 /**
@@ -58,6 +138,7 @@ export function computeCrpsByLead(
   buckets: LeadBuckets,
   eventData: TimeSeries,
   maxLead = 15,
+  climatology?: ClimatologySample | null,
 ): CrpsPerLead {
   const out: CrpsPerLead = {
     leads: [],
@@ -65,6 +146,8 @@ export function computeCrpsByLead(
     mae: [],
     spread: [],
     nTimesteps: [],
+    refCrps: [],
+    crpss: [],
   };
 
   const obsMap = buildObsMap(eventData);
@@ -74,14 +157,20 @@ export function computeCrpsByLead(
       ? eventData.time[eventData.time.length - 1].getTime()
       : Number.NEGATIVE_INFINITY;
 
+  function pushEmpty() {
+    out.crps.push(Number.NaN);
+    out.mae.push(Number.NaN);
+    out.spread.push(Number.NaN);
+    out.nTimesteps.push(0);
+    out.refCrps.push(Number.NaN);
+    out.crpss.push(Number.NaN);
+  }
+
   for (let lead = 0; lead <= maxLead; lead++) {
     out.leads.push(lead);
     const bucket = buckets[lead];
     if (!bucket || bucket.time.length === 0) {
-      out.crps.push(Number.NaN);
-      out.mae.push(Number.NaN);
-      out.spread.push(Number.NaN);
-      out.nTimesteps.push(0);
+      pushEmpty();
       continue;
     }
 
@@ -91,41 +180,54 @@ export function computeCrpsByLead(
     const start = Math.max(fMin, obsMin);
     const end = Math.min(fMax, obsMax);
     if (!(start <= end)) {
-      out.crps.push(Number.NaN);
-      out.mae.push(Number.NaN);
-      out.spread.push(Number.NaN);
-      out.nTimesteps.push(0);
+      pushEmpty();
       continue;
     }
 
     let crpsSum = 0;
     let maeSum = 0;
     let spreadSum = 0;
+    let refSum = 0;
     let n = 0;
     for (let i = 0; i < bucket.time.length; i++) {
       const ms = bucket.time[i].getTime();
       if (ms < start || ms > end) continue;
       const obs = obsMap.get(ms);
       if (obs === undefined) continue;
-      const r = crpsTimestep(bucket.members[i], obs);
+      // `?? []` for the same reason rps.ts:215 has it. A bucket row with no
+      // member array made crpsTimestep throw `TypeError: members is not
+      // iterable`, and the throw propagated to setCrpsError and blanked ALL
+      // THREE CRPS panels — raw, local and SABER — on one bad row. crpsTimestep
+      // returns NaN for an empty ensemble, so the row is skipped by the
+      // isFinite check below and the other leads still report.
+      const r = crpsTimestep(bucket.members[i] ?? [], obs);
       if (Number.isFinite(r.crps)) {
         crpsSum += r.crps;
         maeSum += r.mae;
         spreadSum += r.spread;
+        // Reference is scored on exactly the timesteps the forecast was scored
+        // on, so the ratio compares like with like.
+        if (climatology) refSum += climatologyCrpsAt(climatology, obs);
         n += 1;
       }
     }
 
     if (n === 0) {
-      out.crps.push(Number.NaN);
-      out.mae.push(Number.NaN);
-      out.spread.push(Number.NaN);
-      out.nTimesteps.push(0);
+      pushEmpty();
     } else {
-      out.crps.push(crpsSum / n);
+      const meanCrps = crpsSum / n;
+      out.crps.push(meanCrps);
       out.mae.push(maeSum / n);
       out.spread.push(spreadSum / n);
       out.nTimesteps.push(n);
+      if (climatology) {
+        const ref = refSum / n;
+        out.refCrps.push(ref);
+        out.crpss.push(ref > 0 ? 1 - meanCrps / ref : Number.NaN);
+      } else {
+        out.refCrps.push(Number.NaN);
+        out.crpss.push(Number.NaN);
+      }
     }
   }
   return out;

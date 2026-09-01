@@ -5,6 +5,34 @@ export interface PerLeadDistribution {
   leads: number[];
   /** values[i] = ensemble-member values at leads[i] (NaNs filtered out). */
   values: number[][];
+  /**
+   * Forecast/observation pairs behind each lead. A metric computed from four
+   * pairs is not comparable to one computed from forty, so this travels with the
+   * values rather than being inferred from them.
+   */
+  pairs?: number[];
+  /**
+   * Per-lead reason the metric was not computed, index-aligned with `leads`.
+   * A non-null entry means the lead is deliberately blank, and the reason is
+   * rendered on the plot — a gap with no explanation reads as a bug.
+   */
+  skipped?: (string | null)[];
+  /**
+   * Timing resolution at each lead, in hours — the spacing of the samples the
+   * value was measured on, index-aligned with `leads`.
+   *
+   * Only meaningful for metrics measured in time. An RFS run changes spacing
+   * across its horizon: all 51 members share one time index, but that index is
+   * finer early than late. So a Δt smaller than the lead's own spacing is not a
+   * measurement of anything — it is the argmax landing on the nearest available
+   * sample.
+   *
+   * Measured on a PERFECT forecast against 3-hourly observations, with the run
+   * coarsening to 6-hourly after day 7: Δt reads 0.0 h at leads 1–7 and −3.0 h
+   * at leads 8–15, unanimously across members. A tight box at exactly one step,
+   * which reads as real early bias and is not.
+   */
+  resolutionHours?: (number | null)[];
 }
 
 export interface DistributionFigureOptions {
@@ -16,6 +44,14 @@ export interface DistributionFigureOptions {
   subtitle?: string;
   /** Y-axis title. Defaults to metricLabel. */
   yAxisLabel?: string;
+  /** X-axis title. Defaults to "Lead Day". */
+  xAxisLabel?: string;
+  /**
+   * Replaces the numeric x tick and hover labels, index-aligned with `leads`.
+   * `leads` still supplies the positions, so ranges and reference lines keep
+   * working — only the labelling changes.
+   */
+  xTickText?: string[];
   /** d3 number format for value tooltips. Default ".4f". */
   valueFormat?: string;
   /** Draw a horizontal y = 0 dashed reference line. */
@@ -55,6 +91,10 @@ export function distributionVsLeadFigure(
 
   const data: Data[] = [];
 
+  // Label for point i on the x-axis, and the prefix used in hover text.
+  const xLab = (i: number) => opts.xTickText?.[i] ?? String(d.leads[i]);
+  const xPrefix = opts.xTickText ? '' : 'Lead ';
+
   // 1) One Box trace per lead — single shared legend entry for the group.
   let legendShown = false;
   for (let i = 0; i < d.leads.length; i++) {
@@ -75,10 +115,16 @@ export function distributionVsLeadFigure(
       name: opts.membersLabel ?? '51 members (leads 0–15)',
       legendgroup: 'members',
       showlegend: !legendShown,
-      hovertemplate: `<b>Lead ${lead}</b><br>${opts.metricLabel}: %{y:${fmt}}<extra></extra>`,
+      hovertemplate:
+        `<b>${xPrefix}${xLab(i)}</b>` +
+        (d.pairs?.[i] != null ? ` · ${d.pairs[i]} pairs` : '') +
+        `<br>${opts.metricLabel}: %{y:${fmt}}<extra></extra>`,
     });
     legendShown = true;
   }
+
+  // Hover labels for the overlay line traces, index-aligned with allLeads.
+  const xLabels = d.leads.map((_, i) => xLab(i));
 
   // 2) Summary stats per lead for the overlays.
   const medians: number[] = [];
@@ -115,7 +161,8 @@ export function distributionVsLeadFigure(
     line: { color: 'black', width: 2 },
     marker: { size: 6, color: 'black' },
     name: 'Median',
-    hovertemplate: `<b>Lead %{x}</b><br>Median: %{y:${fmt}}<extra></extra>`,
+    customdata: xLabels,
+    hovertemplate: `<b>${xPrefix}%{customdata}</b><br>Median: %{y:${fmt}}<extra></extra>`,
   });
 
   // 4) Q75 (dotted black).
@@ -126,7 +173,8 @@ export function distributionVsLeadFigure(
     y: q75s,
     line: { color: 'black', width: 1, dash: 'dot' },
     name: 'Q75',
-    hovertemplate: `<b>Lead %{x}</b><br>Q75: %{y:${fmt}}<extra></extra>`,
+    customdata: xLabels,
+    hovertemplate: `<b>${xPrefix}%{customdata}</b><br>Q75: %{y:${fmt}}<extra></extra>`,
   });
 
   // 5) IQR fill between Q25 and Q75 (light grey, no line).
@@ -150,7 +198,8 @@ export function distributionVsLeadFigure(
     y: q25s,
     line: { color: 'black', width: 1, dash: 'dot' },
     name: 'Q25',
-    hovertemplate: `<b>Lead %{x}</b><br>Q25: %{y:${fmt}}<extra></extra>`,
+    customdata: xLabels,
+    hovertemplate: `<b>${xPrefix}%{customdata}</b><br>Q25: %{y:${fmt}}<extra></extra>`,
   });
 
   // 7) Max — hidden by default, toggle via legend.
@@ -162,7 +211,8 @@ export function distributionVsLeadFigure(
     line: { color: 'dimgray', width: 1, dash: 'dash' },
     name: 'Max',
     visible: 'legendonly',
-    hovertemplate: `<b>Lead %{x}</b><br>Max: %{y:${fmt}}<extra></extra>`,
+    customdata: xLabels,
+    hovertemplate: `<b>${xPrefix}%{customdata}</b><br>Max: %{y:${fmt}}<extra></extra>`,
   });
 
   // 8) Min — hidden by default, toggle via legend.
@@ -174,12 +224,52 @@ export function distributionVsLeadFigure(
     line: { color: 'dimgray', width: 1, dash: 'dashdot' },
     name: 'Min',
     visible: 'legendonly',
-    hovertemplate: `<b>Lead %{x}</b><br>Min: %{y:${fmt}}<extra></extra>`,
+    customdata: xLabels,
+    hovertemplate: `<b>${xPrefix}%{customdata}</b><br>Min: %{y:${fmt}}<extra></extra>`,
   });
 
-  // 9) Optional zero reference (dashed grey).
   const xMin = allLeads.length > 0 ? Math.min(...allLeads) - 0.5 : -0.5;
   const xMax = allLeads.length > 0 ? Math.max(...allLeads) + 0.5 : 15.5;
+
+  // 8b) Within-resolution band, where each lead carries its own timing
+  // resolution.
+  //
+  // Drawn BEFORE the zero line and stepped per lead rather than as one flat
+  // ribbon, because the resolution is not constant: an RFS run publishes
+  // 3-hourly early and coarser late, so the band widens exactly where the
+  // forecast gets sparser. A Δt inside it is the argmax landing on the nearest
+  // available sample, not a measurement — on a perfect forecast the band covers
+  // the whole apparent −3 h "bias" that appears at the cadence break.
+  const res = d.resolutionHours;
+  if (res && res.some((r) => r != null && r > 0)) {
+    const stepX: number[] = [];
+    const stepHi: number[] = [];
+    const stepLo: number[] = [];
+    for (let i = 0; i < d.leads.length; i++) {
+      const r = res[i];
+      if (r == null || !(r > 0)) continue;
+      // Two points per lead so the edge is a step, not a slope between leads.
+      stepX.push(d.leads[i] - 0.5, d.leads[i] + 0.5);
+      stepHi.push(r, r);
+      stepLo.push(-r, -r);
+    }
+    if (stepX.length > 0) {
+      data.push({
+        type: 'scatter',
+        mode: 'lines',
+        x: [...stepX, ...stepX.slice().reverse()],
+        y: [...stepHi, ...stepLo.slice().reverse()],
+        fill: 'toself',
+        fillcolor: 'rgba(120,120,120,0.13)',
+        line: { width: 0 },
+        name: 'within resolution',
+        hoverinfo: 'skip',
+        showlegend: true,
+      } as Data);
+    }
+  }
+
+  // 9) Optional zero reference (dashed grey).
   if (opts.zeroLine) {
     data.push({
       type: 'scatter',
@@ -205,17 +295,55 @@ export function distributionVsLeadFigure(
     }
   }
 
+  // Step 4: pair counts belong on the plot, not in the reader's head.
+  const finitePairs = (d.pairs ?? []).filter((p) => Number.isFinite(p) && p > 0);
+  const pairNote =
+    finitePairs.length === 0
+      ? ''
+      : Math.min(...finitePairs) === Math.max(...finitePairs)
+        ? `  |  ${finitePairs[0]} pairs per lead`
+        : `  |  ${Math.min(...finitePairs)}–${Math.max(...finitePairs)} pairs per lead`;
+
+  // Step 5: never leave a gap unexplained.
+  const skippedIdx = (d.skipped ?? [])
+    .map((reason, i) => (reason ? i : -1))
+    .filter((i) => i >= 0);
+  const skipReasons = [...new Set(skippedIdx.map((i) => d.skipped![i]!))];
+  const skipNote =
+    skippedIdx.length === 0
+      ? ''
+      : `  |  not computed at ${skippedIdx.length === 1 ? 'lead' : 'leads'} ` +
+        skippedIdx.map((i) => xLab(i)).join(', ') +
+        ` — ${skipReasons.join('; ')}`;
+
   const baseTitle = opts.title ?? `${opts.metricLabel} Distribution per Lead Day`;
-  const titleText = opts.subtitle ? `${baseTitle}<br><sup>${opts.subtitle}</sup>` : baseTitle;
+  const subtitleText = `${opts.subtitle ?? ''}${pairNote}${skipNote}`.replace(/^ {2}\|\s*/, '');
+  const titleText = subtitleText ? `${baseTitle}<br><sup>${subtitleText}</sup>` : baseTitle;
+
+  // "n/a" marks sit above each skipped lead so the gap is legible at a glance.
+  const skipAnnotations = skippedIdx.map((i) => ({
+    x: d.leads[i],
+    y: 1.02,
+    xref: 'x' as const,
+    yref: 'paper' as const,
+    text: 'n/a',
+    showarrow: false,
+    font: { size: 10, color: '#b45309' },
+  }));
 
   const layout: Partial<Layout> = {
     title: { text: titleText, x: 0.5 },
-    margin: { l: 60, r: 20, t: 60, b: 50 },
+    margin: { l: 60, r: 20, t: 60, b: 70 },
     xaxis: {
-      title: { text: 'Lead Day' },
-      tickmode: 'linear',
-      tick0: 0,
-      dtick: 1,
+      title: { text: opts.xAxisLabel ?? 'Lead Day' },
+      // Two-line date labels need room, and without automargin plotly draws the
+      // axis title straight through them.
+      automargin: true,
+      // Positions stay numeric so ranges and reference lines work; only the
+      // labels change when xTickText is supplied.
+      ...(opts.xTickText
+        ? { tickmode: 'array' as const, tickvals: allLeads, ticktext: opts.xTickText }
+        : { tickmode: 'linear' as const, tick0: 0, dtick: 1 }),
       range: [xMin, xMax],
     },
     yaxis: {
@@ -223,6 +351,7 @@ export function distributionVsLeadFigure(
       gridcolor: '#eee',
       zeroline: false,
     },
+    annotations: skipAnnotations,
     boxmode: 'overlay',
     height: 500,
     legend: { groupclick: 'toggleitem' },

@@ -1,5 +1,5 @@
-import type { ForecastResult } from '../data/rfs';
-import type { LeadBucket, LeadBuckets, TimeSeries } from './types';
+import { maxOf, minOf } from './arrayStats';
+import type { ForecastRun, LeadBucket, LeadBuckets, TimeSeries } from './types';
 
 const HOUR_MS = 3600 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -13,7 +13,7 @@ const MEMBER_COUNT = 51;
  *   lead d  → ((d-1)·24h, d·24h]  for d >= 1
  */
 export function reorganizeByLead(
-  forecasts: Map<string, ForecastResult>,
+  forecasts: Map<string, ForecastRun>,
   maxLead = 15,
 ): LeadBuckets {
   const buckets: LeadBuckets = {};
@@ -27,13 +27,26 @@ export function reorganizeByLead(
     const T = fr.time.length;
     for (let i = 0; i < T; i++) {
       const ti = fr.time[i];
-      const dt = ti.getTime() - t0.getTime();
+      const ms = ti.getTime();
+      // An unparseable timestamp gives NaN, and `NaN < 0` and `NaN > maxLead`
+      // are BOTH false — so the guard below passed and `buckets[NaN].time.push`
+      // threw `TypeError: Cannot read properties of undefined`, taking down the
+      // Metrics and Forecast tabs together. Checked before any arithmetic.
+      if (!Number.isFinite(ms)) continue;
+      const dt = ms - t0.getTime();
       let lead: number;
-      if (ti.getTime() === t0.getTime()) {
+      if (ms === t0.getTime()) {
         lead = 0;
       } else {
         lead = Math.ceil(dt / DAY_MS);
       }
+      // NOT normalised for -0, deliberately. Math.ceil(-0.125) is -0, and
+      // neither `-0 < 0` nor `-0 > maxLead` fires, so a timestep in the 24 h
+      // BEFORE t0 lands in lead 0 and gives that bucket a second row for one
+      // run (audit finding B10). Left as-is because numpy's ceil behaves
+      // identically and the client always sends time[0] === t0, so it is
+      // unreachable today. Flagged rather than fixed — see the NaN guard above,
+      // which is a different finding and genuinely reachable.
       if (lead < 0 || lead > maxLead) continue;
 
       const row = new Array<number>(MEMBER_COUNT);
@@ -44,10 +57,31 @@ export function reorganizeByLead(
       buckets[lead].members.push(row);
     }
   }
+
+  // Every consumer treats a bucket as a chronological series: the metrics take
+  // time[0]/time[last] as the window bounds, and threshold crossing walks the
+  // array in order looking for the *first* ascending crossing. Enforce that
+  // invariant here rather than trusting the order forecasts arrived in.
+  for (let d = 0; d <= maxLead; d++) buckets[d] = sortBucket(buckets[d]);
   return buckets;
 }
 
-function parseStartDate(yyyymmdd: string): Date | null {
+function sortBucket(b: LeadBucket): LeadBucket {
+  let ordered = true;
+  for (let i = 1; i < b.time.length; i++) {
+    if (b.time[i].getTime() < b.time[i - 1].getTime()) {
+      ordered = false;
+      break;
+    }
+  }
+  if (ordered) return b;
+  const idx = b.time.map((_, i) => i);
+  idx.sort((a, c) => b.time[a].getTime() - b.time[c].getTime());
+  return { time: idx.map((i) => b.time[i]), members: idx.map((i) => b.members[i]) };
+}
+
+/** YYYYMMDD → UTC midnight. Exported so the run picker parses keys the same way. */
+export function parseStartDate(yyyymmdd: string): Date | null {
   if (!/^\d{8}$/.test(yyyymmdd)) return null;
   const y = Number(yyyymmdd.slice(0, 4));
   const m = Number(yyyymmdd.slice(4, 6));
@@ -94,9 +128,9 @@ function statOf(row: number[], stat: StatKey): number {
   if (valid.length === 0) return Number.NaN;
   switch (stat) {
     case 'min':
-      return Math.min(...valid);
+      return minOf(valid);
     case 'max':
-      return Math.max(...valid);
+      return maxOf(valid);
     case 'mean':
       return valid.reduce((a, b) => a + b, 0) / valid.length;
     case 'median':

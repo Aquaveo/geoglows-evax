@@ -9,7 +9,15 @@
 
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.5;
-  color-scheme: light dark;
+  /* Light only, by decision — this app does not offer a dark mode and should not
+     grow one. Declared rather than left unset so the browser does not apply a
+     dark scheme on a dark-mode machine: the components all use light colours, so
+     that left a near-black page behind light cards. Declaring `light` also keeps
+     browser-drawn controls and scrollbars light.
+
+     A prefers-color-scheme block came from the Vite starter template and was
+     removed; do not reintroduce one. */
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -31,13 +39,3 @@ code, pre {
   font-size: 0.9em;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #e5e7eb;
-    --text-muted: #9ca3af;
-    --bg: #14151a;
-    --panel: #1c1d23;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-  }
-}

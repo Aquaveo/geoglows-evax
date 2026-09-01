@@ -1,98 +1,10 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { ForecastResult } from '../data/rfs';
 import type { LeadBuckets, RpThresholds, TimeSeries } from '../lib/types';
 import type { ReachMetadata } from '../data/reachMetadata';
 import type { PerLeadDistribution } from '../plots/distributionVsLead';
 import type { CrpsPerLead } from '../lib/metrics/crps';
-
-interface AppState {
-  // Inputs
-  riverId: number | null;
-  setRiverId: (n: number | null) => void;
-
-  reach: ReachMetadata | null;
-  setReach: (r: ReachMetadata | null) => void;
-
-  retro: TimeSeries | null;
-  setRetro: (s: TimeSeries | null) => void;
-
-  simRp: RpThresholds | null;
-  setSimRp: (r: RpThresholds | null) => void;
-
-  eventData: TimeSeries | null;
-  setEventData: (s: TimeSeries | null) => void;
-
-  historicalData: TimeSeries | null;
-  setHistoricalData: (s: TimeSeries | null) => void;
-
-  obsRp: RpThresholds | null;
-  setObsRp: (r: RpThresholds | null) => void;
-
-  // Forecast phase
-  forecasts: Map<string, ForecastResult>;
-  setForecasts: (m: Map<string, ForecastResult>) => void;
-
-  forecastProgress: { done: number; total: number } | null;
-  setForecastProgress: (p: { done: number; total: number } | null) => void;
-
-  selectedDate: string | null;
-  setSelectedDate: (d: string | null) => void;
-
-  // Metric phase
-  leadBuckets: LeadBuckets | null;
-  setLeadBuckets: (b: LeadBuckets | null) => void;
-
-  mccDistribution: PerLeadDistribution | null;
-  setMccDistribution: (d: PerLeadDistribution | null) => void;
-
-  hssDistribution: PerLeadDistribution | null;
-  setHssDistribution: (d: PerLeadDistribution | null) => void;
-
-  peakTimingDistribution: PerLeadDistribution | null;
-  setPeakTimingDistribution: (d: PerLeadDistribution | null) => void;
-
-  kgeDistribution: PerLeadDistribution | null;
-  setKgeDistribution: (d: PerLeadDistribution | null) => void;
-
-  rDistribution: PerLeadDistribution | null;
-  setRDistribution: (d: PerLeadDistribution | null) => void;
-
-  betaDistribution: PerLeadDistribution | null;
-  setBetaDistribution: (d: PerLeadDistribution | null) => void;
-
-  gammaDistribution: PerLeadDistribution | null;
-  setGammaDistribution: (d: PerLeadDistribution | null) => void;
-
-  /** Per-RP distribution of Δt crossing across ensemble members. */
-  crossingDistributions: Record<number, PerLeadDistribution> | null;
-  setCrossingDistributions: (d: Record<number, PerLeadDistribution> | null) => void;
-
-  /** Per-RP detection counts per lead day. */
-  crossingDetections: Record<number, CrossingDetection> | null;
-  setCrossingDetections: (d: Record<number, CrossingDetection> | null) => void;
-
-  /** Maximum observed return period exceeded during the event (0 if none). */
-  eventReturnPeriod: number | null;
-  setEventReturnPeriod: (n: number | null) => void;
-
-  /** Mean CRPS / MAE component / Spread per lead day (scalar per lead). */
-  crpsResults: CrpsPerLead | null;
-  setCrpsResults: (r: CrpsPerLead | null) => void;
-}
-
-export interface CrossingDetection {
-  leads: number[];
-  /** Members that crossed both obs and fcst thresholds (Δt computed). */
-  nCrossed: number[];
-  /** Members where obs crossed but fcst did not. */
-  nObsOnly: number[];
-  /** Members where neither crossed (obs below threshold for the window). */
-  nNoObs: number[];
-  /** Total member count contributing to this lead (typically MEMBER_COUNT). */
-  nTotal: number[];
-}
-
-const Ctx = createContext<AppState | null>(null);
+import { Ctx, type AppState, type CrossingDetection } from './appState';
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [riverId, setRiverId] = useState<number | null>(null);
@@ -101,6 +13,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [simRp, setSimRp] = useState<RpThresholds | null>(null);
   const [eventData, setEventData] = useState<TimeSeries | null>(null);
   const [historicalData, setHistoricalData] = useState<TimeSeries | null>(null);
+  const [historicalClampedNegatives, setHistoricalClampedNegatives] = useState(0);
   const [obsRp, setObsRp] = useState<RpThresholds | null>(null);
   const [forecasts, setForecasts] = useState<Map<string, ForecastResult>>(new Map());
   const [forecastProgress, setForecastProgress] = useState<{ done: number; total: number } | null>(null);
@@ -109,10 +22,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [mccDistribution, setMccDistribution] = useState<PerLeadDistribution | null>(null);
   const [hssDistribution, setHssDistribution] = useState<PerLeadDistribution | null>(null);
   const [peakTimingDistribution, setPeakTimingDistribution] = useState<PerLeadDistribution | null>(null);
-  const [kgeDistribution, setKgeDistribution] = useState<PerLeadDistribution | null>(null);
-  const [rDistribution, setRDistribution] = useState<PerLeadDistribution | null>(null);
-  const [betaDistribution, setBetaDistribution] = useState<PerLeadDistribution | null>(null);
-  const [gammaDistribution, setGammaDistribution] = useState<PerLeadDistribution | null>(null);
   const [crossingDistributions, setCrossingDistributions] = useState<
     Record<number, PerLeadDistribution> | null
   >(null);
@@ -130,6 +39,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       simRp, setSimRp,
       eventData, setEventData,
       historicalData, setHistoricalData,
+      historicalClampedNegatives, setHistoricalClampedNegatives,
       obsRp, setObsRp,
       forecasts, setForecasts,
       forecastProgress, setForecastProgress,
@@ -138,23 +48,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       mccDistribution, setMccDistribution,
       hssDistribution, setHssDistribution,
       peakTimingDistribution, setPeakTimingDistribution,
-      kgeDistribution, setKgeDistribution,
-      rDistribution, setRDistribution,
-      betaDistribution, setBetaDistribution,
-      gammaDistribution, setGammaDistribution,
       crossingDistributions, setCrossingDistributions,
       crossingDetections, setCrossingDetections,
       eventReturnPeriod, setEventReturnPeriod,
       crpsResults, setCrpsResults,
     }),
-    [riverId, reach, retro, simRp, eventData, historicalData, obsRp, forecasts, forecastProgress, selectedDate, leadBuckets, mccDistribution, hssDistribution, peakTimingDistribution, kgeDistribution, rDistribution, betaDistribution, gammaDistribution, crossingDistributions, crossingDetections, eventReturnPeriod, crpsResults],
+    [riverId, reach, retro, simRp, eventData, historicalData, historicalClampedNegatives, obsRp, forecasts, forecastProgress, selectedDate, leadBuckets, mccDistribution, hssDistribution, peakTimingDistribution, crossingDistributions, crossingDetections, eventReturnPeriod, crpsResults],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-export function useApp(): AppState {
-  const v = useContext(Ctx);
-  if (!v) throw new Error('useApp must be used inside <AppProvider>');
-  return v;
-}

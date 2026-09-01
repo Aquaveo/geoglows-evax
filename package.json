@@ -6,11 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
+    "numcodecs": "^0.3.2",
     "papaparse": "^5.5.3",
     "plotly.js-dist-min": "^3.5.1",
     "react": "^19.2.6",
@@ -35,6 +38,7 @@
     "globals": "^17.6.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^4.1.11"
   }
 }

@@ -8,7 +8,7 @@ const DB_VERSION = 1;
 
 export const CACHE_STORE = 'discharge';
 
-export type CacheType = 'forecast' | 'retro' | 'retper';
+export type CacheType = 'forecast' | 'retro' | 'retper' | 'polyfit';
 
 interface CacheRecord<T> {
   key: string;
@@ -61,7 +61,8 @@ export function cacheKey(opts: {
       .toISOString()
       .slice(0, 10)
       .replaceAll('-', '');
-  } else if (opts.type === 'retper') {
+  } else if (opts.type === 'retper' || opts.type === 'polyfit') {
+    // Fitted once and republished rarely; no date component.
     date = 'static';
   } else {
     if (!opts.date) throw new Error('forecast cache key requires a date');

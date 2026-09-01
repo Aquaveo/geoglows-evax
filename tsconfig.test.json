@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "module": "esnext",
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Fixtures are committed JSON. Set explicitly rather than relying on the
+       default, which varies with `module`. */
+    "resolveJsonModule": true,
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  /* src/types carries the ambient module declarations for plotly.js-dist-min and
+     riverforecastsystem. Without it, any test that imports a src module which
+     imports those packages fails with TS7016 -- the declarations live outside
+     this project's include, so the import resolves to an implicit any. */
+  "include": ["tests", "src/types"]
+}

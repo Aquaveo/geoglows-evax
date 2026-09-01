@@ -39,3 +39,7 @@ samples/
 
 # TypeScript build info
 *.tsbuildinfo
+
+# Python bytecode from the fixture generator (scripts/*.py)
+__pycache__/
+*.pyc
