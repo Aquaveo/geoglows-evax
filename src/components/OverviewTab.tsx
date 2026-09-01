@@ -581,6 +581,11 @@ export function OverviewTab() {
           Gupta et al. (2009) decomposed mean squared error into three components, refined by Kling
           et al. (2012). Each is perfect at 1:
         </p>
+        <p style={pMono}>
+          {'r = cov(f, o) / (σ_f · σ_o)\n'}
+          {'β = μ_f / μ_o\n'}
+          {'γ = (σ_f / μ_f) / (σ_o / μ_o)'}
+        </p>
         <ul style={ul}>
           <li>
             <strong>Correlation r</strong> — Pearson correlation of forecast and observation; lower
@@ -591,8 +596,9 @@ export function OverviewTab() {
             below 1 underestimation.
           </li>
           <li>
-            <strong>Variability ratio γ</strong> — forecast CV over observed CV; above 1 too much
-            variability, below 1 too little.
+            <strong>Variability ratio γ</strong> — forecast coefficient of variation over observed;
+            above 1 too much variability, below 1 too little. Using CV rather than σ alone is what
+            distinguishes KGE′ from the original KGE.
           </li>
         </ul>
         <p style={p}>The component furthest from 1 dominates.</p>
