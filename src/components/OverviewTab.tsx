@@ -540,9 +540,7 @@ export function OverviewTab() {
           </li>
           <li>
             <strong>Withheld rather than estimated.</strong> With no historical upload, or fewer
-            than 30 values in season, no skill score is shown. The alternative is a baseline built
-            from the very event being scored, which is circular. RPS and CRPS are proper scores and
-            are still reported; only the skill scores need a reference.
+            than 30 values in season, no skill score is shown.
           </li>
           <li>
             <strong>Withheld when the reference was never tested.</strong> If nothing in the window
