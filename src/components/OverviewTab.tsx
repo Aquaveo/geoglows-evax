@@ -32,9 +32,11 @@ export function OverviewTab() {
           gauge data across lead times of 0–15 days and all 51 members.
         </p>
         <p style={p}>
-          To use this app you will need a reachID from RFS and observed data. You want one file with
-          a long record of observed data. Then you can have either a date of an event, or a file with
-          specifically the data from the event. (EDIT ME)
+          To use it you need two things: a nine-digit reach ID identifying the river segment in RFS,
+          and observed discharge for that gauge. Upload as long a historical record as you have — it
+          is what the return-period thresholds are fitted to, and it gates the skill scores and the
+          local bias correction. The event itself can come either from dates you enter or from a
+          separate file covering just that period.
         </p>
 
         <h3 style={h3}>Why ensemble verification is different</h3>
