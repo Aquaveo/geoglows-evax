@@ -482,15 +482,16 @@ export function OverviewTab() {
 
         <h3 style={h3}>CSI by lead day</h3>
         <p style={p}>
-          Its own panel, because it is the window-invariant score: hits over hits plus false alarms
-          plus misses, correct negatives never entering. If the chance-corrected scores look
-          healthier, quiet timesteps are flattering them.
+          Hits over hits plus false alarms plus misses, with correct negatives never entering — which
+          is what makes it invariant to how long a window you uploaded. If the chance-corrected
+          scores look healthier, quiet timesteps are flattering them.
         </p>
         <p style={p}>
-          CSI is defined only on a two-by-two table, hence the threshold selector and no shared axis
-          with MCC and HSS. "At or above the 2-year level" is an easier question than grading every
-          category, so CSI reads higher for that reason alone. It is scored on the members{' '}
-          <strong>pooled</strong> into one table per lead, not as a median of separate member scores.
+          CSI is defined only on a two-by-two table, so it is reported per exceedance threshold
+          rather than over all categories at once. Do not read it against MCC or HSS: "at or above
+          the 2-year level" is an easier question than grading every category, so CSI reads higher
+          for that reason alone. It is scored on the members <strong>pooled</strong> into one table
+          per lead, not as a median of separate member scores.
           Sample size is distinct observed exceedance timesteps — the same three flood days seen by
           51 members is three events, not 153 — and leads with fewer than three are drawn hollow.
         </p>
