@@ -529,9 +529,7 @@ export function OverviewTab() {
             average of those days — a filter: every individual reading from every year whose day of
             year falls in that window, pooled into one distribution. A whole-record baseline would
             have to predict a wet-season flood from the dry season's distribution, so beating it
-  would partly reward the forecast for knowing what month it is. On a strongly
-            seasonal record the two baselines can disagree by several-fold on how often the 2-year
-            threshold is crossed. The window wraps across New Year.
+            would partly reward the forecast for knowing what month it is.
           </li>
           <li>
             <strong>Aggregated the same way the scored observations are.</strong> Whatever bin
