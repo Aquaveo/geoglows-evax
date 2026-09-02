@@ -4,16 +4,18 @@ import { OverviewTab } from './components/OverviewTab';
 import { SetupTab } from './components/SetupTab';
 import { ForecastTab } from './components/ForecastTab';
 import { MetricsTab } from './components/MetricsTab';
+import { FloodCheckTab } from './components/FloodCheckTab';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './App.css';
 
-type TabId = 'overview' | 'setup' | 'forecast' | 'metrics';
+type TabId = 'overview' | 'setup' | 'forecast' | 'metrics' | 'floodcheck';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'setup', label: 'Setup' },
   { id: 'forecast', label: 'Forecast' },
   { id: 'metrics', label: 'Metrics' },
+  { id: 'floodcheck', label: 'Flood check' },
 ];
 
 function App() {
@@ -67,6 +69,11 @@ function App() {
         {tab === 'metrics' && (
           <ErrorBoundary label="Metrics">
             <MetricsTab />
+          </ErrorBoundary>
+        )}
+        {tab === 'floodcheck' && (
+          <ErrorBoundary label="Flood check">
+            <FloodCheckTab />
           </ErrorBoundary>
         )}
       </main>
