@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { PROSE_MAX } from '../prose';
 import { getAndCacheRetrospective, fetchForecasts } from '../data/rfs';
 import { returnPeriodsFromSeries } from '../lib/gumbel';
 import { dailyDateRange } from '../lib/leadBuckets';
-import { floodCheck, type FloodCheckResult } from '../lib/floodCheck';
+import { floodCheck, crestOfRun, levelOf, type FloodCheckResult } from '../lib/floodCheck';
 import { Plot } from './Plot';
 import { PlotNote } from './PlotNote';
 import { exceedanceGridFigure } from '../plots/exceedanceGrid';
-import type { RpThresholds } from '../lib/types';
+import { floodHydrographFigure } from '../plots/floodHydrograph';
+import type { ForecastRun, RpThresholds } from '../lib/types';
 
 /**
  * First initialisation date the forecast archive serves.
@@ -49,6 +50,8 @@ export function FloodCheckTab() {
         tol: number;
         simRp: RpThresholds;
         requested: number;
+        forecasts: Map<string, ForecastRun>;
+        retro: { time: Date[]; values: number[] };
       }
     | null
   >(null);
@@ -103,11 +106,15 @@ export function FloodCheckTab() {
     setProgress({ done: 0, total: dates.length });
     try {
       const retro = await getAndCacheRetrospective(riverId, 'daily');
+      const retroSeries = {
+        time: retro.time.map((t: string | Date) => new Date(t)),
+        values: retro.discharge as number[],
+      };
       // The same fit the Setup tab uses — Gumbel-I on the daily retrospective
       // with negatives clamped to 0 — so a level here means what it means there.
       const simRp = returnPeriodsFromSeries({
-        time: retro.time,
-        values: retro.discharge.map((v) => (Number.isFinite(v) && v < 0 ? 0 : v)),
+        time: retroSeries.time,
+        values: retroSeries.values.map((v) => (Number.isFinite(v) && v < 0 ? 0 : v)),
       });
       const forecasts = await fetchForecasts(riverId, dates, 4, (done, total) =>
         setProgress({ done, total }),
@@ -131,6 +138,8 @@ export function FloodCheckTab() {
         tol: tolerance,
         simRp,
         requested: dates.length,
+        forecasts,
+        retro: retroSeries,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -239,6 +248,9 @@ function FloodCheckResultView({
   end,
   tol,
   requested,
+  simRp,
+  forecasts,
+  retro,
 }: {
   check: FloodCheckResult;
   riverId: number;
@@ -247,6 +259,8 @@ function FloodCheckResultView({
   tol: number;
   simRp: RpThresholds;
   requested: number;
+  forecasts: Map<string, ForecastRun>;
+  retro: { time: Date[]; values: number[] };
 }) {
   const windowText =
     ymd(start) === ymd(end) ? ymd(start) : `${ymd(start)} to ${ymd(end)}`;
@@ -256,6 +270,47 @@ function FloodCheckResultView({
           new Date(end.getTime() + tol * DAY_MS),
         )}`
       : windowText;
+
+  const DAY = DAY_MS;
+  const initKeys = useMemo(() => [...forecasts.keys()].sort(), [forecasts]);
+
+  // The last forecast issued before the flood window opens — the most informed
+  // run a person would actually have had in hand. Falls back to the final run
+  // when every initialisation is already inside the window.
+  const defaultInit = useMemo(() => {
+    const before = initKeys.filter((k) => {
+      const t = parseYmd(`${k.slice(0, 4)}-${k.slice(4, 6)}-${k.slice(6, 8)}`);
+      return t != null && t.getTime() < start.getTime();
+    });
+    return before.at(-1) ?? initKeys.at(-1) ?? '';
+  }, [initKeys, start]);
+  const [selectedInit, setSelectedInit] = useState<string | null>(null);
+  const activeInit = selectedInit && forecasts.has(selectedInit) ? selectedInit : defaultInit;
+
+  // What the model's own retrospective did near the event — the answer key the
+  // forecasts are being judged against.
+  const retroPeak = useMemo(() => {
+    const lo = start.getTime() - (tol + 4) * DAY;
+    const hi = end.getTime() + (tol + 4) * DAY;
+    let best = Number.NEGATIVE_INFINITY;
+    let at: Date | null = null;
+    for (let i = 0; i < retro.time.length; i++) {
+      const ms = retro.time[i]?.getTime();
+      if (!Number.isFinite(ms) || ms < lo || ms > hi) continue;
+      const v = retro.values[i];
+      if (Number.isFinite(v) && v > best) { best = v; at = retro.time[i]; }
+    }
+    return at ? { time: at, value: best, level: levelOf(best, simRp) } : null;
+  }, [retro, start, end, tol, simRp, DAY]);
+
+  // Where the selected run put the crest.
+  const runCrest = useMemo(() => {
+    const run = forecasts.get(activeInit);
+    if (!run) return null;
+    const lo = start.getTime() - (tol + 4) * DAY;
+    const hi = end.getTime() + (tol + 4) * DAY;
+    return crestOfRun(run, lo, hi);
+  }, [forecasts, activeInit, start, end, tol, DAY]);
 
   const crossed = check.levels.filter((l) => l.everCrossed);
   const highest = crossed.slice(-1)[0] ?? null;
@@ -345,11 +400,73 @@ function FloodCheckResultView({
             <Row label="Member forecasts examined" value={String(check.memberForecasts)} />
             <Row label="Dates searched" value={searched} />
             <Row
-              label="Largest member value"
-              value={Number.isFinite(check.peakForecast) ? `${check.peakForecast.toFixed(1)} m³/s` : '—'}
+              label="Peak day, model's own retrospective"
+              value={
+                retroPeak
+                  ? `${ymd(retroPeak.time)} — ${retroPeak.value.toFixed(0)} m³/s` +
+                    (retroPeak.level ? ` (${retroPeak.level}-year level)` : ' (below the 2-year level)')
+                  : 'no retrospective data in the window'
+              }
+            />
+            <Row
+              label="Peak day, largest single member"
+              value={
+                check.peakForecastTime && Number.isFinite(check.peakForecast)
+                  ? `${ymd(check.peakForecastTime)} — ${check.peakForecast.toFixed(0)} m³/s` +
+                    (check.peakForecastInit ? ` (run of ${pretty(check.peakForecastInit)})` : '')
+                  : '—'
+              }
             />
           </tbody>
         </table>
+      </section>
+
+      <section style={sectionStyle}>
+        <h2 style={h2}>The forecast hydrograph</h2>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', marginBottom: '0.6rem', flexWrap: 'wrap' }}>
+          <label style={{ fontSize: '0.85rem', color: '#555' }}>
+            Forecast issued{' '}
+            <select
+              value={activeInit}
+              onChange={(e) => setSelectedInit(e.target.value)}
+              style={{ padding: '0.3rem 0.4rem', fontSize: '0.9rem' }}
+            >
+              {initKeys.map((k) => (
+                <option key={k} value={k}>
+                  {pretty(k)}
+                  {k === defaultInit ? ' — last before the flood' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          {runCrest && (
+            <span style={{ fontSize: '0.85rem', color: '#555' }}>
+              This run crests <strong>{ymd(runCrest.time)}</strong> at{' '}
+              <strong>{runCrest.value.toFixed(0)} m³/s</strong>
+              {(() => {
+                const l = levelOf(runCrest.value, simRp);
+                return l ? ` (${l}-year level)` : ' (below the 2-year level)';
+              })()}
+            </span>
+          )}
+        </div>
+        <Plot {...floodHydrographFigure(forecasts, simRp, {
+          selectedInit: activeInit,
+          eventStart: start,
+          eventEnd: end,
+          toleranceDays: tol,
+          retro,
+          subtitle: `${reachText} — reported flood ${windowText}${tol > 0 ? `, ±${tol} d` : ''}`,
+        })} />
+        <PlotNote>
+          The shaded band is the flood you reported, with the tolerance either side in a
+          lighter tone. The blue spread is the chosen run's 51 members and the diamond is where
+          its median crests — compare that against the dotted retrospective, which is what the
+          model itself later said happened. Grey lines are every other run reduced to its
+          median, so you can see whether successive forecasts converged on the same crest day or
+          kept moving it. A crest that sits outside the shaded band is a timing error even when
+          the exceedance grid is solid.
+        </PlotNote>
       </section>
 
       <section style={sectionStyle}>

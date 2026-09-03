@@ -65,6 +65,9 @@ export interface FloodCheckResult {
   highestLevelReached: number | null;
   /** Largest single member value in the window, for a sanity check on the reach. */
   peakForecast: number;
+  /** When that largest member value occurred, and which run carried it. */
+  peakForecastTime: Date | null;
+  peakForecastInit: string | null;
   /** Initialisations that returned usable data. */
   runsUsed: number;
   /** Member forecasts examined, across all initialisations. */
@@ -134,6 +137,8 @@ export function floodCheck(
   }));
 
   let peakForecast = Number.NEGATIVE_INFINITY;
+  let peakForecastTime: Date | null = null;
+  let peakForecastInit: string | null = null;
   let runsUsed = 0;
   let memberForecasts = 0;
 
@@ -172,7 +177,11 @@ export function floodCheck(
         touched = true;
         initHasData[m] = true;
         lh[m] = true;
-        if (v > peakForecast) peakForecast = v;
+        if (v > peakForecast) {
+          peakForecast = v;
+          peakForecastTime = run.time[i];
+          peakForecastInit = key;
+        }
         for (let li = 0; li < levels.length; li++) {
           if (v < simRp[levels[li]]) continue;
           initCrossed[li][m] = true;
@@ -212,9 +221,67 @@ export function floodCheck(
     levels: summaries,
     highestLevelReached: summaries.filter((s) => s.everCrossed).map((s) => s.level).pop() ?? null,
     peakForecast: Number.isFinite(peakForecast) ? peakForecast : Number.NaN,
+    peakForecastTime,
+    peakForecastInit,
     runsUsed,
     memberForecasts,
   };
+}
+
+/**
+ * Per-timestep ensemble median of one run, and where it crests.
+ *
+ * The crest of the MEDIAN rather than of the highest member, because the
+ * question "what day did the forecast put the peak on" is about what the
+ * ensemble as a whole said. A single high member can crest a day or two off the
+ * bulk of the spread, and reporting that as the forecast peak day would be the
+ * same one-member overreach the verdict table exists to prevent.
+ */
+export function medianSeries(run: ForecastRun): { time: Date[]; median: number[] } {
+  const time = run.time;
+  const median = new Array<number>(time.length).fill(Number.NaN);
+  const buf: number[] = [];
+  for (let i = 0; i < time.length; i++) {
+    buf.length = 0;
+    for (let m = 0; m < run.discharge.length; m++) {
+      const v = run.discharge[m]?.[i];
+      if (Number.isFinite(v)) buf.push(v);
+    }
+    if (buf.length === 0) continue;
+    buf.sort((a, b) => a - b);
+    const mid = buf.length >> 1;
+    median[i] = buf.length % 2 === 1 ? buf[mid] : (buf[mid - 1] + buf[mid]) / 2;
+  }
+  return { time, median };
+}
+
+/** Where a run's ensemble median crests inside [lo, hi]. */
+export function crestOfRun(
+  run: ForecastRun,
+  lo: number,
+  hi: number,
+): { time: Date; value: number } | null {
+  const { time, median } = medianSeries(run);
+  let best = Number.NEGATIVE_INFINITY;
+  let at: Date | null = null;
+  for (let i = 0; i < time.length; i++) {
+    const ms = time[i]?.getTime();
+    if (!Number.isFinite(ms) || ms < lo || ms > hi) continue;
+    if (median[i] > best) {
+      best = median[i];
+      at = time[i];
+    }
+  }
+  return at && Number.isFinite(best) ? { time: at, value: best } : null;
+}
+
+/** Highest return-period level a value reaches, or null if below the 2-year. */
+export function levelOf(value: number, rp: RpThresholds): number | null {
+  let out: number | null = null;
+  for (const lvl of RP_LEVELS) {
+    if (Number.isFinite(rp[lvl]) && value >= rp[lvl]) out = lvl;
+  }
+  return out;
 }
 
 function count(flags: readonly boolean[]): number {
