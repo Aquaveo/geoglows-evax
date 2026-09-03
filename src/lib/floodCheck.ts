@@ -86,6 +86,20 @@ export interface LevelSummary {
    */
   peakCrossed: number | null;
   peakTotal: number | null;
+  /**
+   * Forecasts in which more than half the members were over this level, and
+   * forecasts in which any member was.
+   *
+   * The pair is what keeps a row informative when no majority ever forms. A
+   * level crossed by 35% of members in seven separate forecasts is a real,
+   * persistent, minority signal; reporting only "never over half" would throw
+   * that away and leave the row blank, which reads as "nothing happened".
+   *
+   * A count of forecasts, not a maximum over them, so one twitchy member
+   * cannot move it the way the old `maxLead` did.
+   */
+  majorityForecasts: number;
+  anyForecasts: number;
 }
 
 export interface FloodCheckResult {
@@ -173,6 +187,8 @@ export function floodCheck(
     majorityTotal: null,
     peakCrossed: null,
     peakTotal: null,
+    majorityForecasts: 0,
+    anyForecasts: 0,
   }));
 
   let peakForecast = Number.NEGATIVE_INFINITY;
@@ -237,6 +253,8 @@ export function floodCheck(
     for (let li = 0; li < levels.length; li++) {
       const c = count(initCrossed[li]);
       byInit[li].set(key, [c, initTotal]);
+      if (c > 0) summaries[li].anyForecasts += 1;
+      if (initTotal > 0 && c / initTotal > 0.5) summaries[li].majorityForecasts += 1;
       if (initTotal > 0 && c / initTotal > summaries[li].peakShare) {
         summaries[li].peakShare = c / initTotal;
         summaries[li].peakShareInit = key;

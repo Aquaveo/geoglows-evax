@@ -317,19 +317,43 @@ function FloodCheckResultView({
   }, [forecasts, activeInit, start, end, tol, DAY]);
 
   /**
-   * Offset of the first forecast in which EVERY member was above a level.
+   * The day the river actually reached each level, per the model's own
+   * retrospective — the anchor the notice column is measured against.
    *
-   * `peakShareInit` is that forecast whenever `peakShare` is 1: the peak-share
-   * update test is strictly `>`, so the recorded initialisation is the earliest
-   * one attaining the maximum, not the last. Below 1, no forecast ever had all
-   * of them over.
+   * Anchoring to the reported flood dates was the defect: those dates are fuzzy
+   * by design (that is what the tolerance is for), so on a one-day report every
+   * offset in the table hung off a single guessed day. Each level's own
+   * crossing day is a physically real reference, and it is the day a forecaster
+   * would be judged against.
+   *
+   * Null where the retrospective never reached the level — then there is no
+   * crossing to have given notice of, and the row says so rather than
+   * measuring against something that did not happen.
    */
-  const allAboveOffset = (l: (typeof check.levels)[number]): number | null => {
-    if (l.peakShare < 1 || !l.peakShareInit) return null;
-    const issued = parseYmd(
-      `${l.peakShareInit.slice(0, 4)}-${l.peakShareInit.slice(4, 6)}-${l.peakShareInit.slice(6, 8)}`,
-    );
-    return issued ? Math.round((start.getTime() - issued.getTime()) / DAY) : null;
+  const reachedDay = useMemo(() => {
+    const lo = start.getTime() - (tol + 4) * DAY;
+    const hi = end.getTime() + (tol + 4) * DAY;
+    const out = new Map<number, Date>();
+    for (const l of check.levels) {
+      for (let i = 0; i < retro.time.length; i++) {
+        const ms = retro.time[i]?.getTime();
+        if (!Number.isFinite(ms) || ms < lo || ms > hi) continue;
+        const v = retro.values[i];
+        if (Number.isFinite(v) && v >= l.threshold) {
+          out.set(l.level, retro.time[i]);
+          break;
+        }
+      }
+    }
+    return out;
+  }, [check.levels, retro, start, end, tol, DAY]);
+
+  /** Days between the first majority forecast and the river reaching the level. */
+  const noticeDays = (l: (typeof check.levels)[number]): number | null => {
+    const reached = reachedDay.get(l.level);
+    if (!reached || !l.majorityInit) return null;
+    const issued = initDate(l.majorityInit);
+    return issued ? Math.round((reached.getTime() - issued.getTime()) / DAY) : null;
   };
 
   const crossed = check.levels.filter((l) => l.everCrossed);
@@ -406,69 +430,84 @@ function FloodCheckResultView({
             <tr>
               <Th sub="return period">Level</Th>
               <Th sub="the model's own" right>Threshold</Th>
-              <Th sub="before the flood began" right title="Days between the flood's reported start and the issue date of the first forecast in which more than half the members went above this level. Negative means that forecast came after the water was already up.">
+              <Th sub="per the retrospective" right title="The day the model's own retrospective first put the river above this level. This is the anchor the Notice column is measured against — a real crossing day rather than the reported flood dates, which are fuzzy by design.">
+                River reached it
+              </Th>
+              <Th sub="before the river got there" right title="Days between the day the river reached this level and the issue date of the first forecast in which more than half the members were above it. Blank when no forecast ever had a majority over the level — read the strength column instead.">
                 Notice
               </Th>
-              <Th sub="in that forecast" right title="How many of that forecast's members were above the level. The same forecast as the Notice column, not a maximum over all forecasts.">
-                Members
+              <Th sub="most in one forecast" right title="The largest number of members any single forecast put above this level, with the members that forecast had. Present whether or not a majority ever formed.">
+                Strength
               </Th>
-              <Th sub="first forecast, vs flood start" right title="The first forecast in which EVERY member with data was above this level, given in the same units as Notice.">
-                All members
+              <Th sub="of forecasts that had any" right title="How many forecasts had more than half their members over this level, out of the forecasts in which any member was over it. Shows whether the signal held or flickered.">
+                Signalled
               </Th>
             </tr>
           </thead>
           <tbody>
-            {check.levels.map((l) => (
-              <tr key={l.level}>
-                <td style={td}>{l.level}-year</td>
-                <td style={{ ...td, textAlign: 'right' }}>{l.threshold.toFixed(0)} m³/s</td>
-                <td style={{ ...td, textAlign: 'right' }}>
-                  {l.majorityLeadDays != null ? (
-                    <strong>{offsetText(l.majorityLeadDays)}</strong>
-                  ) : (
-                    <span style={{ color: '#999' }}>never over half</span>
-                  )}
-                </td>
-                <td style={{ ...td, textAlign: 'right' }}>
-                  {l.majorityCrossed != null && l.majorityTotal != null ? (
-                    `${l.majorityCrossed} of ${l.majorityTotal}`
-                  ) : l.peakCrossed != null && l.peakTotal != null && l.peakCrossed > 0 ? (
-                    // No majority ever, so show the best any forecast managed —
-                    // otherwise a one-member crossing reads as nothing at all.
-                    <span style={{ color: '#777' }}>
-                      at most {l.peakCrossed} of {l.peakTotal}
-                    </span>
-                  ) : (
-                    <span style={{ color: '#999' }}>none</span>
-                  )}
-                </td>
-                <td style={{ ...td, textAlign: 'right' }}>
-                  {allAboveOffset(l) != null ? (
-                    offsetText(allAboveOffset(l)!)
-                  ) : (
-                    <span style={{ color: '#999' }}>never all</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {check.levels.map((l) => {
+              const reached = reachedDay.get(l.level);
+              const notice = noticeDays(l);
+              return (
+                <tr key={l.level}>
+                  <td style={td}>{l.level}-year</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{l.threshold.toFixed(0)} m³/s</td>
+                  <td style={{ ...td, textAlign: 'right' }}>
+                    {reached ? (
+                      ymd(reached)
+                    ) : (
+                      <span style={{ color: '#999' }} title="The retrospective never reached this level, so there was no crossing to forecast.">
+                        never reached
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ ...td, textAlign: 'right' }}>
+                    {notice != null ? (
+                      <strong>{notice > 0 ? `${notice} d before` : notice === 0 ? 'same day' : `${-notice} d after`}</strong>
+                    ) : (
+                      <span style={{ color: '#999' }}>
+                        {l.majorityInit == null ? 'never over half' : '—'}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ ...td, textAlign: 'right' }}>
+                    {l.peakCrossed != null && l.peakTotal != null && l.peakCrossed > 0 ? (
+                      `${l.peakCrossed} of ${l.peakTotal}`
+                    ) : (
+                      <span style={{ color: '#999' }}>none</span>
+                    )}
+                  </td>
+                  <td style={{ ...td, textAlign: 'right' }}>
+                    {l.anyForecasts > 0 ? (
+                      `${l.majorityForecasts} of ${l.anyForecasts}`
+                    ) : (
+                      <span style={{ color: '#999' }}>—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 
         {(() => {
-          // A worked example teaches all four columns at once, and costs one
+          // A worked example teaches every column at once and costs one
           // sentence. Per-column footnotes cost a paragraph and get skipped.
-          const ex = [...check.levels].reverse().find((l) => l.majorityLeadDays != null);
+          const ex = [...check.levels].reverse().find((l) => noticeDays(l) != null) ??
+            [...check.levels].reverse().find((l) => (l.peakCrossed ?? 0) > 0);
           if (!ex) return null;
-          const all = allAboveOffset(ex);
+          const n = noticeDays(ex);
+          const reached = reachedDay.get(ex.level);
           return (
             <p style={{ ...note, marginTop: '0.6rem', maxWidth: PROSE_MAX }}>
-              <strong>Reading a row:</strong> the first forecast to put more than half its
-              members above the {ex.level}-year level ({ex.threshold.toFixed(0)} m³/s) was issued{' '}
-              {offsetText(ex.majorityLeadDays!)}, with {ex.majorityCrossed} of {ex.majorityTotal}{' '}
-              members over it
-              {all != null
-                ? `; every member was over it only in a forecast issued ${offsetText(all)}.`
-                : '; no forecast ever had every member over it.'}
+              <strong>Reading a row:</strong> the river reached the {ex.level}-year level (
+              {ex.threshold.toFixed(0)} m³/s){reached ? ` on ${ymd(reached)}` : ''}
+              {n != null
+                ? `, and the first forecast to put more than half its members over it was issued ${n} day${n === 1 ? '' : 's'} earlier`
+                : ', and no forecast ever had more than half its members over it'}
+              {ex.peakCrossed != null && ex.peakTotal != null
+                ? `. The most any one forecast managed was ${ex.peakCrossed} of ${ex.peakTotal} members, and ${ex.majorityForecasts} of the ${ex.anyForecasts} forecasts that had any member over it had more than half.`
+                : '.'}
             </p>
           );
         })()}
@@ -476,11 +515,14 @@ function FloodCheckResultView({
         <p style={{ ...note, marginTop: '0.5rem', maxWidth: PROSE_MAX }}>
           <strong>How these are counted:</strong> a member is &ldquo;above&rdquo; a level if it
           goes over that level at <em>any</em> timestep inside the flood window — the reported
-          dates plus the tolerance — so it is one member either way whether it spent an hour or
-          three days up there. Notice and the last column are both days between a forecast&rsquo;s
-          issue date and the day the flood began, so they are directly comparable. Neither is a
-          probability: these are counts of ensemble members, which are a spread, not a calibrated
-          distribution.
+          dates plus the tolerance — so one hour up there counts the same as three days. Notice
+          is measured against the day the river itself reached that level, not against the dates
+          you reported, so it does not depend on how long a window you gave. Where no forecast
+          ever reached a majority, Notice is blank and <em>Strength</em> and{' '}
+          <em>Signalled</em> carry the result instead: a level crossed by a third of the members
+          in several separate forecasts is a real minority signal, not nothing. None of these
+          are probabilities — they are counts of ensemble members, which are a spread, not a
+          calibrated distribution.
         </p>
 
         {check.levels.some((l) => l.majorityInit == null && (l.peakCrossed ?? 0) > 0 && (l.peakCrossed ?? 0) <= 2) && (
@@ -661,6 +703,11 @@ function Th({
  * the two are directly comparable, and no convention for numbering flood days
  * that the reader has to learn.
  */
+/** YYYYMMDD -> Date, for the initialisation keys the grids are keyed by. */
+function initDate(yyyymmdd: string): Date | null {
+  return parseYmd(`${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`);
+}
+
 function offsetText(days: number): string {
   if (days > 0) return `${days} d ahead`;
   if (days === 0) return 'on the day';

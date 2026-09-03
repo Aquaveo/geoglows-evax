@@ -251,3 +251,68 @@ describe('warning time', () => {
     expect(r.levels.find((l) => l.level === 5)!.majorityLeadDays).toBe(7);
   });
 });
+
+describe('persistence counts', () => {
+  const EV = new Date(Date.parse('2026-01-19T00:00:00Z'));
+
+  /** A run where exactly `nOver` of 51 members sit above 250 all window. */
+  function withOver(start: string, nOver: number): [string, ForecastRun] {
+    const t0 = Date.parse(`${start.slice(0, 4)}-${start.slice(4, 6)}-${start.slice(6, 8)}T00:00:00Z`);
+    const time: Date[] = [];
+    for (let ms = t0; ms <= t0 + 15 * DAY; ms += 3 * 3600 * 1000) time.push(new Date(ms));
+    const discharge = Array.from({ length: 51 }, (_, m) => time.map(() => (m < nOver ? 250 : 10)));
+    return [start, { time, discharge }];
+  }
+
+  /**
+   * The case the repo owner raised: a level that a large minority crosses,
+   * repeatedly, and a majority never does. The row must stay informative — a
+   * blank reads as "nothing happened", which is false.
+   */
+  it('keeps a persistent minority signal visible when no majority ever forms', () => {
+    // 18 of 51 is ~35%, in four separate forecasts.
+    const r = floodCheck(
+      new Map([
+        withOver('20260108', 18),
+        withOver('20260109', 18),
+        withOver('20260110', 18),
+        withOver('20260111', 18),
+      ]),
+      SIM_RP,
+      { eventStart: EV, eventEnd: EV, toleranceDays: 0 },
+    );
+    const five = r.levels.find((l) => l.level === 5)!;
+    expect(five.majorityInit).toBe(null);        // no notice figure
+    expect(five.majorityForecasts).toBe(0);
+    expect(five.anyForecasts).toBe(4);           // but the signal was there, four times
+    expect(five.peakCrossed).toBe(18);           // and this is how strong it got
+    expect(five.peakTotal).toBe(51);
+  });
+
+  it('counts forecasts, not the best of them, so one outlier cannot inflate it', () => {
+    const r = floodCheck(
+      new Map([withOver('20260108', 1), withOver('20260109', 1), withOver('20260110', 40)]),
+      SIM_RP,
+      { eventStart: EV, eventEnd: EV, toleranceDays: 0 },
+    );
+    const five = r.levels.find((l) => l.level === 5)!;
+    expect(five.anyForecasts).toBe(3);
+    // Only the third forecast had a majority, however strong it was.
+    expect(five.majorityForecasts).toBe(1);
+    expect(five.peakCrossed).toBe(40);
+  });
+
+  it('reports zero for a level nothing ever reached', () => {
+    const r = floodCheck(new Map([withOver('20260108', 51)]), SIM_RP, {
+      eventStart: EV, eventEnd: EV, toleranceDays: 0,
+    });
+    // 250 is over the 5-year (200) but under the 10-year (300).
+    const ten = r.levels.find((l) => l.level === 10)!;
+    expect(ten.anyForecasts).toBe(0);
+    expect(ten.majorityForecasts).toBe(0);
+    expect(ten.everCrossed).toBe(false);
+    const five = r.levels.find((l) => l.level === 5)!;
+    expect(five.majorityForecasts).toBe(1);
+    expect(five.anyForecasts).toBe(1);
+  });
+});
