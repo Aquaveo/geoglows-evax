@@ -14,6 +14,7 @@ import { Plot } from './Plot';
 import { PlotNote } from './PlotNote';
 import { exceedanceGridFigure } from '../plots/exceedanceGrid';
 import { floodHydrographFigure } from '../plots/floodHydrograph';
+import { leadMedianLevelsFigure } from '../plots/leadMedianLevels';
 import type { ForecastRun, RpThresholds } from '../lib/types';
 
 /**
@@ -401,6 +402,20 @@ function FloodCheckResultView({
             </div>
           );
         })()}
+
+        <Plot {...leadMedianLevelsFigure(byLeadMedian, simRp, {
+          subtitle: `${reachText} — reported flood ${windowText}${tol > 0 ? `, ±${tol} d` : ''}`,
+        })} />
+        <PlotNote>
+          Each line is one return-period level, and its height is how many days of the flood the
+          ensemble median put above that level from forecasts issued that far ahead. Read right
+          to left to watch the picture sharpen as the event approaches. Where a line meets the
+          bottom axis is the lead beyond which the median stopped seeing that severity at all,
+          so the spread between the lines is the model&rsquo;s honest limit: the levels it held
+          at long range and the ones it only found late. A line that dips and recovers is
+          successive forecasts disagreeing, not noise in the plot. The dotted line is how many
+          days each lead reached at all — every count is out of it.
+        </PlotNote>
 
         <div style={{ overflowX: 'auto' }}>
           <table style={{ borderCollapse: 'collapse', fontSize: '0.9rem', marginTop: '1.25rem' }}>

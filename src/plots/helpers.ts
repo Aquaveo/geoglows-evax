@@ -14,6 +14,28 @@ export const RP_COLORS: Record<number, string> = {
 };
 
 /**
+ * The same return-period ramp, opaque and darkened enough to read as a LINE.
+ *
+ * `RP_COLORS` is sized for fills behind a hydrograph, where alpha 0.4 is the
+ * point. Drawn as a 2 px stroke on the #fcfcfb surface those values fail: the
+ * 2-year is pure yellow (254, 240, 1), which is near-invisible on near-white,
+ * and the 25-year and 100-year are bright enough to vibrate against it.
+ *
+ * The hue order is deliberately unchanged — yellow through orange and red to
+ * violet is the convention pygeoglows uses and GEOGLOWS readers expect, so the
+ * same level is the same colour wherever it appears in this app. Only lightness
+ * moves, and only as far as legibility requires.
+ */
+export const RP_LINE_COLORS: Record<number, string> = {
+  2: '#b8860b',
+  5: '#d97400',
+  10: '#dd3405',
+  25: '#c00000',
+  50: '#80006a',
+  100: '#6207c4',
+};
+
+/**
  * Color for a lead-day trace: blue at lead 0 through red at `maxLead`, so
  * forecast degradation with lead time reads off the palette directly.
  */
