@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { floodCheck } from '../../src/lib/floodCheck';
+import { floodCheck, medianByLead } from '../../src/lib/floodCheck';
 import type { ForecastRun } from '../../src/lib/types';
 
 const DAY = 24 * 3600 * 1000;
@@ -314,5 +314,115 @@ describe('persistence counts', () => {
     const five = r.levels.find((l) => l.level === 5)!;
     expect(five.majorityForecasts).toBe(1);
     expect(five.anyForecasts).toBe(1);
+  });
+});
+
+describe('medianByLead', () => {
+  const EV_START = new Date(Date.parse('2026-01-10T00:00:00Z'));
+  const EV_END = new Date(Date.parse('2026-01-14T00:00:00Z'));
+
+  /**
+   * A run whose members are `base` except on `spikeDays`, where the member at
+   * index i takes `values[i]` — so the median is controllable per day.
+   */
+  function run(start: string, valueFor: (day: string, member: number) => number): [string, ForecastRun] {
+    const t0 = Date.parse(`${start.slice(0, 4)}-${start.slice(4, 6)}-${start.slice(6, 8)}T00:00:00Z`);
+    const time: Date[] = [];
+    for (let ms = t0; ms <= t0 + 15 * DAY; ms += 3 * 3600 * 1000) time.push(new Date(ms));
+    const discharge = Array.from({ length: 51 }, (_, m) =>
+      time.map((t) => valueFor(t.toISOString().slice(0, 10), m)),
+    );
+    return [start, { time, discharge }];
+  }
+
+  it('collapses to the median, so a minority of high members does not count', () => {
+    // 20 of 51 members at 250 (over the 5-year); the median stays at 10.
+    const r = medianByLead(
+      new Map([run('20260105', (_d, m) => (m < 20 ? 250 : 10))]),
+      SIM_RP,
+      { eventStart: EV_START, eventEnd: EV_END, toleranceDays: 0 },
+    );
+    for (const row of r.rows) {
+      expect(row.daysAbove[2] ?? 0).toBe(0);
+      expect(row.maxLevel).toBe(null);
+    }
+  });
+
+  it('counts a level once a majority pulls the median over it', () => {
+    // 26 of 51 at 250 puts the median at 250, over the 5-year but under the 10.
+    const r = medianByLead(
+      new Map([run('20260105', (_d, m) => (m < 26 ? 250 : 10))]),
+      SIM_RP,
+      { eventStart: EV_START, eventEnd: EV_END, toleranceDays: 0 },
+    );
+    const covered = r.rows.filter((x) => x.daysCovered > 0);
+    expect(covered.length).toBeGreaterThan(0);
+    for (const row of covered) {
+      expect(row.maxLevel).toBe(5);
+      expect(row.daysAbove[5]).toBe(row.daysCovered);
+      expect(row.daysAbove[10]).toBe(0);
+    }
+  });
+
+  it('counts days, not timesteps, so the cadence cannot weight a lead', () => {
+    // Every median over the 2-year across the whole 5-day window. Each lead
+    // reaches at most a day or so of it, and the count is in days either way.
+    const r = medianByLead(
+      new Map([run('20260105', () => 150), run('20260106', () => 150)]),
+      SIM_RP,
+      { eventStart: EV_START, eventEnd: EV_END, toleranceDays: 0 },
+    );
+    for (const row of r.rows) {
+      // Never more days above than days covered — the invariant a timestep
+      // count would break the moment the publishing cadence changed.
+      expect(row.daysAbove[2]).toBeLessThanOrEqual(row.daysCovered);
+      expect(row.daysCovered).toBeLessThanOrEqual(5);
+    }
+    expect(r.rows.some((x) => x.daysAbove[2] > 0)).toBe(true);
+  });
+
+  it('emits a row for every lead, with NaN and zeros where there is no data', () => {
+    const r = medianByLead(new Map([run('20260105', () => 150)]), SIM_RP, {
+      eventStart: EV_START, eventEnd: EV_END, toleranceDays: 0, maxLead: 15,
+    });
+    expect(r.rows.map((x) => x.lead)).toEqual(Array.from({ length: 16 }, (_, i) => i));
+    for (const row of r.rows.filter((x) => x.daysCovered === 0)) {
+      expect(Number.isNaN(row.maxMedian)).toBe(true);
+      expect(row.maxLevel).toBe(null);
+      // Zero, not undefined — the cell renders a dash off daysCovered, and an
+      // undefined here would print "NaN" if that guard ever moved.
+      for (const lvl of r.levels) expect(row.daysAbove[lvl]).toBe(0);
+    }
+  });
+
+  it('is monotone across levels within a row', () => {
+    const r = medianByLead(
+      new Map([run('20260105', (d) => (d === '2026-01-12' ? 550 : 150))]),
+      SIM_RP,
+      { eventStart: EV_START, eventEnd: EV_END, toleranceDays: 0 },
+    );
+    for (const row of r.rows) {
+      // A median above the 50-year is above every level below it, so the counts
+      // can only fall as the level rises.
+      for (let i = 1; i < r.levels.length; i++) {
+        expect(row.daysAbove[r.levels[i]]).toBeLessThanOrEqual(row.daysAbove[r.levels[i - 1]]);
+      }
+    }
+  });
+
+  it('only counts days inside the window, tolerance included', () => {
+    const tight = medianByLead(
+      new Map([run('20260105', (d) => (d === '2026-01-16' ? 550 : 10))]),
+      SIM_RP,
+      { eventStart: EV_START, eventEnd: EV_END, toleranceDays: 0 },
+    );
+    expect(tight.rows.every((x) => (x.daysAbove[2] ?? 0) === 0)).toBe(true);
+
+    const loose = medianByLead(
+      new Map([run('20260105', (d) => (d === '2026-01-16' ? 550 : 10))]),
+      SIM_RP,
+      { eventStart: EV_START, eventEnd: EV_END, toleranceDays: 2 },
+    );
+    expect(loose.rows.some((x) => (x.daysAbove[50] ?? 0) > 0)).toBe(true);
   });
 });

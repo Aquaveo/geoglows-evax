@@ -398,3 +398,94 @@ function assemble(
     ),
   };
 }
+
+/** One lead day's row: what the ensemble median did at that lead. */
+export interface LeadMedianRow {
+  lead: number;
+  /** Distinct UTC days this lead reaches inside the flood window. */
+  daysCovered: number;
+  /** Highest level the median reached at this lead; null if below the 2-year. */
+  maxLevel: number | null;
+  /** Largest median value at this lead, NaN when the lead has no data. */
+  maxMedian: number;
+  /** Days at this lead whose median went above each level, keyed by level. */
+  daysAbove: Record<number, number>;
+}
+
+/**
+ * What the ensemble MEDIAN did, lead day by lead day.
+ *
+ * A different question from the exceedance grids, which count members. Here the
+ * ensemble is collapsed to its median first, so each row is the central
+ * forecast at that lead — the thing a person reads off a hydrograph — and the
+ * columns say how much of the flood it put above each level.
+ *
+ * The median, not the mean: discharge distributions across members are
+ * right-skewed at flood magnitudes, so the mean sits above most of the members
+ * and would report a crossing the bulk of the ensemble did not make.
+ *
+ * A day counts as above a level if the median exceeds it at any timestep on
+ * that day, so the count is in days of flood and not in timesteps — the
+ * cadence changes across the horizon, so a timestep count would silently weight
+ * short leads more heavily than long ones.
+ */
+export function medianByLead(
+  forecasts: Map<string, ForecastRun>,
+  simRp: RpThresholds,
+  opts: FloodCheckOptions,
+): { levels: number[]; rows: LeadMedianRow[] } {
+  const tol = (opts.toleranceDays ?? 2) * DAY_MS;
+  const maxLead = opts.maxLead ?? 15;
+  const lo = opts.eventStart.getTime() - tol;
+  const hi = opts.eventEnd.getTime() + DAY_MS - 1 + tol;
+  const levels = RP_LEVELS.filter((rp) => Number.isFinite(simRp[rp])).sort((a, b) => a - b);
+
+  // lead -> UTC day -> the largest median seen on that day at that lead.
+  const perLead = new Map<number, Map<number, number>>();
+
+  for (const [key, run] of forecasts) {
+    const t0 = parseStartDate(key)?.getTime();
+    if (t0 == null || run.time.length === 0) continue;
+    const { median } = medianSeries(run);
+    for (let i = 0; i < run.time.length; i++) {
+      const ms = run.time[i]?.getTime();
+      if (!Number.isFinite(ms) || ms < lo || ms > hi) continue;
+      const v = median[i];
+      if (!Number.isFinite(v)) continue;
+      const lead = ms === t0 ? 0 : Math.ceil((ms - t0) / DAY_MS);
+      if (lead < 0 || lead > maxLead) continue;
+      const day = Math.floor(ms / DAY_MS) * DAY_MS;
+      let days = perLead.get(lead);
+      if (!days) {
+        days = new Map<number, number>();
+        perLead.set(lead, days);
+      }
+      const prev = days.get(day);
+      if (prev === undefined || v > prev) days.set(day, v);
+    }
+  }
+
+  const rows: LeadMedianRow[] = [];
+  for (let lead = 0; lead <= maxLead; lead++) {
+    const days = perLead.get(lead);
+    const daysAbove: Record<number, number> = {};
+    for (const lvl of levels) daysAbove[lvl] = 0;
+    if (!days || days.size === 0) {
+      rows.push({ lead, daysCovered: 0, maxLevel: null, maxMedian: Number.NaN, daysAbove });
+      continue;
+    }
+    let maxMedian = Number.NEGATIVE_INFINITY;
+    for (const v of days.values()) {
+      if (v > maxMedian) maxMedian = v;
+      for (const lvl of levels) if (v >= simRp[lvl]) daysAbove[lvl] += 1;
+    }
+    rows.push({
+      lead,
+      daysCovered: days.size,
+      maxLevel: levelOf(maxMedian, simRp),
+      maxMedian,
+      daysAbove,
+    });
+  }
+  return { levels, rows };
+}
