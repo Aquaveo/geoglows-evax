@@ -359,6 +359,9 @@ function FloodCheckResultView({
           subtitle: `${reachText} — event ${windowText}${tol > 0 ? `, ±${tol} d` : ''}`,
           columnLabel: 'forecast issued (UTC)',
           columnNoun: 'issued',
+          // 20260113 -> 2026-01-13. Readable, and it keeps the axis labels out
+          // of the numeric-coercion trap described in exceedanceGrid.
+          formatColumn: pretty,
         })} />
         <PlotNote>
           Each column is one day's forecast, and the colour is how much of its ensemble went

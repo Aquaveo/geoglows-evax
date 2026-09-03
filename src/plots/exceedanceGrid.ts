@@ -26,6 +26,8 @@ export interface ExceedanceGridOptions {
   columnLabel: string;
   /** Hover noun for a column, e.g. "issued 2024-09-10" reads better than a date. */
   columnNoun?: string;
+  /** Turns a column key into its display label, e.g. 20260113 -> 2026-01-13. */
+  formatColumn?: (key: string) => string;
 }
 
 /**
@@ -42,6 +44,7 @@ export function exceedanceGridFigure(
   opts: ExceedanceGridOptions,
 ): { data: Data[]; layout: Partial<Layout> } {
   const yLabels = g.levels.map((rp) => `${rp}-year`);
+  const xLabels = opts.formatColumn ? g.columns.map(opts.formatColumn) : [...g.columns];
   const z = g.grid.map((row) => row.map((c) => (c.total > 0 ? c.share * 100 : null)));
   // Preformatted: plotly's heatmap customdata is one Datum per cell, so a
   // two-number pair has to arrive as a string.
@@ -50,7 +53,7 @@ export function exceedanceGridFigure(
   const data: Data[] = [
     {
       type: 'heatmap',
-      x: g.columns,
+      x: xLabels,
       y: yLabels,
       z,
       customdata: counts,
@@ -78,6 +81,16 @@ export function exceedanceGridFigure(
 
   // Label only the cells where something crossed. A number in every cell would
   // bury the handful that carry the finding under a wall of zeros.
+  //
+  // Positions are CATEGORY INDICES, not category names, and that is load-bearing.
+  // Plotly coerces a numeric-looking annotation coordinate to a number even when
+  // that exact string is a registered category: with x: "20251228" the x-axis
+  // autorange came back [-0.5, 20315172.67], one tick label was drawn instead of
+  // 22, and the heatmap raster was not emitted at all — a blank panel. Measured
+  // in jsdom against plotly.js-dist-min. The y-axis never showed it because
+  // "2-year" cannot be coerced, which is why the bug looked like an x-only
+  // collapse. The by-lead grid escaped it by accident: its keys are "0".."15",
+  // which already equal their own indices.
   const annotations: NonNullable<Layout['annotations']> = [];
   for (let r = 0; r < g.grid.length; r++) {
     for (let c = 0; c < g.grid[r].length; c++) {
@@ -85,8 +98,8 @@ export function exceedanceGridFigure(
       if (!(cell.total > 0) || !(cell.share > 0)) continue;
       const pct = cell.share * 100;
       annotations.push({
-        x: g.columns[c],
-        y: yLabels[r],
+        x: c,
+        y: r,
         xref: 'x' as const,
         yref: 'y' as const,
         text: pct >= 1 ? `${Math.round(pct)}` : '<1',
@@ -110,6 +123,12 @@ export function exceedanceGridFigure(
       tickfont: { color: MUTED, size: 10 },
       tickangle: g.columns.length > 12 ? -60 : 0,
       showgrid: false,
+      // Every column gets a label. Plotly thins category ticks when it thinks
+      // they collide, and a grid whose columns are dates is unreadable without
+      // them.
+      tickmode: 'array',
+      tickvals: xLabels.map((_, i) => i),
+      ticktext: xLabels,
     },
     yaxis: {
       type: 'category',
