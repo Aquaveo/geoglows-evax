@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { PROSE_MAX } from '../prose';
 import { getAndCacheRetrospective, fetchForecasts } from '../data/rfs';
 import { returnPeriodsFromSeries } from '../lib/gumbel';
-import { dailyDateRange } from '../lib/leadBuckets';
+import { dailyDateRange, reorganizeByLead, statSeries } from '../lib/leadBuckets';
 import {
   floodCheck,
   medianByLead,
@@ -14,7 +14,7 @@ import { Plot } from './Plot';
 import { PlotNote } from './PlotNote';
 import { exceedanceGridFigure } from '../plots/exceedanceGrid';
 import { floodHydrographFigure } from '../plots/floodHydrograph';
-import { leadMedianLevelsFigure } from '../plots/leadMedianLevels';
+import { eventVsLeadFigure, type LeadSeries } from '../plots/eventVsLead';
 import type { ForecastRun, RpThresholds } from '../lib/types';
 
 /**
@@ -323,6 +323,54 @@ function FloodCheckResultView({
     return crestOfRun(run, lo, hi);
   }, [forecasts, activeInit, start, end, tol, DAY]);
 
+  /**
+   * One median series per lead day — the rows of the table below, as the time
+   * series they actually are.
+   *
+   * `reorganizeByLead` tiles consecutive initialisations onto the real time
+   * axis: every start date contributes the timesteps that fall that far ahead
+   * of itself, so lead 5 is a continuous series of "what the model said five
+   * days out" across the whole event. It also sorts each bucket, so the pooled
+   * series is chronological however the fetches happened to complete.
+   */
+  const leadSeries = useMemo<LeadSeries[]>(() => {
+    if (forecasts.size === 0) return [];
+    const buckets = reorganizeByLead(forecasts, MAX_LEAD);
+    const lo = start.getTime() - tol * DAY;
+    const hi = end.getTime() + (tol + 1) * DAY - 1;
+    const out: LeadSeries[] = [];
+    for (let d = 0; d <= MAX_LEAD; d++) {
+      const b = buckets[d];
+      if (!b || b.time.length === 0) continue;
+      const s = statSeries(b, 'median');
+      const time: Date[] = [];
+      const values: number[] = [];
+      for (let i = 0; i < s.time.length; i++) {
+        const ms = s.time[i]?.getTime();
+        if (!Number.isFinite(ms) || ms < lo || ms > hi) continue;
+        time.push(s.time[i]);
+        values.push(s.values[i]);
+      }
+      if (time.length > 0) out.push({ lead: d, series: { time, values } });
+    }
+    return out;
+  }, [forecasts, start, end, tol, DAY]);
+
+  /** The retrospective over the plotted window — the reference to judge against. */
+  const retroWindow = useMemo(() => {
+    const lo = start.getTime() - (tol + 2) * DAY;
+    const hi = end.getTime() + (tol + 2) * DAY;
+    const time: Date[] = [];
+    const values: number[] = [];
+    for (let i = 0; i < retro.time.length; i++) {
+      const ms = retro.time[i]?.getTime();
+      if (!Number.isFinite(ms) || ms < lo || ms > hi) continue;
+      time.push(retro.time[i]);
+      values.push(retro.values[i]);
+    }
+    return { time, values };
+  }, [retro, start, end, tol, DAY]);
+
   const byLeadMedian = useMemo(
     () =>
       medianByLead(forecasts, simRp, {
@@ -403,18 +451,23 @@ function FloodCheckResultView({
           );
         })()}
 
-        <Plot {...leadMedianLevelsFigure(byLeadMedian, simRp, {
-          subtitle: `${reachText} — reported flood ${windowText}${tol > 0 ? `, ±${tol} d` : ''}`,
+        <Plot {...eventVsLeadFigure(retroWindow, leadSeries, {
+          statLabel: 'Ensemble median',
+          maxLead: MAX_LEAD,
+          simRp,
+          eventLabel: 'Retrospective (model hindcast)',
+          visibleLeads: [1, 3, 5, 7, 10, 15],
         })} />
         <PlotNote>
-          Each line is one return-period level, and its height is how many days of the flood the
-          ensemble median put above that level from forecasts issued that far ahead. Read right
-          to left to watch the picture sharpen as the event approaches. Where a line meets the
-          bottom axis is the lead beyond which the median stopped seeing that severity at all,
-          so the spread between the lines is the model&rsquo;s honest limit: the levels it held
-          at long range and the ones it only found late. A line that dips and recovers is
-          successive forecasts disagreeing, not noise in the plot. The dotted line is how many
-          days each lead reached at all — every count is out of it.
+          Each coloured line is the ensemble median held at one constant lead time: consecutive
+          daily forecasts each contribute the timesteps that fall that far ahead of their own
+          start, so a single line is &ldquo;what the model was saying five days out&rdquo; across
+          the whole event. Blue is short lead, red is long. The heavy black line is the
+          model&rsquo;s own retrospective — the shape the forecasts were trying to hit — and the
+          return-period bands are one legend click away. Lines that converge on the black one as
+          they turn blue are a forecast improving with proximity; a long-lead line already on the
+          peak is the one that would have given real warning. Only a few leads are drawn at
+          first; the rest are in the legend.
         </PlotNote>
 
         <div style={{ overflowX: 'auto' }}>

@@ -48,6 +48,16 @@ export interface EventVsLeadOptions {
    * Null keeps the original per-lead ramp.
    */
   emphasiseLead?: number | null;
+  /**
+   * Name for the heavy reference trace.
+   *
+   * Defaults to the uploaded event observations, which is what this chart was
+   * built for. The flood check has no upload and uses the model's own
+   * retrospective as its reference instead — that is a hindcast, not a
+   * measurement, and calling it "Observed" would be a claim the data does not
+   * support.
+   */
+  eventLabel?: string;
 }
 
 /**
@@ -91,14 +101,15 @@ export function eventVsLeadFigure(
     ? rpBandTraces(bandGroups, new Date(tMin), new Date(tMax))
     : [];
 
+  const eventLabel = opts.eventLabel ?? 'Observed (event)';
   data.push({
     type: 'scatter',
     mode: 'lines',
-    name: 'Observed (event)',
+    name: eventLabel,
     x: event.time,
     y: event.values,
     line: { color: '#111', width: 3 },
-    hovertemplate: '%{x|%Y-%m-%d %H:%M}<br>Observed %{y:.2f} m³/s<extra></extra>',
+    hovertemplate: `%{x|%Y-%m-%d %H:%M}<br>${eventLabel} %{y:.2f} m³/s<extra></extra>`,
   });
 
   const emphasis = opts.emphasiseLead ?? null;
