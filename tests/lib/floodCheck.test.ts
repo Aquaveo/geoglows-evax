@@ -48,10 +48,10 @@ describe('floodCheck', () => {
     expect(r.highestLevelReached).toBe(5);
   });
 
-  it('reports the longest lead that saw the level, not the shortest', () => {
-    // Two runs both call the event; the earlier one saw it 9 days out. Nine and
-    // not eight because lead windows are upper-inclusive — the event day runs
-    // from exactly 8 days after the 09-02 issue (lead 8) to 8d21h (lead 9).
+  it('credits the earliest forecast that called it, not the latest', () => {
+    // Two runs both call the event; the warning time is measured from the
+    // earlier one, and against the flood's start date rather than as a lead
+    // within the run — so it cannot saturate at the fetch horizon.
     const forecasts = new Map([
       run('20240902', 15, 4, (_m, t) => (sameDay(t, EVENT) ? 250 : 10)),
       run('20240909', 15, 4, (_m, t) => (sameDay(t, EVENT) ? 250 : 10)),
@@ -63,8 +63,12 @@ describe('floodCheck', () => {
     });
     const five = r.levels.find((l) => l.level === 5)!;
     expect(five.everCrossed).toBe(true);
-    expect(five.maxLead).toBe(9);
-    expect(five.maxLeadInit).toBe('20240902');
+    // Every member crosses in both runs, so the majority is reached in the
+    // EARLIER of them — the one that would actually have given the warning.
+    expect(five.majorityInit).toBe('20240902');
+    expect(five.majorityLeadDays).toBe(8);
+    expect(five.majorityCrossed).toBe(4);
+    expect(five.majorityTotal).toBe(4);
   });
 
   it('leaves a column with no data in the window as NaN, not zero', () => {
@@ -142,9 +146,13 @@ describe('floodCheck', () => {
     });
     const hundred = r.levels.find((l) => l.level === 100)!;
     expect(hundred.everCrossed).toBe(true);
-    expect(hundred.maxLead).toBe(10);
     expect(hundred.peakShare).toBeCloseTo(1 / 50, 6);
     expect(hundred.peakShareInit).toBe('20240901');
+    // Counts, which is what the table shows: one member, not "2%".
+    expect(hundred.peakCrossed).toBe(1);
+    expect(hundred.peakTotal).toBe(50);
+    // And no majority ever, which is the honest reading of that one member.
+    expect(hundred.majorityInit).toBe(null);
 
     // The level the ensemble actually agreed on tells the other half of it.
     const five = r.levels.find((l) => l.level === 5)!;
@@ -168,3 +176,78 @@ describe('floodCheck', () => {
 function sameDay(t: Date, day: Date): boolean {
   return t.getTime() >= day.getTime() && t.getTime() < day.getTime() + DAY;
 }
+
+describe('warning time', () => {
+  const EV = new Date(Date.parse('2026-01-19T00:00:00Z'));
+
+  /** A run whose members all sit at `v` through the whole event window. */
+  function flat(start: string, v: number, members = 51): [string, ForecastRun] {
+    const t0 = Date.parse(`${start.slice(0, 4)}-${start.slice(4, 6)}-${start.slice(6, 8)}T00:00:00Z`);
+    const time: Date[] = [];
+    for (let ms = t0; ms <= t0 + 15 * DAY; ms += 3 * 3600 * 1000) time.push(new Date(ms));
+    return [start, { time, discharge: Array.from({ length: members }, () => time.map(() => v)) }];
+  }
+
+  it('reports the earliest run where more than half the members crossed', () => {
+    // 01-09 has 20/51 over the 5-year level; 01-12 has 40/51. Only the second is
+    // a majority, so the warning time is measured from 01-12 -> 7 days.
+    const mk = (start: string, nOver: number): [string, ForecastRun] => {
+      const [k, r] = flat(start, 10);
+      for (let m = 0; m < nOver; m++) r.discharge[m] = r.discharge[m].map(() => 250);
+      return [k, r];
+    };
+    const r = floodCheck(new Map([mk('20260109', 20), mk('20260112', 40)]), SIM_RP, {
+      eventStart: EV,
+      eventEnd: EV,
+      toleranceDays: 0,
+    });
+    const five = r.levels.find((l) => l.level === 5)!;
+    expect(five.majorityInit).toBe('20260112');
+    expect(five.majorityLeadDays).toBe(7);
+    expect(five.majorityShare).toBeCloseTo(40 / 51, 6);
+  });
+
+  it('is null when no run ever reached a majority, even though members crossed', () => {
+    const [k, run] = flat('20260109', 10);
+    // A single member over the 5-year level: everCrossed, but never a majority.
+    run.discharge[0] = run.discharge[0].map(() => 250);
+    const r = floodCheck(new Map([[k, run]]), SIM_RP, {
+      eventStart: EV,
+      eventEnd: EV,
+      toleranceDays: 0,
+    });
+    const five = r.levels.find((l) => l.level === 5)!;
+    expect(five.everCrossed).toBe(true);
+    // One member is all it was, and the counts say so.
+    expect(five.peakCrossed).toBe(1);
+    expect(five.peakTotal).toBe(51);
+    // The warning time correctly reports that nothing was ever called.
+    expect(five.majorityInit).toBe(null);
+    expect(five.majorityLeadDays).toBe(null);
+  });
+
+  it('needs strictly more than half, so an exact tie does not count', () => {
+    const [k, run] = flat('20260109', 10, 50);
+    for (let m = 0; m < 25; m++) run.discharge[m] = run.discharge[m].map(() => 250);
+    const tie = floodCheck(new Map([[k, run]]), SIM_RP, {
+      eventStart: EV, eventEnd: EV, toleranceDays: 0,
+    });
+    expect(tie.levels.find((l) => l.level === 5)!.majorityInit).toBe(null);
+
+    run.discharge[25] = run.discharge[25].map(() => 250);
+    const over = floodCheck(new Map([[k, run]]), SIM_RP, {
+      eventStart: EV, eventEnd: EV, toleranceDays: 0,
+    });
+    expect(over.levels.find((l) => l.level === 5)!.majorityInit).toBe('20260109');
+  });
+
+  it('measures lead to the opening of the window, not to the crest', () => {
+    const r = floodCheck(new Map([flat('20260112', 250)]), SIM_RP, {
+      eventStart: EV,
+      eventEnd: new Date(EV.getTime() + 5 * DAY),
+      toleranceDays: 0,
+    });
+    // 01-12 to 01-19 is 7 days, regardless of the window being six days long.
+    expect(r.levels.find((l) => l.level === 5)!.majorityLeadDays).toBe(7);
+  });
+});

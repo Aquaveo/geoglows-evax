@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { PROSE_MAX } from '../prose';
 import { getAndCacheRetrospective, fetchForecasts } from '../data/rfs';
 import { returnPeriodsFromSeries } from '../lib/gumbel';
@@ -50,6 +50,7 @@ export function FloodCheckTab() {
         tol: number;
         simRp: RpThresholds;
         requested: number;
+        initRange: string;
         forecasts: Map<string, ForecastRun>;
         retro: { time: Date[]; values: number[] };
       }
@@ -138,6 +139,7 @@ export function FloodCheckTab() {
         tol: tolerance,
         simRp,
         requested: dates.length,
+        initRange: dates.length > 0 ? `${pretty(dates[0])} to ${pretty(dates[dates.length - 1])}` : '',
         forecasts,
         retro: retroSeries,
       });
@@ -248,6 +250,7 @@ function FloodCheckResultView({
   end,
   tol,
   requested,
+  initRange,
   simRp,
   forecasts,
   retro,
@@ -259,6 +262,7 @@ function FloodCheckResultView({
   tol: number;
   simRp: RpThresholds;
   requested: number;
+  initRange: string;
   forecasts: Map<string, ForecastRun>;
   retro: { time: Date[]; values: number[] };
 }) {
@@ -312,6 +316,22 @@ function FloodCheckResultView({
     return crestOfRun(run, lo, hi);
   }, [forecasts, activeInit, start, end, tol, DAY]);
 
+  /**
+   * Offset of the first forecast in which EVERY member was above a level.
+   *
+   * `peakShareInit` is that forecast whenever `peakShare` is 1: the peak-share
+   * update test is strictly `>`, so the recorded initialisation is the earliest
+   * one attaining the maximum, not the last. Below 1, no forecast ever had all
+   * of them over.
+   */
+  const allAboveOffset = (l: (typeof check.levels)[number]): number | null => {
+    if (l.peakShare < 1 || !l.peakShareInit) return null;
+    const issued = parseYmd(
+      `${l.peakShareInit.slice(0, 4)}-${l.peakShareInit.slice(4, 6)}-${l.peakShareInit.slice(6, 8)}`,
+    );
+    return issued ? Math.round((start.getTime() - issued.getTime()) / DAY) : null;
+  };
+
   const crossed = check.levels.filter((l) => l.everCrossed);
   const highest = crossed.slice(-1)[0] ?? null;
   const reachText = `reach ${riverId}`;
@@ -320,31 +340,81 @@ function FloodCheckResultView({
     <>
       <section style={sectionStyle}>
         <h2 style={h2}>What the forecasts said</h2>
-        {highest ? (
-          <div style={verdictBox}>
-            <p style={{ margin: 0, fontSize: '1rem', lineHeight: 1.6 }}>
-              For <strong>{reachText}</strong> over <strong>{windowText}</strong>, members went
-              above every level up to the <strong>{highest.level}-year</strong>. How much of the
-              ensemble that took, and how far ahead it happened, differs level by level:
-            </p>
-          </div>
-        ) : (
-          <div style={{ ...verdictBox, borderColor: '#fca5a5', background: '#fef2f2' }}>
-            <p style={{ margin: 0, fontSize: '1rem', lineHeight: 1.6 }}>
-              For <strong>{reachText}</strong> over <strong>{windowText}</strong>, no ensemble
-              member in any forecast went above even the 2-year level. On this evidence RFS did
-              not signal high water here.
-            </p>
-          </div>
-        )}
+        {(() => {
+          // Crossing is monotone in threshold — a member above the 100-year is
+          // above every level below it — so the levels with a majority are
+          // always a contiguous run from the lowest, and "every level up to"
+          // is safe to say.
+          const maj = check.levels.filter((l) => l.majorityLeadDays != null);
+          const topMaj = maj.at(-1);
+          const lowMaj = maj[0];
+
+          if (!highest) {
+            return (
+              <div style={{ ...verdictBox, borderColor: '#fca5a5', background: '#fef2f2' }}>
+                <p style={{ margin: 0, fontSize: '1rem', lineHeight: 1.6 }}>
+                  For <strong>{reachText}</strong> over <strong>{windowText}</strong>, no
+                  ensemble member in any forecast went above even the 2-year level. On this
+                  evidence RFS did not signal high water here.
+                </p>
+              </div>
+            );
+          }
+          if (!topMaj || !lowMaj) {
+            return (
+              <div style={verdictBox}>
+                <p style={{ margin: 0, fontSize: '1rem', lineHeight: 1.6 }}>
+                  For <strong>{reachText}</strong> over <strong>{windowText}</strong>, no
+                  forecast ever had more than half its members above even the 2-year level. The
+                  highest any member reached was the <strong>{highest.level}-year</strong>, and
+                  at most {highest.peakCrossed} of {highest.peakTotal} members in one forecast
+                  got there — a handful of members, not the ensemble.
+                </p>
+              </div>
+            );
+          }
+          return (
+            <div style={verdictBox}>
+              <p style={{ margin: 0, fontSize: '1rem', lineHeight: 1.6 }}>
+                For <strong>{reachText}</strong> over <strong>{windowText}</strong>, more than
+                half the ensemble crossed{' '}
+                {topMaj.level === lowMaj.level ? (
+                  <>the <strong>{topMaj.level}-year</strong> level</>
+                ) : (
+                  <>every level up to the <strong>{topMaj.level}-year</strong></>
+                )}
+                . The {lowMaj.level}-year call came{' '}
+                <strong>{offsetText(lowMaj.majorityLeadDays!)}</strong>
+                {topMaj.level !== lowMaj.level && (
+                  <>, the {topMaj.level}-year <strong>{offsetText(topMaj.majorityLeadDays!)}</strong></>
+                )}
+                .
+                {highest.level > topMaj.level && (
+                  <>
+                    {' '}Above the {topMaj.level}-year only single members crossed — at most{' '}
+                    {highest.peakCrossed} of {highest.peakTotal}, reaching the{' '}
+                    {highest.level}-year.
+                  </>
+                )}
+              </p>
+            </div>
+          );
+        })()}
 
         <table style={{ borderCollapse: 'collapse', fontSize: '0.9rem', marginTop: '1.25rem' }}>
           <thead>
             <tr>
-              <th style={th}>Level</th>
-              <th style={{ ...th, textAlign: 'right' }}>Threshold</th>
-              <th style={{ ...th, textAlign: 'right' }}>Most of the ensemble, in one forecast</th>
-              <th style={{ ...th, textAlign: 'right' }}>Longest lead any member crossed</th>
+              <Th sub="return period">Level</Th>
+              <Th sub="the model's own" right>Threshold</Th>
+              <Th sub="before the flood began" right title="Days between the flood's reported start and the issue date of the first forecast in which more than half the members went above this level. Negative means that forecast came after the water was already up.">
+                Notice
+              </Th>
+              <Th sub="in that forecast" right title="How many of that forecast's members were above the level. The same forecast as the Notice column, not a maximum over all forecasts.">
+                Members
+              </Th>
+              <Th sub="first forecast, vs flood start" right title="The first forecast in which EVERY member with data was above this level, given in the same units as Notice.">
+                All members
+              </Th>
             </tr>
           </thead>
           <tbody>
@@ -353,39 +423,73 @@ function FloodCheckResultView({
                 <td style={td}>{l.level}-year</td>
                 <td style={{ ...td, textAlign: 'right' }}>{l.threshold.toFixed(0)} m³/s</td>
                 <td style={{ ...td, textAlign: 'right' }}>
-                  {l.everCrossed ? (
-                    <>
-                      {Math.round(l.peakShare * 100)}%
-                      {l.peakShareInit && (
-                        <span style={{ color: '#777' }}> ({pretty(l.peakShareInit)})</span>
-                      )}
-                    </>
+                  {l.majorityLeadDays != null ? (
+                    <strong>{offsetText(l.majorityLeadDays)}</strong>
+                  ) : (
+                    <span style={{ color: '#999' }}>never over half</span>
+                  )}
+                </td>
+                <td style={{ ...td, textAlign: 'right' }}>
+                  {l.majorityCrossed != null && l.majorityTotal != null ? (
+                    `${l.majorityCrossed} of ${l.majorityTotal}`
+                  ) : l.peakCrossed != null && l.peakTotal != null && l.peakCrossed > 0 ? (
+                    // No majority ever, so show the best any forecast managed —
+                    // otherwise a one-member crossing reads as nothing at all.
+                    <span style={{ color: '#777' }}>
+                      at most {l.peakCrossed} of {l.peakTotal}
+                    </span>
                   ) : (
                     <span style={{ color: '#999' }}>none</span>
                   )}
                 </td>
                 <td style={{ ...td, textAlign: 'right' }}>
-                  {l.maxLead != null ? (
-                    <>
-                      {l.maxLead} d
-                      {l.maxLeadInit && (
-                        <span style={{ color: '#777' }}> ({pretty(l.maxLeadInit)})</span>
-                      )}
-                    </>
+                  {allAboveOffset(l) != null ? (
+                    offsetText(allAboveOffset(l)!)
                   ) : (
-                    <span style={{ color: '#999' }}>—</span>
+                    <span style={{ color: '#999' }}>never all</span>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p style={{ ...note, marginTop: '0.6rem', maxWidth: PROSE_MAX }}>
-          Read the last two columns together. A level one member touched once is not a level the
-          ensemble called, and the lead column saturates on exactly that kind of member — on a
-          wide ensemble a single outlier can cross the 100-year level a fortnight out while the
-          rest of the members never leave normal flow.
+
+        {(() => {
+          // A worked example teaches all four columns at once, and costs one
+          // sentence. Per-column footnotes cost a paragraph and get skipped.
+          const ex = [...check.levels].reverse().find((l) => l.majorityLeadDays != null);
+          if (!ex) return null;
+          const all = allAboveOffset(ex);
+          return (
+            <p style={{ ...note, marginTop: '0.6rem', maxWidth: PROSE_MAX }}>
+              <strong>Reading a row:</strong> the first forecast to put more than half its
+              members above the {ex.level}-year level ({ex.threshold.toFixed(0)} m³/s) was issued{' '}
+              {offsetText(ex.majorityLeadDays!)}, with {ex.majorityCrossed} of {ex.majorityTotal}{' '}
+              members over it
+              {all != null
+                ? `; every member was over it only in a forecast issued ${offsetText(all)}.`
+                : '; no forecast ever had every member over it.'}
+            </p>
+          );
+        })()}
+
+        <p style={{ ...note, marginTop: '0.5rem', maxWidth: PROSE_MAX }}>
+          <strong>How these are counted:</strong> a member is &ldquo;above&rdquo; a level if it
+          goes over that level at <em>any</em> timestep inside the flood window — the reported
+          dates plus the tolerance — so it is one member either way whether it spent an hour or
+          three days up there. Notice and the last column are both days between a forecast&rsquo;s
+          issue date and the day the flood began, so they are directly comparable. Neither is a
+          probability: these are counts of ensemble members, which are a spread, not a calibrated
+          distribution.
         </p>
+
+        {check.levels.some((l) => l.majorityInit == null && (l.peakCrossed ?? 0) > 0 && (l.peakCrossed ?? 0) <= 2) && (
+          <p style={{ ...note, marginTop: '0.5rem', maxWidth: PROSE_MAX }}>
+            A row showing one or two members is a single outlier, not a statement by the
+            ensemble. On a wide spread one member can cross the 100-year level while the rest
+            never leave normal flow.
+          </p>
+        )}
 
         <p style={{ ...prose, marginTop: '1rem' }}>
           All of this is a statement about the model, not about the flood. A miss can mean the
@@ -396,9 +500,23 @@ function FloodCheckResultView({
         </p>
         <table style={{ borderCollapse: 'collapse', fontSize: '0.9rem', marginTop: '1rem' }}>
           <tbody>
-            <Row label="Forecasts with data in the window" value={`${check.runsUsed} of ${requested} requested`} />
-            <Row label="Member forecasts examined" value={String(check.memberForecasts)} />
-            <Row label="Dates searched" value={searched} />
+            {/*
+              Two ranges, both named. One row labelled "Dates searched" used to
+              show only the flood window, while the table cited forecasts issued
+              before it — a contradiction the reader had no way to resolve.
+            */}
+            <Row
+              label="Forecasts examined"
+              value={
+                `${check.runsUsed} of ${requested} dates` +
+                (initRange ? `, issued ${initRange}` : '') +
+                ` — ${check.memberForecasts} member forecasts`
+              }
+            />
+            <Row
+              label="Flood window searched"
+              value={windowText + (tol > 0 ? `, widened to ${searched} by the ±${tol} d tolerance` : '')}
+            />
             <Row
               label="Peak day, model's own retrospective"
               value={
@@ -505,6 +623,48 @@ function FloodCheckResultView({
       </section>
     </>
   );
+}
+
+/**
+ * Header cell carrying its own definition on a second line.
+ *
+ * The sparse table only works if the headers say what the number is: one datum
+ * per cell is scannable, but "Notice" and "Members" mean nothing on their own.
+ * A second muted line costs no vertical space that a footnote paragraph would
+ * not have cost, and it sits where the reader is already looking. `title` adds
+ * the full definition on hover for anyone who wants it.
+ */
+function Th({
+  children,
+  sub,
+  right,
+  title,
+}: {
+  children: ReactNode;
+  sub: string;
+  right?: boolean;
+  title?: string;
+}) {
+  return (
+    <th style={{ ...th, textAlign: right ? 'right' : 'left', verticalAlign: 'bottom' }} title={title}>
+      <div>{children}</div>
+      <div style={{ fontWeight: 400, fontSize: '0.75rem', color: '#8a8880', marginTop: 1 }}>{sub}</div>
+    </th>
+  );
+}
+
+/**
+ * Signed days relative to the flood's reported start, phrased so the sign is
+ * unmissable.
+ *
+ * "8 d late" rather than "flood day 9": the same unit as the Notice column, so
+ * the two are directly comparable, and no convention for numbering flood days
+ * that the reader has to learn.
+ */
+function offsetText(days: number): string {
+  if (days > 0) return `${days} d ahead`;
+  if (days === 0) return 'on the day';
+  return `${-days} d late`;
 }
 
 function Row({ label, value }: { label: string; value: string }) {

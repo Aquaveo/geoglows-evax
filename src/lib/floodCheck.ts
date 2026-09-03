@@ -30,28 +30,62 @@ export interface LevelSummary {
   threshold: number;
   /** Members that crossed it in any forecast. */
   everCrossed: boolean;
-  /**
-   * Longest lead at which a member crossed it — the warning time this level got.
+  /*
+   * There is deliberately no "longest lead any member crossed" field here.
    *
-   * Longest, not shortest: the question a flood check answers is how much notice
-   * the model gave, and the earliest forecast to call the event is the one that
-   * would have given it.
+   * It existed, was displayed, and was removed. The lookback is exactly
+   * `tolerance + maxLead` days, so the oldest run's lead into the OPENING of
+   * the flood window is `maxLead` by construction, and one member crossing
+   * anywhere inside the window pins it there. On a real event (reach
+   * 120694849, January 2026) it read "15 d" at all six levels while the
+   * warning time below ranged from 7 days down to 3. `majorityLeadDays` is
+   * the quantity it was standing in for and could not supply.
    */
-  maxLead: number | null;
-  /** Initialisation date behind `maxLead`, as YYYYMMDD. */
-  maxLeadInit: string | null;
   /**
    * Largest share of members crossing in any single initialisation.
    *
    * This is the column that keeps `everCrossed` honest. On a real run (reach
    * 770143064, June 2025) one member of one forecast crossed every level up to
-   * the 100-year, 15 days out — so `everCrossed` and `maxLead` were true at all
-   * six levels while the ensemble as a whole never agreed above the 2-year.
+   * the 100-year, 15 days out — so `everCrossed` was true at all six levels
+   * while the ensemble as a whole never agreed above the 2-year.
    * Reported together, the pair says what happened; either alone does not.
    */
   peakShare: number;
   /** Initialisation behind `peakShare`, as YYYYMMDD. */
   peakShareInit: string | null;
+  /**
+   * The earliest forecast in which more than half the members crossed this
+   * level, and how many days before the flood it was issued.
+   *
+   * This is the warning time, and it is the number `maxLead` was standing in
+   * for and could not supply. `maxLead` is structurally incapable of it: the
+   * lookback is exactly `tolerance + maxLead` days, so the oldest run's lead
+   * into the opening of the window is `maxLead` by construction, and a single
+   * member crossing anywhere pins it there. On a real event it reported "15 d"
+   * at all six levels.
+   *
+   * "More than half the members" is a description of the ensemble, not a
+   * skill threshold and not a probability — it is the plainest statement of
+   * when the bulk of the spread committed, which is what a lone outlier cannot
+   * fake.
+   */
+  majorityInit: string | null;
+  /** Days from `majorityInit` to the start of the reported flood window. */
+  majorityLeadDays: number | null;
+  /** Share at `majorityInit`, so the figure never travels without its share. */
+  majorityShare: number | null;
+  /** Members over the level at `majorityInit`, and the members with data there. */
+  majorityCrossed: number | null;
+  majorityTotal: number | null;
+  /**
+   * Members over the level at `peakShareInit`, as counts.
+   *
+   * Counts rather than only a percentage because "2%" and "1 of 51" carry the
+   * same number and not the same warning, and a percentage of members invites
+   * being read as a probability, which it is not.
+   */
+  peakCrossed: number | null;
+  peakTotal: number | null;
 }
 
 export interface FloodCheckResult {
@@ -130,10 +164,15 @@ export function floodCheck(
     level,
     threshold: simRp[level],
     everCrossed: false,
-    maxLead: null,
-    maxLeadInit: null,
     peakShare: 0,
     peakShareInit: null,
+    majorityInit: null,
+    majorityLeadDays: null,
+    majorityShare: null,
+    majorityCrossed: null,
+    majorityTotal: null,
+    peakCrossed: null,
+    peakTotal: null,
   }));
 
   let peakForecast = Number.NEGATIVE_INFINITY;
@@ -186,12 +225,7 @@ export function floodCheck(
           if (v < simRp[levels[li]]) continue;
           initCrossed[li][m] = true;
           lc[li][m] = true;
-          const s = summaries[li];
-          s.everCrossed = true;
-          if (s.maxLead == null || lead > s.maxLead) {
-            s.maxLead = lead;
-            s.maxLeadInit = key;
-          }
+          summaries[li].everCrossed = true;
         }
       }
     }
@@ -206,6 +240,8 @@ export function floodCheck(
       if (initTotal > 0 && c / initTotal > summaries[li].peakShare) {
         summaries[li].peakShare = c / initTotal;
         summaries[li].peakShareInit = key;
+        summaries[li].peakCrossed = c;
+        summaries[li].peakTotal = initTotal;
       }
       for (const [lead, lc] of leadCrossed) {
         const total = count(leadHasData.get(lead) ?? []);
@@ -215,8 +251,31 @@ export function floodCheck(
     }
   }
 
+  // Warning time, read off the assembled initialisation grid: the first column,
+  // in issue order, where more than half the members crossed.
+  const usedInits = initKeys.filter((k) => byInit[0]?.has(k) ?? false);
+  for (let li = 0; li < levels.length; li++) {
+    for (const k of usedInits) {
+      const t = byInit[li].get(k);
+      if (!t || t[1] === 0 || t[0] / t[1] <= 0.5) continue;
+      const issued = parseStartDate(k)?.getTime();
+      if (issued == null) continue;
+      summaries[li].majorityInit = k;
+      summaries[li].majorityShare = t[0] / t[1];
+      summaries[li].majorityCrossed = t[0];
+      summaries[li].majorityTotal = t[1];
+      // Days before the flood window OPENS, not before the crest: the crest day
+      // is not known at issue time, so lead-to-onset is the figure a forecaster
+      // would actually have had.
+      summaries[li].majorityLeadDays = Math.round(
+        (opts.eventStart.getTime() - issued) / DAY_MS,
+      );
+      break;
+    }
+  }
+
   return {
-    byInitialisation: assemble(levels, initKeys.filter((k) => byInit[0]?.has(k) ?? false), byInit),
+    byInitialisation: assemble(levels, usedInits, byInit),
     byLead: assemble(levels, leadKeys, byLead),
     levels: summaries,
     highestLevelReached: summaries.filter((s) => s.everCrossed).map((s) => s.level).pop() ?? null,
